@@ -26,8 +26,24 @@ different directories. This is useful for:
 
 ### Using Nix Flakes (recommended)
 
+Add to your flake inputs:
+
+```nix
+{
+  inputs.git-wt.url = "github:ahmedelgabri/git-wt";
+}
+```
+
+Then add to your packages:
+
+```nix
+inputs.git-wt.packages.${system}.default
+```
+
+Or run directly:
+
 ```bash
-nix profile install github:ahmedelgabri/git-wt
+nix run github:ahmedelgabri/git-wt
 ```
 
 ### Manual Installation
@@ -115,7 +131,7 @@ git wt destroy feature-branch
 ### Update default branch
 
 ```bash
-git wt update  # or: git wt u
+git wt update # or: git wt u
 ```
 
 Fetches all remotes and pulls the default branch (main/master).
