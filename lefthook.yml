@@ -4,9 +4,8 @@ pre-commit:
     shellcheck:
       glob: "{git-wt,completions/*.bash}"
       run: shellcheck {staged_files}
-    shfmt:
-      glob: "{git-wt,completions/*.bash}"
-      run: shfmt -d -i 0 -ci {staged_files}
+    treefmt:
+      run: nix fmt -- --fail-on-change
 
 pre-push:
   commands:

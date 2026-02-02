@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   lint:
@@ -11,21 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install shellcheck
-        run: sudo apt-get install -y shellcheck
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Run shellcheck
-        run: shellcheck git-wt completions/*.bash
+        run: nix develop --command shellcheck git-wt completions/*.bash
 
-      - name: Install shfmt
-        run: |
-          curl -sS https://webinstall.dev/shfmt | bash
-          echo "$HOME/.local/bin" >>$GITHUB_PATH
-
-      - name: Check formatting with shfmt
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          shfmt -d -i 0 -ci git-wt completions/*.bash
+      - name: Check formatting
+        run: nix fmt -- --fail-on-change
 
   build:
     name: Build (Nix)
