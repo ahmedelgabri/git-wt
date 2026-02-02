@@ -53,6 +53,33 @@ curl -o ~/.local/bin/git-wt https://raw.githubusercontent.com/ahmedelgabri/git-w
 chmod +x ~/.local/bin/git-wt
 ```
 
+### Shell Completions
+
+When installed via Nix, completions are automatically available.
+
+For manual installation:
+
+**Bash**
+
+```bash
+curl -o ~/.local/share/bash-completion/completions/git-wt \
+  https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.bash
+```
+
+**Zsh**
+
+```bash
+curl -o ~/.local/share/zsh/site-functions/_git-wt \
+  https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.zsh
+```
+
+**Fish**
+
+```bash
+curl -o ~/.config/fish/completions/git-wt.fish \
+  https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.fish
+```
+
 ### Dependencies
 
 - `git` (2.7+ for worktree support)
@@ -157,13 +184,6 @@ git wt list
 
 All native `git worktree` commands (lock, unlock, move, prune, repair) are also
 supported as pass-through.
-
-## Shell Completions
-
-Completions are included for Bash, Zsh, and Fish. When installed via Nix, they
-are automatically available.
-
-For manual installation, source the appropriate file from `completions/`.
 
 ## Development
 
