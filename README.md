@@ -29,6 +29,11 @@ different directories. This is useful for:
 - **Dry-run mode** for destructive operations
 - **Preserves uncommitted changes** during migration (staged, unstaged, stashes)
 
+## Dependencies
+
+- `git` (2.7+ for worktree support)
+- `fzf` (optional, for interactive commands)
+
 ## Installation
 
 ### Using Nix Flakes (recommended)
@@ -86,12 +91,6 @@ curl -o ~/.local/share/zsh/site-functions/_git-wt \
 curl -o ~/.config/fish/completions/git-wt.fish \
 	https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.fish
 ```
-
-### Dependencies
-
-- `git` (2.7+ for worktree support)
-- `fzf` (for interactive commands)
-- `bash` 4+
 
 ## Usage
 
