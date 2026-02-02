@@ -1,7 +1,12 @@
 # git-wt
 
-A git worktree management tool that enhances Git's native worktree functionality
-with interactive features, automation, and repository migration capabilities.
+A git custom command that enhances Git's native worktree functionality with
+interactive features, automation, and repository migration capabilities.
+
+git-wt uses a **bare repository** structure where the git data lives in a
+`.bare` directory and each branch gets its own worktree directory. This provides
+better organization and a cleaner workspace compared to the traditional
+`.git`-in-root approach.
 
 ## Why git worktrees?
 
@@ -15,6 +20,8 @@ different directories. This is useful for:
 
 ## Features
 
+- **Bare clone structure** - Git data in `.bare/`, each branch in its own
+  directory
 - **Interactive branch selection** with fzf for creating and switching worktrees
 - **Repository migration** - convert existing repos to worktree structure
 - **Automatic upstream tracking** when creating worktrees from remote branches
@@ -63,21 +70,21 @@ For manual installation:
 
 ```bash
 curl -o ~/.local/share/bash-completion/completions/git-wt \
-  https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.bash
+	https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.bash
 ```
 
 **Zsh**
 
 ```bash
 curl -o ~/.local/share/zsh/site-functions/_git-wt \
-  https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.zsh
+	https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.zsh
 ```
 
 **Fish**
 
 ```bash
 curl -o ~/.config/fish/completions/git-wt.fish \
-  https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.fish
+	https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.fish
 ```
 
 ### Dependencies
