@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    # Only run if CI passes and commit message doesn't contain [skip release]
+    if: "!contains(github.event.head_commit.message, '[skip release]')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from flake.nix
+        id: version
+        run: |
+          VERSION=$(grep 'version = ' flake.nix | head -1 | sed 's/.*version = "\([^"]*\)".*/\1/')
+          echo "version=$VERSION" >>$GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate changelog for release
+        id: changelog
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          # Get the previous tag, or use initial commit if no tags exist
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          echo "Previous reference: $PREV_TAG"
+
+          # Generate changelog from commits since previous tag
+          CHANGELOG=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s" --no-merges | head -50)
+
+          # Use heredoc to handle multi-line output
+          echo "changelog<<EOF" >>$GITHUB_OUTPUT
+          echo "$CHANGELOG" >>$GITHUB_OUTPUT
+          echo "EOF" >>$GITHUB_OUTPUT
+
+      - name: Create Release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body: |
+            ## Changes
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## Installation
+
+            ### Using Nix Flakes
+
+            ```bash
+            nix profile install github:${{ github.repository }}
+            ```
+
+            ### Manual Installation
+
+            ```bash
+            curl -o ~/.local/bin/git-wt https://raw.githubusercontent.com/${{ github.repository }}/v${{ steps.version.outputs.version }}/git-wt
+            chmod +x ~/.local/bin/git-wt
+            ```
+          draft: false
+          prerelease: false

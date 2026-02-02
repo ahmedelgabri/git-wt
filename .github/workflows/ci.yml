@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: shellcheck git-wt completions/*.bash
+
+      - name: Install shfmt
+        run: |
+          curl -sS https://webinstall.dev/shfmt | bash
+          echo "$HOME/.local/bin" >>$GITHUB_PATH
+
+      - name: Check formatting with shfmt
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          shfmt -d -i 0 -ci git-wt completions/*.bash
+
+  build:
+    name: Build (Nix)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Check flake
+        run: nix flake check
+
+      - name: Build package
+        run: nix build
+
+      - name: Test executable runs
+        run: ./result/bin/git-wt --help

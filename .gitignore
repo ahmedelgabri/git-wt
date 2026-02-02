@@ -30,3 +30,4 @@ result-*
 
 # Ignore automatically generated direnv output
 .direnv
+.hooks

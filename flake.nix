@@ -61,7 +61,18 @@
             nixd
             shfmt
             shellcheck
+            lefthook
           ];
+
+          shellHook =
+            /*
+            bash
+            */
+            ''
+              # avoid overriding global git hooks
+              git config core.hooksPath .hooks
+              lefthook install
+            '';
         };
       };
     };
