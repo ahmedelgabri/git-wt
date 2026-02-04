@@ -106,6 +106,7 @@
             nixd
             shellcheck
             lefthook
+            bats
           ];
 
           inputsFrom = [config.treefmt.build.devShell];
