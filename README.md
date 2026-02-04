@@ -197,10 +197,9 @@ git wt list
 | `destroy [worktree]` | Remove worktree and delete local + remote branches |
 | `update` / `u`       | Fetch all and update default branch                |
 | `switch`             | Interactive worktree selection                     |
-| `list`               | List all worktrees                                 |
 
-All native `git worktree` commands (lock, unlock, move, prune, repair) are also
-supported as pass-through.
+All native `git worktree` commands (list, lock, unlock, move, prune, repair) are
+also supported as pass-through.
 
 ## Development
 
