@@ -3,10 +3,10 @@
 A git custom command that enhances Git's native worktree functionality with
 interactive features, automation, and repository migration capabilities.
 
-git-wt uses a **bare repository** structure where the git data lives in a
-`.bare` directory and each branch gets its own worktree directory. This provides
-better organization and a cleaner workspace compared to the traditional
-`.git`-in-root approach.
+git-wt uses a [**bare repository** structure](https://gabri.me/blog/git-worktrees-done-right)
+where the git data lives in a `.bare` directory and each branch gets its own
+worktree directory. This provides better organization and a cleaner workspace
+compared to the traditional `.git`-in-root approach.
 
 ## Why git worktrees?
 
