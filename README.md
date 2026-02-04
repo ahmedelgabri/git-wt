@@ -36,7 +36,16 @@ different directories. This is useful for:
 
 ## Installation
 
-### Using Nix Flakes (recommended)
+### Using Homebrew
+
+```bash
+brew tap ahmedelgabri/git-wt https://github.com/ahmedelgabri/git-wt
+brew install git-wt
+```
+
+Shell completions are automatically installed for bash, zsh, and fish.
+
+### Using Nix Flakes
 
 Add to your flake inputs:
 
@@ -58,6 +67,8 @@ Or run directly:
 nix run github:ahmedelgabri/git-wt
 ```
 
+Shell completions are automatically available when installed via Nix.
+
 ### Manual Installation
 
 ```bash
@@ -67,7 +78,7 @@ chmod +x ~/.local/bin/git-wt
 
 ### Shell Completions
 
-When installed via Nix, completions are automatically available.
+When installed via Homebrew or Nix, completions are automatically available.
 
 For manual installation:
 
