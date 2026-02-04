@@ -18,6 +18,6 @@ class GitWt < Formula
   end
 
   test do
-    system "#{bin}/git-wt", "help"
+    system bin/"git-wt", "help"
   end
 end

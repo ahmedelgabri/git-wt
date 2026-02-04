@@ -94,8 +94,8 @@ jobs:
             desc "Git custom command that enhances Git's native worktree functionality"
             homepage "https://github.com/ahmedelgabri/git-wt"
             url "file://$TARBALL"
-            sha256 "$SHA256"
             version "0.1.0"
+            sha256 "$SHA256"
             license "MIT"
 
             depends_on "fzf"
@@ -109,7 +109,7 @@ jobs:
             end
 
             test do
-              system "#{bin}/git-wt", "help"
+              system bin/"git-wt", "help"
             end
           end
           FORMULA
