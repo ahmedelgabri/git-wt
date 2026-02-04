@@ -39,9 +39,10 @@ check_fzf_dependency() {
 
 # Worktree cache - populated once per invocation
 # Avoids multiple calls to 'git worktree list --porcelain'
-declare -A WORKTREE_CACHE_BRANCHES=() # path -> branch
-declare -A WORKTREE_CACHE_PATHS=()    # branch -> path
-declare -A WORKTREE_CACHE_HEADS=()    # path -> short SHA
+# Using parallel indexed arrays for Bash 3.x compatibility (no associative arrays)
+WORKTREE_CACHE_PATHS=()    # indexed array of worktree paths
+WORKTREE_CACHE_BRANCHES=() # indexed array of branch names (same index as paths)
+WORKTREE_CACHE_HEADS=()    # indexed array of short SHAs (same index as paths)
 WORKTREE_CACHE_LOADED=false
 
 load_worktree_cache() {
@@ -62,7 +63,8 @@ load_worktree_cache() {
 			;;
 		HEAD\ *)
 			current_head="${line#HEAD }"
-			current_head="${current_head:0:7}"
+			# Extract first 7 characters for short SHA
+			current_head=$(printf '%.7s' "$current_head")
 			;;
 		branch\ *)
 			current_branch="${line#branch refs/heads/}"
@@ -72,11 +74,9 @@ load_worktree_cache() {
 			;;
 		"")
 			if [[ -n $current_path && $current_path != *".bare"* ]]; then
-				WORKTREE_CACHE_BRANCHES["$current_path"]="$current_branch"
-				WORKTREE_CACHE_HEADS["$current_path"]="$current_head"
-				if [[ -n $current_branch && $current_branch != "(detached)" ]]; then
-					WORKTREE_CACHE_PATHS["$current_branch"]="$current_path"
-				fi
+				WORKTREE_CACHE_PATHS+=("$current_path")
+				WORKTREE_CACHE_BRANCHES+=("$current_branch")
+				WORKTREE_CACHE_HEADS+=("$current_head")
 			fi
 			current_path="" current_branch="" current_head=""
 			;;
@@ -85,11 +85,9 @@ load_worktree_cache() {
 
 	# Handle last entry (no trailing blank line)
 	if [[ -n $current_path && $current_path != *".bare"* ]]; then
-		WORKTREE_CACHE_BRANCHES["$current_path"]="$current_branch"
-		WORKTREE_CACHE_HEADS["$current_path"]="$current_head"
-		if [[ -n $current_branch && $current_branch != "(detached)" ]]; then
-			WORKTREE_CACHE_PATHS["$current_branch"]="$current_path"
-		fi
+		WORKTREE_CACHE_PATHS+=("$current_path")
+		WORKTREE_CACHE_BRANCHES+=("$current_branch")
+		WORKTREE_CACHE_HEADS+=("$current_head")
 	fi
 
 	WORKTREE_CACHE_LOADED=true
@@ -100,16 +98,26 @@ get_worktree_branch() {
 	# Args: $1 = worktree path
 	# Returns: branch name or empty if detached/not found
 	load_worktree_cache
-	echo "${WORKTREE_CACHE_BRANCHES[$1]:-}"
+	local i path=$1
+	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
+		if [[ ${WORKTREE_CACHE_PATHS[$i]} == "$path" ]]; then
+			echo "${WORKTREE_CACHE_BRANCHES[$i]}"
+			return 0
+		fi
+	done
+	echo ""
 }
 
 validate_worktree() {
 	# Check if a path is a valid worktree
 	# Args: $1 = worktree path
 	load_worktree_cache
-	if [[ -n ${WORKTREE_CACHE_BRANCHES[$1]+x} ]]; then
-		return 0
-	fi
+	local i path=$1
+	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
+		if [[ ${WORKTREE_CACHE_PATHS[$i]} == "$path" ]]; then
+			return 0
+		fi
+	done
 	echo "Error: '$1' is not a valid worktree" >&2
 	return 1
 }
@@ -118,9 +126,9 @@ get_worktree_list() {
 	# Get list of worktrees as "path:branch:head" lines, excluding .bare
 	# Output format: /path/to/worktree:branch-name:abc1234
 	load_worktree_cache
-	local path
-	for path in "${!WORKTREE_CACHE_BRANCHES[@]}"; do
-		echo "${path}:${WORKTREE_CACHE_BRANCHES[$path]}:${WORKTREE_CACHE_HEADS[$path]}"
+	local i
+	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
+		echo "${WORKTREE_CACHE_PATHS[$i]}:${WORKTREE_CACHE_BRANCHES[$i]}:${WORKTREE_CACHE_HEADS[$i]}"
 	done
 }
 
@@ -167,7 +175,14 @@ get_worktree_path_for_branch() {
 	# Args: $1 = branch name
 	# Returns: worktree path or empty if not found
 	load_worktree_cache
-	echo "${WORKTREE_CACHE_PATHS[$1]:-}"
+	local i branch=$1
+	for i in "${!WORKTREE_CACHE_BRANCHES[@]}"; do
+		if [[ ${WORKTREE_CACHE_BRANCHES[$i]} == "$branch" ]]; then
+			echo "${WORKTREE_CACHE_PATHS[$i]}"
+			return 0
+		fi
+	done
+	echo ""
 }
 
 get_default_branch() {
