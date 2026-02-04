@@ -75,11 +75,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up tap
+        run: |
+          mkdir -p "$(brew --repository)/Library/Taps/local/homebrew-git-wt"
+          ln -s "$GITHUB_WORKSPACE/Formula" "$(brew --repository)/Library/Taps/local/homebrew-git-wt/Formula"
+
       - name: Install formula
-        run: brew install --build-from-source Formula/git-wt.rb
+        run: brew install --build-from-source local/git-wt/git-wt
 
       - name: Audit formula
-        run: brew audit --strict git-wt
+        run: brew audit --strict local/git-wt/git-wt
 
       - name: Test formula
-        run: brew test git-wt
+        run: brew test local/git-wt/git-wt
