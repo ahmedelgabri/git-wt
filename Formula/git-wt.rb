@@ -7,6 +7,7 @@ class GitWt < Formula
   license "MIT"
   head "https://github.com/ahmedelgabri/git-wt.git", branch: "main"
 
+  depends_on "fzf"
   depends_on "git"
 
   def install
