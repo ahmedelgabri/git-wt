@@ -48,3 +48,18 @@ jobs:
 
       - name: Test executable runs
         run: ./result/bin/git-wt --help
+
+  homebrew:
+    name: Validate Homebrew Formula
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Audit formula
+        run: brew audit --strict Formula/git-wt.rb
+
+      - name: Install formula
+        run: brew install --build-from-source Formula/git-wt.rb
+
+      - name: Test formula
+        run: brew test Formula/git-wt.rb
