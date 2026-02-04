@@ -1,0 +1,12 @@
+title: git-wt
+description: Enhanced Git worktree management with interactive features
+url: https://ahmedelgabri.github.io
+baseurl: /git-wt
+remote_theme: pages-themes/minimal@v0.2.0
+
+plugins:
+  - jekyll-remote-theme
+
+exclude:
+  - ci-cd-setup.md
+  - homebrew-support.md
