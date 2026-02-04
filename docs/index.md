@@ -35,7 +35,7 @@ Git worktrees allow you to have multiple branches checked out simultaneously in 
 **Homebrew:**
 
 ```bash
-brew tap ahmedelgabri/git-wt https://github.com/ahmedelgabri/git-wt
+brew tap ahmedelgabri/git-wt
 brew install git-wt
 ```
 

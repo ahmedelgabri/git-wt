@@ -39,7 +39,7 @@ different directories. This is useful for:
 ### Using Homebrew
 
 ```bash
-brew tap ahmedelgabri/git-wt https://github.com/ahmedelgabri/git-wt
+brew tap ahmedelgabri/git-wt
 brew install git-wt
 ```
 
