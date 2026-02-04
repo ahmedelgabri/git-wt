@@ -14,10 +14,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: NixOS/nix-installer-action@main
 
-      - name: Setup Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - name: Run shellcheck
         run: nix develop --command shellcheck git-wt completions/*.bash
@@ -55,10 +58,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: NixOS/nix-installer-action@main
 
-      - name: Setup Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - name: Check flake
         run: nix flake check
