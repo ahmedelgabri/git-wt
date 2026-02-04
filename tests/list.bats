@@ -48,7 +48,8 @@ teardown() {
 	[ "$status" -eq 0 ]
 	# list is a passthrough to git worktree list, so .bare shows up
 	[[ "$output" == *".bare"* ]]
-	[[ "$output" == *"main"* ]]
+	# The default branch could be main or master depending on git version
+	[[ "$output" == *"main"* ]] || [[ "$output" == *"master"* ]]
 }
 
 @test "list: shows detached HEAD worktrees" {

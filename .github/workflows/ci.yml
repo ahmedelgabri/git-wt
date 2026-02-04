@@ -75,11 +75,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Audit formula
-        run: brew audit --strict Formula/git-wt.rb
-
       - name: Install formula
         run: brew install --build-from-source Formula/git-wt.rb
 
+      - name: Audit formula
+        run: brew audit --strict git-wt
+
       - name: Test formula
-        run: brew test Formula/git-wt.rb
+        run: brew test git-wt
