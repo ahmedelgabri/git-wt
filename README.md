@@ -1,3 +1,11 @@
+<center>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/logo-light.svg">
+  <img alt="Logo" src="docs/logo-light.svg">
+</picture>
+</center>
+
 # git-wt
 
 A git custom command that enhances Git's native worktree functionality with

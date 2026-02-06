@@ -3,6 +3,10 @@ layout: default
 title: git-wt
 ---
 
+<p align="center">
+  <img src="logo-light.svg" alt="git-wt logo">
+</p>
+
 # git-wt
 
 A Git custom command that enhances Git's native worktree functionality with interactive features, automation, and repository migration capabilities.

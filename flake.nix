@@ -88,6 +88,7 @@
                 "*.yml"
                 "*.yaml"
                 "*.json"
+                "*.svg"
               ];
             };
             alejandra.enable = true;
@@ -106,6 +107,7 @@
             nixd
             shellcheck
             lefthook
+            prettier
             bats
           ];
 
