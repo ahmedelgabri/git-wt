@@ -141,6 +141,11 @@ git wt add feature origin/feature
 
 # Create new branch
 git wt add -b new-feature new-feature
+
+# All git worktree add flags are supported
+git wt add --detach hotfix HEAD~5        # Detached HEAD
+git wt add --lock -b wip wip-branch      # Locked worktree
+git wt add --quiet -b feature feature    # Suppress output
 ```
 
 ### Switch between worktrees
@@ -188,15 +193,15 @@ git wt list
 
 ## Commands
 
-| Command              | Description                                        |
-| -------------------- | -------------------------------------------------- |
-| `clone <url>`        | Clone repo with worktree structure                 |
-| `migrate`            | Convert existing repo to worktree structure        |
-| `add [branch]`       | Create new worktree (interactive if no args)       |
-| `remove [worktree]`  | Remove worktree and local branch                   |
-| `destroy [worktree]` | Remove worktree and delete local + remote branches |
-| `update` / `u`       | Fetch all and update default branch                |
-| `switch`             | Interactive worktree selection                     |
+| Command              | Description                                           |
+| -------------------- | ----------------------------------------------------- |
+| `clone <url>`        | Clone repo with worktree structure                    |
+| `migrate`            | Convert existing repo to worktree structure           |
+| `add [options] ...`  | Create new worktree (supports all git worktree flags) |
+| `remove [worktree]`  | Remove worktree and local branch                      |
+| `destroy [worktree]` | Remove worktree and delete local + remote branches    |
+| `update` / `u`       | Fetch all and update default branch                   |
+| `switch`             | Interactive worktree selection                        |
 
 All native `git worktree` commands (list, lock, unlock, move, prune, repair) are
 also supported as pass-through.

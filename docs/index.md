@@ -84,15 +84,15 @@ repo/
 
 ## Commands
 
-| Command              | Description                                        |
-| -------------------- | -------------------------------------------------- |
-| `clone <url>`        | Clone repo with worktree structure                 |
-| `migrate`            | Convert existing repo to worktree structure        |
-| `add [branch]`       | Create new worktree (interactive if no args)       |
-| `remove [worktree]`  | Remove worktree and local branch                   |
-| `destroy [worktree]` | Remove worktree and delete local + remote branches |
-| `update`             | Fetch all and update default branch                |
-| `switch`             | Interactive worktree selection                     |
+| Command              | Description                                           |
+| -------------------- | ----------------------------------------------------- |
+| `clone <url>`        | Clone repo with worktree structure                    |
+| `migrate`            | Convert existing repo to worktree structure           |
+| `add [options] ...`  | Create new worktree (supports all git worktree flags) |
+| `remove [worktree]`  | Remove worktree and local branch                      |
+| `destroy [worktree]` | Remove worktree and delete local + remote branches    |
+| `update`             | Fetch all and update default branch                   |
+| `switch`             | Interactive worktree selection                        |
 
 All native `git worktree` commands (list, lock, unlock, move, prune, repair) are also supported as pass-through.
 

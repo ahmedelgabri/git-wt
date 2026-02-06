@@ -787,20 +787,35 @@ add)
 
 			Usage:
 			  git wt add                              Interactive mode (fzf)
-			  git wt add <path> <commit-ish>          Create worktree from branch
-			  git wt add -b <branch> <path>           Create new branch and worktree
+			  git wt add [options] <path> [<commit-ish>]
 
 			Options:
-			  -b <branch>     Create new branch
-			  -B <branch>     Create/reset branch
-			  --help, -h      Show this help message
+			  All git worktree add options are supported:
+			    -f, --force       Checkout even if already checked out elsewhere
+			    -b <branch>       Create new branch
+			    -B <branch>       Create or reset branch
+			    -d, --detach      Detach HEAD at named commit
+			    --checkout        Populate the new working tree (default)
+			    --no-checkout     Don't populate the new working tree
+			    --lock            Keep the new working tree locked
+			    --reason <str>    Reason for locking
+			    -q, --quiet       Suppress progress reporting
+			    --track           Set up tracking mode
+			    --guess-remote    Match new branch name with remote-tracking branch
+			    --orphan          Create unborn branch
+			    --relative-paths  Use relative paths for worktrees
+			    --help, -h        Show this help message
 
 			Examples:
 			  git wt add                               # Interactive selection
 			  git wt add feature origin/feature        # From remote branch
 			  git wt add -b new-feature new-feature    # New branch
+			  git wt add --detach hotfix HEAD~5        # Detached HEAD worktree
+			  git wt add --lock --reason "WIP" feature # Locked worktree
 
-			Note: Always fetches from origin to ensure up-to-date refs
+			Note: Always fetches from origin to ensure up-to-date refs.
+			      When using -b/-B, upstream tracking is set automatically if
+			      the branch exists on origin.
 		EOF
 		exit 0
 	fi
@@ -884,14 +899,13 @@ add)
 		exit $WORKTREE_ADD_EXIT
 	fi
 
-	# Arguments provided - proceed with normal argument parsing
+	# Arguments provided - pass through to git worktree add
+	# We capture -b/-B branch name for upstream tracking setup
 	BRANCH=""
 	ARGS=()
 
-	# Parse arguments
-	# Supports standard git worktree add flags
-	# -b <branch>: Create new branch (standard git flag)
-	# -B <branch>: Create/reset branch (standard git flag)
+	# Parse arguments, capturing branch name while passing everything through
+	# Flags that take arguments: -b, -B, --reason
 	while [[ $# -gt 0 ]]; do
 		case $1 in
 		-b | -B)
@@ -900,7 +914,22 @@ add)
 			ARGS+=("$1" "$2")
 			shift 2
 			;;
+		--reason)
+			# --reason takes an argument
+			ARGS+=("$1" "$2")
+			shift 2
+			;;
+		--reason=*)
+			# --reason=<string> form
+			ARGS+=("$1")
+			shift
+			;;
 		*)
+			# All other flags and arguments pass through as-is
+			# This includes: -f, --force, --no-force, -d, --detach, --no-detach,
+			# --checkout, --no-checkout, --lock, --no-lock, -q, --quiet, --no-quiet,
+			# --track, --no-track, --guess-remote, --no-guess-remote, --orphan,
+			# --no-orphan, --relative-paths, --no-relative-paths, <path>, <commit-ish>
 			ARGS+=("$1")
 			shift
 			;;
@@ -1453,6 +1482,7 @@ lock | unlock | move | prune | repair)
 			git-wt add [options] [<path>] [<commit-ish>]
 			    Create a new worktree (enhanced wrapper around git worktree add)
 			    Always fetches latest refs from origin before creating worktree
+			    Supports ALL git worktree add flags (run 'git wt add --help' for full list)
 
 			    Interactive mode (no arguments):
 			      git wt add
@@ -1462,10 +1492,12 @@ lock | unlock | move | prune | repair)
 			          - Option to create new branch with custom name and path
 			          - Automatically sets up upstream tracking
 
-			    Standard git worktree flags:
+			    Common flags:
 			      -b <branch>     Create new branch
 			      -B <branch>     Create/reset branch
-			      All other git worktree add flags are supported
+			      -d, --detach    Detach HEAD at named commit
+			      --lock          Keep the new working tree locked
+			      -q, --quiet     Suppress progress reporting
 
 			    Upstream tracking:
 			      - Automatically sets upstream when using -b if branch exists on origin

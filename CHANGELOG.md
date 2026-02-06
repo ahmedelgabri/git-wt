@@ -15,6 +15,12 @@ and this project adheres to
 - lefthook pre-commit hooks for shellcheck and shfmt
 - CHANGELOG.md for tracking changes
 
+### Changed
+
+- `add` command now supports all `git worktree add` flags (`--detach`, `--lock`,
+  `--reason`, `--quiet`, `--force`, `--no-checkout`, `--track`, `--guess-remote`,
+  `--orphan`, `--relative-paths`, and their negated forms)
+
 ## [0.1.0] - 2024-01-01
 
 ### Added
