@@ -63,7 +63,9 @@ _git-wt() {
                         '(-h --help)'{-h,--help}'[Show help]'
                     ;;
                 lock|unlock|move|prune|repair)
-                    _arguments '*:worktree:__git_wt_worktrees'
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        '*:worktree:__git_wt_worktrees'
                     ;;
             esac
             ;;

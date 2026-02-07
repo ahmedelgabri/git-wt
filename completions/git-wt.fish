@@ -85,8 +85,13 @@ complete -c git-wt -n '__fish_git_wt_using_command list' -s h -l help -d 'Show h
 complete -c git-wt -n '__fish_git_wt_using_command migrate' -s h -l help -d 'Show help'
 
 # lock/unlock/move/prune/repair completions
+complete -c git-wt -n '__fish_git_wt_using_command lock' -s h -l help -d 'Show help'
 complete -c git-wt -n '__fish_git_wt_using_command lock' -xa '(__fish_git_wt_worktrees)'
+complete -c git-wt -n '__fish_git_wt_using_command unlock' -s h -l help -d 'Show help'
 complete -c git-wt -n '__fish_git_wt_using_command unlock' -xa '(__fish_git_wt_worktrees)'
+complete -c git-wt -n '__fish_git_wt_using_command move' -s h -l help -d 'Show help'
 complete -c git-wt -n '__fish_git_wt_using_command move' -xa '(__fish_git_wt_worktrees)'
+complete -c git-wt -n '__fish_git_wt_using_command prune' -s h -l help -d 'Show help'
 complete -c git-wt -n '__fish_git_wt_using_command prune' -xa '(__fish_git_wt_worktrees)'
+complete -c git-wt -n '__fish_git_wt_using_command repair' -s h -l help -d 'Show help'
 complete -c git-wt -n '__fish_git_wt_using_command repair' -xa '(__fish_git_wt_worktrees)'

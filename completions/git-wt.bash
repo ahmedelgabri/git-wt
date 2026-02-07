@@ -18,9 +18,10 @@ _git_wt() {
 
 	case "$cmd" in
 	clone)
-		# clone takes a URL and optional folder name
-		# No completion for URLs, but complete local paths for folder name
-		if [[ $cword -eq 3 ]]; then
+		if [[ $cur == -* ]]; then
+			COMPREPLY=($(compgen -W "--help -h" -- "$cur"))
+		elif [[ $cword -eq 3 ]]; then
+			# No completion for URLs, but complete local paths for folder name
 			_filedir -d
 		fi
 		;;
@@ -71,10 +72,14 @@ _git_wt() {
 		fi
 		;;
 	lock | unlock | move | prune | repair)
-		# Pass-through commands - complete with worktree paths
-		local worktrees
-		worktrees=$(git worktree list --porcelain 2>/dev/null | grep '^worktree ' | sed 's/^worktree //' | grep -v '\.bare$')
-		COMPREPLY=($(compgen -W "$worktrees" -- "$cur"))
+		if [[ $cur == -* ]]; then
+			COMPREPLY=($(compgen -W "--help -h" -- "$cur"))
+		else
+			# Pass-through commands - complete with worktree paths
+			local worktrees
+			worktrees=$(git worktree list --porcelain 2>/dev/null | grep '^worktree ' | sed 's/^worktree //' | grep -v '\.bare$')
+			COMPREPLY=($(compgen -W "$worktrees" -- "$cur"))
+		fi
 		;;
 	esac
 }
