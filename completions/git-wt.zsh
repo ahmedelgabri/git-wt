@@ -1,4 +1,5 @@
 #compdef git-wt
+#description Git worktree management tool
 
 _git-wt() {
     local -a commands
