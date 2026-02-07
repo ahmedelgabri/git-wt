@@ -23,6 +23,7 @@ _git-wt() {
     )
 
     _arguments -C \
+        '(- *)'{-h,--help}'[Show help]' \
         '1: :->command' \
         '*:: :->args'
 

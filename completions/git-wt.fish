@@ -26,6 +26,9 @@ function __fish_git_wt_all_branches
     git branch -a --format='%(refname:short)' 2>/dev/null | string replace 'origin/' '' | sort -u
 end
 
+# Top-level flags
+complete -c git-wt -n __fish_git_wt_needs_command -s h -l help -d 'Show help'
+
 # Main commands
 complete -c git-wt -n __fish_git_wt_needs_command -a clone -d 'Clone a repository with worktree structure'
 complete -c git-wt -n __fish_git_wt_needs_command -a migrate -d 'Migrate an existing repository to use worktrees'

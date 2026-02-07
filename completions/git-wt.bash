@@ -6,7 +6,11 @@ _git_wt() {
 	local commands="clone migrate add remove rm destroy update u switch list lock unlock move prune repair help"
 
 	if [[ $cword -eq 1 ]]; then
-		COMPREPLY=($(compgen -W "$commands" -- "$cur"))
+		if [[ $cur == -* ]]; then
+			COMPREPLY=($(compgen -W "--help -h" -- "$cur"))
+		else
+			COMPREPLY=($(compgen -W "$commands" -- "$cur"))
+		fi
 		return
 	fi
 
