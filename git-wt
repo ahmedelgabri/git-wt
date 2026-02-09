@@ -135,35 +135,37 @@ get_worktree_list() {
 format_worktree_for_display() {
 	# Convert "path:branch:head" format to display format for fzf
 	# Input: /path/to/worktree:branch-name:abc1234
-	# Output: /path/to/worktree abc1234 [branch-name]
+	# Output: workspace [branch-name]\t\e[2m~/path/to/worktree\e[0m
 	local entry=$1
 	local wt_path="${entry%%:*}"
 	local rest="${entry#*:}"
 	local branch="${rest%%:*}"
-	local commit="${rest##*:}"
-
-	# Fallback if commit is empty
-	[[ -z $commit ]] && commit="??????"
+	local workspace="${wt_path##*/}"
+	local display_path="${wt_path/#$HOME/\~}"
 
 	if [[ -n $branch && $branch != "(detached)" ]]; then
-		printf "%s %s [%s]\n" "$wt_path" "$commit" "$branch"
+		printf "%s [%s]\t\033[2m%s\033[0m\n" "$workspace" "$branch" "$display_path"
 	else
-		printf "%s %s (detached HEAD)\n" "$wt_path" "$commit"
+		printf "%s (detached HEAD)\t\033[2m%s\033[0m\n" "$workspace" "$display_path"
 	fi
 }
 
 extract_path_from_display_line() {
-	# Extract worktree path from display format line
-	# The path is the first whitespace-separated field
-	echo "${1%% *}"
+	# Extract worktree path from tab-delimited display format line
+	# Format: workspace [branch]\t\e[2m~/path\e[0m
+	local path_field="${1#*	}"
+	# Strip ANSI escape codes
+	path_field=$(printf '%s' "$path_field" | sed $'s/\033\\[[0-9;]*m//g')
+	# Expand ~ back to $HOME
+	echo "${path_field/#\~/$HOME}"
 }
 
 extract_branch_from_display_line() {
-	# Extract branch name from display format line
-	# Format: /path/to/worktree abc123 [branch-name]
-	local line=$1
+	# Extract branch name from tab-delimited display format line
+	# Format: workspace [branch-name]\t\e[2m~/path\e[0m
+	local first_field="${1%%	*}"
 
-	if [[ $line =~ \[([^\]]+)\]$ ]]; then
+	if [[ $first_field =~ \[([^\]]+)\] ]]; then
 		echo "${BASH_REMATCH[1]}"
 	else
 		echo ""
@@ -259,13 +261,17 @@ Local branches will also be deleted (remote branches preserved)"
 	SELECTED=$(
 		echo "$WORKTREE_LIST" | fzf \
 			--multi \
+			--ansi \
+			--delimiter=$'\t' \
+			--nth=1 \
+			--tabstop=4 \
 			--prompt="$prompt" \
 			--height=60% \
 			--border \
 			--header="$header" \
 			--preview="
-				WORKTREE_PATH=\$(echo {} | awk '{print \$1}')
-				BRANCH=\$(echo {} | sed -E 's/.*\[([^]]+)\].*/\1/')
+				WORKTREE_PATH=\$(echo {} | sed -E 's/.*\t//' | sed $'s/\033\\\[[0-9;]*m//g' | sed \"s|^~|\$HOME|\")
+				BRANCH=\$(echo {} | sed -E 's/\t.*//' | sed -E 's/.*\[([^]]+)\].*/\1/')
 
 				$preview_extra
 				echo \"\"
@@ -1410,12 +1416,16 @@ switch)
 
 	SELECTED=$(
 		echo "$WORKTREE_LIST" | fzf \
+			--ansi \
+			--delimiter=$'\t' \
+			--nth=1 \
+			--tabstop=4 \
 			--prompt="Switch to worktree: " \
 			--height=60% \
 			--border \
 			--preview="
-				WORKTREE_PATH=\$(echo {} | awk '{print \$1}')
-				BRANCH=\$(echo {} | sed -E 's/.*\[([^]]+)\].*/\1/')
+				WORKTREE_PATH=\$(echo {} | sed -E 's/.*\t//' | sed $'s/\033\\\[[0-9;]*m//g' | sed \"s|^~|\$HOME|\")
+				BRANCH=\$(echo {} | sed -E 's/\t.*//' | sed -E 's/.*\[([^]]+)\].*/\1/')
 
 				echo \"Worktree: \$WORKTREE_PATH\"
 				echo \"Branch: \$BRANCH\"
