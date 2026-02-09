@@ -90,3 +90,48 @@ teardown() {
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/dirty-wt"
 }
+
+@test "remove: resolves worktree by workspace name" {
+	init_repo myrepo
+	cd myrepo
+	create_worktree ../bex-1697 bex-1697
+
+	run "$GIT_WT" remove bex-1697
+	[ "$status" -eq 0 ]
+	assert_worktree_not_exists "$TEST_DIR/bex-1697"
+	assert_branch_not_exists "bex-1697"
+}
+
+@test "remove: resolves worktree by relative path" {
+	init_repo myrepo
+	cd myrepo
+	create_worktree ../rel-path-test rel-path-test
+
+	run "$GIT_WT" remove ../rel-path-test
+	[ "$status" -eq 0 ]
+	assert_worktree_not_exists "$TEST_DIR/rel-path-test"
+	assert_branch_not_exists "rel-path-test"
+}
+
+@test "remove: resolves multiple worktrees by name" {
+	init_repo myrepo
+	cd myrepo
+	create_worktree ../name-one name-one
+	create_worktree ../name-two name-two
+
+	run "$GIT_WT" remove name-one name-two
+	[ "$status" -eq 0 ]
+	assert_worktree_not_exists "$TEST_DIR/name-one"
+	assert_worktree_not_exists "$TEST_DIR/name-two"
+}
+
+@test "remove: invalid name lists available worktrees" {
+	init_repo myrepo
+	cd myrepo
+	create_worktree ../some-wt some-wt
+
+	run "$GIT_WT" remove no-such-wt
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Available worktrees:"* ]]
+	[[ "$output" == *"some-wt"* ]]
+}

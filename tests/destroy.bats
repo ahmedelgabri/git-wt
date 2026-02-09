@@ -103,3 +103,14 @@ teardown() {
 	assert_worktree_not_exists "$TEST_DIR/destroy-one"
 	assert_worktree_not_exists "$TEST_DIR/destroy-two"
 }
+
+@test "destroy: resolves worktree by workspace name" {
+	init_repo myrepo
+	cd myrepo
+	create_worktree ../destroy-by-name destroy-by-name
+
+	echo "y" | "$GIT_WT" destroy destroy-by-name
+
+	assert_worktree_not_exists "$TEST_DIR/destroy-by-name"
+	assert_branch_not_exists "destroy-by-name"
+}
