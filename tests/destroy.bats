@@ -114,3 +114,37 @@ teardown() {
 	assert_worktree_not_exists "$TEST_DIR/destroy-by-name"
 	assert_branch_not_exists "destroy-by-name"
 }
+
+@test "destroy: resolves worktree by relative path" {
+	init_repo myrepo
+	cd myrepo
+	create_worktree ../destroy-rel destroy-rel
+
+	echo "y" | "$GIT_WT" destroy ../destroy-rel
+
+	assert_worktree_not_exists "$TEST_DIR/destroy-rel"
+	assert_branch_not_exists "destroy-rel"
+}
+
+@test "destroy: resolves multiple worktrees by name" {
+	init_repo myrepo
+	cd myrepo
+	create_worktree ../dest-name-one dest-name-one
+	create_worktree ../dest-name-two dest-name-two
+
+	echo "y" | "$GIT_WT" destroy dest-name-one dest-name-two
+
+	assert_worktree_not_exists "$TEST_DIR/dest-name-one"
+	assert_worktree_not_exists "$TEST_DIR/dest-name-two"
+}
+
+@test "destroy: invalid name lists available worktrees" {
+	init_repo myrepo
+	cd myrepo
+	create_worktree ../some-dest some-dest
+
+	run "$GIT_WT" destroy no-such-wt
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Available worktrees:"* ]]
+	[[ "$output" == *"some-dest"* ]]
+}
