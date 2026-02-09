@@ -62,7 +62,7 @@ chmod +x ~/.local/bin/git-wt
 # Clone with worktree structure
 git wt clone https://github.com/user/repo.git
 
-# Migrate existing repo
+# Migrate existing repo (experimental)
 git wt migrate
 
 # Create new worktree (interactive)
@@ -88,15 +88,15 @@ repo/
 
 ## Commands
 
-| Command              | Description                                           |
-| -------------------- | ----------------------------------------------------- |
-| `clone <url>`        | Clone repo with worktree structure                    |
-| `migrate`            | Convert existing repo to worktree structure           |
-| `add [options] ...`  | Create new worktree (supports all git worktree flags) |
-| `remove [worktree]`  | Remove worktree and local branch                      |
-| `destroy [worktree]` | Remove worktree and delete local + remote branches    |
-| `update`             | Fetch all and update default branch                   |
-| `switch`             | Interactive worktree selection                        |
+| Command              | Description                                                |
+| -------------------- | ---------------------------------------------------------- |
+| `clone <url>`        | Clone repo with worktree structure                         |
+| `migrate`            | Convert existing repo to worktree structure (experimental) |
+| `add [options] ...`  | Create new worktree (supports all git worktree flags)      |
+| `remove [worktree]`  | Remove worktree and local branch                           |
+| `destroy [worktree]` | Remove worktree and delete local + remote branches         |
+| `update`             | Fetch all and update default branch                        |
+| `switch`             | Interactive worktree selection                             |
 
 All native `git worktree` commands (list, lock, unlock, move, prune, repair) are also supported as pass-through.
 

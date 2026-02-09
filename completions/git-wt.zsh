@@ -5,7 +5,7 @@ _git-wt() {
     local -a commands
     commands=(
         'clone:Clone a repository with worktree structure'
-        'migrate:Migrate an existing repository to use worktrees'
+        'migrate:Migrate an existing repository to use worktrees (experimental)'
         'add:Create a new worktree'
         'remove:Remove worktree(s) and delete local branch(es)'
         'rm:Remove worktree(s) and delete local branch(es)'

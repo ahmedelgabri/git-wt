@@ -128,7 +128,7 @@ repo/
 └── main/          # Worktree for default branch
 ```
 
-### Migrate an existing repository
+### Migrate an existing repository (Experimental)
 
 ```bash
 cd existing-repo
@@ -201,15 +201,15 @@ git wt list
 
 ## Commands
 
-| Command              | Description                                           |
-| -------------------- | ----------------------------------------------------- |
-| `clone <url>`        | Clone repo with worktree structure                    |
-| `migrate`            | Convert existing repo to worktree structure           |
-| `add [options] ...`  | Create new worktree (supports all git worktree flags) |
-| `remove [worktree]`  | Remove worktree and local branch                      |
-| `destroy [worktree]` | Remove worktree and delete local + remote branches    |
-| `update` / `u`       | Fetch all and update default branch                   |
-| `switch`             | Interactive worktree selection                        |
+| Command              | Description                                                |
+| -------------------- | ---------------------------------------------------------- |
+| `clone <url>`        | Clone repo with worktree structure                         |
+| `migrate`            | Convert existing repo to worktree structure (experimental) |
+| `add [options] ...`  | Create new worktree (supports all git worktree flags)      |
+| `remove [worktree]`  | Remove worktree and local branch                           |
+| `destroy [worktree]` | Remove worktree and delete local + remote branches         |
+| `update` / `u`       | Fetch all and update default branch                        |
+| `switch`             | Interactive worktree selection                             |
 
 All native `git worktree` commands (list, lock, unlock, move, prune, repair) are
 also supported as pass-through.

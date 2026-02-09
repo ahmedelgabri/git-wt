@@ -31,7 +31,7 @@ complete -c git-wt -n __fish_git_wt_needs_command -s h -l help -d 'Show help'
 
 # Main commands
 complete -c git-wt -n __fish_git_wt_needs_command -a clone -d 'Clone a repository with worktree structure'
-complete -c git-wt -n __fish_git_wt_needs_command -a migrate -d 'Migrate an existing repository to use worktrees'
+complete -c git-wt -n __fish_git_wt_needs_command -a migrate -d 'Migrate an existing repository to use worktrees (experimental)'
 complete -c git-wt -n __fish_git_wt_needs_command -a add -d 'Create a new worktree'
 complete -c git-wt -n __fish_git_wt_needs_command -a remove -d 'Remove worktree(s) and delete local branch(es)'
 complete -c git-wt -n __fish_git_wt_needs_command -a rm -d 'Remove worktree(s) and delete local branch(es)'
