@@ -70,8 +70,38 @@ init_bare_repo() {
 		cd "$dirname" || exit 1
 		command git init --quiet --bare .bare
 		echo "gitdir: ./.bare" >.git
+		command git config core.bare false
 		command git config user.email "test@test.com"
 		command git config user.name "Test User"
+		command git commit --quiet --allow-empty -m "initial commit"
+	)
+}
+
+# Initialize a bare repo with a local "remote" (git-wt style)
+# Usage: init_bare_repo_with_remote [dirname]
+# Creates both the bare repo and a bare "origin" to simulate remote operations
+init_bare_repo_with_remote() {
+	local dirname="${1:-myrepo}"
+
+	# Create a bare repo to act as origin
+	mkdir -p "${dirname}-origin"
+	(
+		cd "${dirname}-origin" || exit 1
+		command git init --quiet --bare
+	)
+
+	# Create the bare repo and link to origin
+	mkdir -p "$dirname"
+	(
+		cd "$dirname" || exit 1
+		command git init --quiet --bare .bare
+		echo "gitdir: ./.bare" >.git
+		command git config core.bare false
+		command git config user.email "test@test.com"
+		command git config user.name "Test User"
+		command git remote add origin "../${dirname}-origin"
+		command git commit --quiet --allow-empty -m "initial commit"
+		command git push --quiet -u origin HEAD 2>/dev/null || true
 	)
 }
 

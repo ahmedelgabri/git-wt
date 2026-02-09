@@ -11,17 +11,17 @@ teardown() {
 }
 
 @test "add: creates worktree with new branch using -b flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add -b feature-x ../feature-x
+	run "$GIT_WT" add -b feature-x feature-x
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/feature-x"
+	assert_worktree_exists "$TEST_DIR/myrepo/feature-x"
 	assert_branch_exists "feature-x"
 }
 
 @test "add: creates worktree from remote branch" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 	# Create a branch on origin
 	command git checkout -b develop --quiet
@@ -30,33 +30,33 @@ teardown() {
 	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
 
 	# Path is relative to current directory
-	run "$GIT_WT" add ../develop origin/develop
+	run "$GIT_WT" add develop origin/develop
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/develop"
+	assert_worktree_exists "$TEST_DIR/myrepo/develop"
 }
 
 @test "add: fails when branch already exists" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 	command git branch existing-branch --quiet
 
-	run "$GIT_WT" add -b existing-branch ../existing
+	run "$GIT_WT" add -b existing-branch existing
 	[ "$status" -ne 0 ]
 }
 
 @test "add: succeeds when worktree path is existing empty dir" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
-	mkdir "$TEST_DIR/existing-dir"
+	mkdir "$TEST_DIR/myrepo/existing-dir"
 
 	# git worktree add succeeds with an existing empty directory
-	run "$GIT_WT" add -b new-branch "$TEST_DIR/existing-dir"
+	run "$GIT_WT" add -b new-branch "$TEST_DIR/myrepo/existing-dir"
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/existing-dir"
+	assert_worktree_exists "$TEST_DIR/myrepo/existing-dir"
 }
 
 @test "add: --help shows usage" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --help
@@ -65,7 +65,7 @@ teardown() {
 }
 
 @test "add: fails without remote configured" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" add feature-test
@@ -74,88 +74,88 @@ teardown() {
 }
 
 @test "add: handles branch names with slashes" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add -b feature/nested/branch ../feature-nested
+	run "$GIT_WT" add -b feature/nested/branch feature-nested
 	[ "$status" -eq 0 ]
 	assert_branch_exists "feature/nested/branch"
 }
 
 @test "add: supports --detach flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add --detach ../detached-wt HEAD
+	run "$GIT_WT" add --detach detached-wt HEAD
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/detached-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/detached-wt"
 	# Verify it's actually detached
 	local head_status
-	head_status=$(command git -C "$TEST_DIR/detached-wt" symbolic-ref HEAD 2>&1 || true)
+	head_status=$(command git -C "$TEST_DIR/myrepo/detached-wt" symbolic-ref HEAD 2>&1 || true)
 	[[ "$head_status" == *"not a symbolic ref"* ]]
 }
 
 @test "add: supports -d short flag for detach" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add -d ../detached-wt HEAD
+	run "$GIT_WT" add -d detached-wt HEAD
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/detached-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/detached-wt"
 }
 
 @test "add: supports --quiet flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add --quiet -b quiet-branch ../quiet-wt
+	run "$GIT_WT" add --quiet -b quiet-branch quiet-wt
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/quiet-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/quiet-wt"
 	assert_branch_exists "quiet-branch"
 }
 
 @test "add: supports -q short flag for quiet" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add -q -b quiet-branch ../quiet-wt
+	run "$GIT_WT" add -q -b quiet-branch quiet-wt
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/quiet-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/quiet-wt"
 }
 
 @test "add: supports --lock flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add --lock -b locked-branch ../locked-wt
+	run "$GIT_WT" add --lock -b locked-branch locked-wt
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/locked-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/locked-wt"
 	# Verify it's locked (trying to remove should fail)
-	run command git worktree remove "$TEST_DIR/locked-wt"
+	run command git worktree remove "$TEST_DIR/myrepo/locked-wt"
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"locked"* ]]
 }
 
 @test "add: supports --lock with --reason flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add --lock --reason "work in progress" -b locked-reason ../locked-reason-wt
+	run "$GIT_WT" add --lock --reason "work in progress" -b locked-reason locked-reason-wt
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/locked-reason-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/locked-reason-wt"
 }
 
 @test "add: supports --reason=value syntax" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add --lock --reason="WIP feature" -b locked-eq ../locked-eq-wt
+	run "$GIT_WT" add --lock --reason="WIP feature" -b locked-eq locked-eq-wt
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/locked-eq-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/locked-eq-wt"
 }
 
 @test "add: supports --force flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	# Create a branch that's already checked out
@@ -163,54 +163,54 @@ teardown() {
 	command git checkout - --quiet
 
 	# Without --force this would fail if branch is dirty, but with --force it proceeds
-	run "$GIT_WT" add --force ../force-wt force-test
+	run "$GIT_WT" add --force force-wt force-test
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/force-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/force-wt"
 }
 
 @test "add: supports -f short flag for force" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	command git checkout -b force-test-short --quiet
 	command git checkout - --quiet
 
-	run "$GIT_WT" add -f ../force-wt-short force-test-short
+	run "$GIT_WT" add -f force-wt-short force-test-short
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/force-wt-short"
+	assert_worktree_exists "$TEST_DIR/myrepo/force-wt-short"
 }
 
 @test "add: supports --no-checkout flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add --no-checkout -b no-checkout-branch ../no-checkout-wt
+	run "$GIT_WT" add --no-checkout -b no-checkout-branch no-checkout-wt
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/no-checkout-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/no-checkout-wt"
 	# Directory should exist but be mostly empty (no working tree files)
-	[ -d "$TEST_DIR/no-checkout-wt" ]
+	[ -d "$TEST_DIR/myrepo/no-checkout-wt" ]
 }
 
 @test "add: supports multiple flags combined" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	run "$GIT_WT" add --quiet --lock -b multi-flag ../multi-flag-wt
+	run "$GIT_WT" add --quiet --lock -b multi-flag multi-flag-wt
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/multi-flag-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/multi-flag-wt"
 	assert_branch_exists "multi-flag"
 }
 
 @test "add: supports -B flag to reset branch" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	# Create branch first
 	command git branch reset-branch --quiet
 
 	# -B should reset it
-	run "$GIT_WT" add -B reset-branch ../reset-wt
+	run "$GIT_WT" add -B reset-branch reset-wt
 	[ "$status" -eq 0 ]
-	assert_worktree_exists "$TEST_DIR/reset-wt"
+	assert_worktree_exists "$TEST_DIR/myrepo/reset-wt"
 	assert_branch_exists "reset-branch"
 }
