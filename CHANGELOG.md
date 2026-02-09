@@ -8,6 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- `migrate` command is now marked as experimental
+
 ### Added
 
 - GitHub Actions CI workflow with shellcheck, shfmt, and nix build verification
