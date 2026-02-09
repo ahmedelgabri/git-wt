@@ -93,12 +93,50 @@ load_worktree_cache() {
 	WORKTREE_CACHE_LOADED=true
 }
 
+resolve_worktree_path() {
+	# Resolve a user-provided worktree identifier to a full cached path
+	# Accepts: full path, workspace name (basename), or relative path
+	# Args: $1 = user-provided worktree identifier
+	# Prints resolved full path on success, nothing on failure
+	load_worktree_cache
+	local i input=$1
+
+	# Exact match against cached paths
+	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
+		if [[ ${WORKTREE_CACHE_PATHS[$i]} == "$input" ]]; then
+			echo "$input"
+			return 0
+		fi
+	done
+
+	# Workspace name match (compare basename of cached paths)
+	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
+		if [[ ${WORKTREE_CACHE_PATHS[$i]##*/} == "$input" ]]; then
+			echo "${WORKTREE_CACHE_PATHS[$i]}"
+			return 0
+		fi
+	done
+
+	# Realpath match (resolve relative/symlinked paths)
+	local resolved
+	resolved=$(realpath "$input" 2>/dev/null) || return 1
+	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
+		if [[ ${WORKTREE_CACHE_PATHS[$i]} == "$resolved" ]]; then
+			echo "$resolved"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
 get_worktree_branch() {
 	# Get the branch name for a given worktree path
-	# Args: $1 = worktree path
+	# Args: $1 = worktree path (accepts name, relative path, or full path)
 	# Returns: branch name or empty if detached/not found
 	load_worktree_cache
-	local i path=$1
+	local i path
+	path=$(resolve_worktree_path "$1") || path=$1
 	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
 		if [[ ${WORKTREE_CACHE_PATHS[$i]} == "$path" ]]; then
 			echo "${WORKTREE_CACHE_BRANCHES[$i]}"
@@ -109,16 +147,17 @@ get_worktree_branch() {
 }
 
 validate_worktree() {
-	# Check if a path is a valid worktree
-	# Args: $1 = worktree path
+	# Check if a path is a valid worktree (accepts name, relative path, or full path)
+	# Args: $1 = worktree identifier
 	load_worktree_cache
-	local i path=$1
+	if resolve_worktree_path "$1" >/dev/null; then
+		return 0
+	fi
+	echo "Error: '$1' is not a valid worktree. Available worktrees:" >&2
+	local i
 	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
-		if [[ ${WORKTREE_CACHE_PATHS[$i]} == "$path" ]]; then
-			return 0
-		fi
+		echo "  ${WORKTREE_CACHE_PATHS[$i]##*/}" >&2
 	done
-	echo "Error: '$1' is not a valid worktree" >&2
 	return 1
 }
 
@@ -1083,11 +1122,12 @@ remove | rm)
 	FAILED_COUNT=0
 	SUCCESS_COUNT=0
 
-	# Validate all worktree paths first
-	for WORKTREE_PATH in "${WORKTREE_ARGS[@]}"; do
-		if ! validate_worktree "$WORKTREE_PATH"; then
+	# Validate and resolve all worktree paths first
+	for i in "${!WORKTREE_ARGS[@]}"; do
+		if ! validate_worktree "${WORKTREE_ARGS[i]}"; then
 			exit 1
 		fi
+		WORKTREE_ARGS[i]=$(resolve_worktree_path "${WORKTREE_ARGS[i]}")
 	done
 
 	# Show what will be removed in dry-run mode
@@ -1267,11 +1307,12 @@ destroy)
 	FAILED_COUNT=0
 	SUCCESS_COUNT=0
 
-	# Validate all worktree paths first
-	for WORKTREE_PATH in "${WORKTREE_ARGS[@]}"; do
-		if ! validate_worktree "$WORKTREE_PATH"; then
+	# Validate and resolve all worktree paths first
+	for i in "${!WORKTREE_ARGS[@]}"; do
+		if ! validate_worktree "${WORKTREE_ARGS[i]}"; then
 			exit 1
 		fi
+		WORKTREE_ARGS[i]=$(resolve_worktree_path "${WORKTREE_ARGS[i]}")
 	done
 
 	# Show what will be destroyed in dry-run mode
