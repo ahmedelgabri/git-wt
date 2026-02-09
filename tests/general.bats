@@ -77,9 +77,9 @@ teardown() {
 @test "edge: worktree cache is populated correctly" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../wt-one wt-one
-	create_worktree ../wt-two wt-two
-	create_worktree ../wt-three wt-three
+	create_worktree wt-one wt-one
+	create_worktree wt-two wt-two
+	create_worktree wt-three wt-three
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
@@ -95,7 +95,7 @@ teardown() {
 	cd myrepo
 	local sha
 	sha=$(command git rev-parse HEAD)
-	command git worktree add --detach ../detached-wt "$sha" --quiet
+	command git worktree add --detach detached-wt "$sha" --quiet
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]

@@ -23,8 +23,8 @@ teardown() {
 @test "list: shows multiple worktrees" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../feature-a feature-a
-	create_worktree ../feature-b feature-b
+	create_worktree feature-a feature-a
+	create_worktree feature-b feature-b
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
@@ -57,7 +57,7 @@ teardown() {
 	cd myrepo
 	local sha
 	sha=$(command git rev-parse HEAD)
-	command git worktree add --detach ../detached "$sha" --quiet
+	command git worktree add --detach detached "$sha" --quiet
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]

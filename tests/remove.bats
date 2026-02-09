@@ -13,24 +13,24 @@ teardown() {
 @test "remove: removes worktree by path and deletes branch" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../feature-to-remove feature-to-remove
+	create_worktree feature-to-remove feature-to-remove
 
-	run "$GIT_WT" remove "$TEST_DIR/feature-to-remove"
+	run "$GIT_WT" remove "$TEST_DIR/myrepo/feature-to-remove"
 	[ "$status" -eq 0 ]
-	assert_worktree_not_exists "$TEST_DIR/feature-to-remove"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature-to-remove"
 	assert_branch_not_exists "feature-to-remove"
 }
 
 @test "remove: handles multiple worktrees" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../wt-one wt-one
-	create_worktree ../wt-two wt-two
+	create_worktree wt-one wt-one
+	create_worktree wt-two wt-two
 
-	run "$GIT_WT" remove "$TEST_DIR/wt-one" "$TEST_DIR/wt-two"
+	run "$GIT_WT" remove "$TEST_DIR/myrepo/wt-one" "$TEST_DIR/myrepo/wt-two"
 	[ "$status" -eq 0 ]
-	assert_worktree_not_exists "$TEST_DIR/wt-one"
-	assert_worktree_not_exists "$TEST_DIR/wt-two"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/wt-one"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/wt-two"
 }
 
 @test "remove: fails for invalid worktree path" {
@@ -61,74 +61,74 @@ teardown() {
 @test "remove: alias 'rm' works" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../to-rm to-rm
+	create_worktree to-rm to-rm
 
-	run "$GIT_WT" rm "$TEST_DIR/to-rm"
+	run "$GIT_WT" rm "$TEST_DIR/myrepo/to-rm"
 	[ "$status" -eq 0 ]
-	assert_worktree_not_exists "$TEST_DIR/to-rm"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/to-rm"
 }
 
 @test "remove: --dry-run shows what would be removed" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../dry-run-test dry-run-test
+	create_worktree dry-run-test dry-run-test
 
-	run "$GIT_WT" remove --dry-run "$TEST_DIR/dry-run-test"
+	run "$GIT_WT" remove --dry-run "$TEST_DIR/myrepo/dry-run-test"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN"* ]] || [[ "$output" == *"dry"* ]]
 	# Worktree should still exist
-	assert_worktree_exists "$TEST_DIR/dry-run-test"
+	assert_worktree_exists "$TEST_DIR/myrepo/dry-run-test"
 }
 
 @test "remove: removes worktree with uncommitted changes (force)" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../dirty-wt dirty-wt
-	echo "uncommitted change" > "$TEST_DIR/dirty-wt/dirty.txt"
+	create_worktree dirty-wt dirty-wt
+	echo "uncommitted change" > "$TEST_DIR/myrepo/dirty-wt/dirty.txt"
 
-	run "$GIT_WT" remove "$TEST_DIR/dirty-wt"
+	run "$GIT_WT" remove "$TEST_DIR/myrepo/dirty-wt"
 	[ "$status" -eq 0 ]
-	assert_worktree_not_exists "$TEST_DIR/dirty-wt"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/dirty-wt"
 }
 
 @test "remove: resolves worktree by workspace name" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../bex-1697 bex-1697
+	create_worktree bex-1697 bex-1697
 
 	run "$GIT_WT" remove bex-1697
 	[ "$status" -eq 0 ]
-	assert_worktree_not_exists "$TEST_DIR/bex-1697"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/bex-1697"
 	assert_branch_not_exists "bex-1697"
 }
 
 @test "remove: resolves worktree by relative path" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../rel-path-test rel-path-test
+	create_worktree rel-path-test rel-path-test
 
-	run "$GIT_WT" remove ../rel-path-test
+	run "$GIT_WT" remove ./rel-path-test
 	[ "$status" -eq 0 ]
-	assert_worktree_not_exists "$TEST_DIR/rel-path-test"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/rel-path-test"
 	assert_branch_not_exists "rel-path-test"
 }
 
 @test "remove: resolves multiple worktrees by name" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../name-one name-one
-	create_worktree ../name-two name-two
+	create_worktree name-one name-one
+	create_worktree name-two name-two
 
 	run "$GIT_WT" remove name-one name-two
 	[ "$status" -eq 0 ]
-	assert_worktree_not_exists "$TEST_DIR/name-one"
-	assert_worktree_not_exists "$TEST_DIR/name-two"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/name-one"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/name-two"
 }
 
 @test "remove: invalid name lists available worktrees" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../some-wt some-wt
+	create_worktree some-wt some-wt
 
 	run "$GIT_WT" remove no-such-wt
 	[ "$status" -ne 0 ]

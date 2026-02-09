@@ -13,37 +13,37 @@ teardown() {
 @test "destroy: removes worktree and deletes local branch with confirmation" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../feature-destroy feature-destroy
+	create_worktree feature-destroy feature-destroy
 
 	# Destroy requires 'y' confirmation
-	echo "y" | "$GIT_WT" destroy "$TEST_DIR/feature-destroy"
+	echo "y" | "$GIT_WT" destroy "$TEST_DIR/myrepo/feature-destroy"
 
-	assert_worktree_not_exists "$TEST_DIR/feature-destroy"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature-destroy"
 	assert_branch_not_exists "feature-destroy"
 }
 
 @test "destroy: --dry-run shows what would be destroyed" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../dry-run-destroy dry-run-destroy
+	create_worktree dry-run-destroy dry-run-destroy
 
-	run "$GIT_WT" destroy --dry-run "$TEST_DIR/dry-run-destroy"
+	run "$GIT_WT" destroy --dry-run "$TEST_DIR/myrepo/dry-run-destroy"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN"* ]]
 	# Worktree should still exist
-	assert_worktree_exists "$TEST_DIR/dry-run-destroy"
+	assert_worktree_exists "$TEST_DIR/myrepo/dry-run-destroy"
 	assert_branch_exists "dry-run-destroy"
 }
 
 @test "destroy: -n is alias for --dry-run" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../dry-run-n dry-run-n
+	create_worktree dry-run-n dry-run-n
 
-	run "$GIT_WT" destroy -n "$TEST_DIR/dry-run-n"
+	run "$GIT_WT" destroy -n "$TEST_DIR/myrepo/dry-run-n"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN"* ]]
-	assert_worktree_exists "$TEST_DIR/dry-run-n"
+	assert_worktree_exists "$TEST_DIR/myrepo/dry-run-n"
 }
 
 @test "destroy: fails for invalid worktree path" {
@@ -57,13 +57,13 @@ teardown() {
 @test "destroy: can be cancelled" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../cancel-destroy cancel-destroy
+	create_worktree cancel-destroy cancel-destroy
 
 	# Answer 'n' to cancel - exits with non-zero but that's expected
-	echo "n" | "$GIT_WT" destroy "$TEST_DIR/cancel-destroy" || true
+	echo "n" | "$GIT_WT" destroy "$TEST_DIR/myrepo/cancel-destroy" || true
 
 	# Worktree should still exist
-	assert_worktree_exists "$TEST_DIR/cancel-destroy"
+	assert_worktree_exists "$TEST_DIR/myrepo/cancel-destroy"
 	assert_branch_exists "cancel-destroy"
 }
 
@@ -80,68 +80,68 @@ teardown() {
 @test "destroy: attempts to delete remote branch" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	create_worktree ../feature-remote feature-remote
+	create_worktree feature-remote feature-remote
 	# Push the branch to origin
 	command git push -u origin feature-remote --quiet 2>/dev/null || true
 
 	# Destroy with confirmation
-	echo "y" | "$GIT_WT" destroy "$TEST_DIR/feature-remote"
+	echo "y" | "$GIT_WT" destroy "$TEST_DIR/myrepo/feature-remote"
 
-	assert_worktree_not_exists "$TEST_DIR/feature-remote"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature-remote"
 	assert_branch_not_exists "feature-remote"
 }
 
 @test "destroy: handles multiple worktrees" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../destroy-one destroy-one
-	create_worktree ../destroy-two destroy-two
+	create_worktree destroy-one destroy-one
+	create_worktree destroy-two destroy-two
 
 	# Destroy multiple requires 'y' confirmation
-	echo "y" | "$GIT_WT" destroy "$TEST_DIR/destroy-one" "$TEST_DIR/destroy-two"
+	echo "y" | "$GIT_WT" destroy "$TEST_DIR/myrepo/destroy-one" "$TEST_DIR/myrepo/destroy-two"
 
-	assert_worktree_not_exists "$TEST_DIR/destroy-one"
-	assert_worktree_not_exists "$TEST_DIR/destroy-two"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/destroy-one"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/destroy-two"
 }
 
 @test "destroy: resolves worktree by workspace name" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../destroy-by-name destroy-by-name
+	create_worktree destroy-by-name destroy-by-name
 
 	echo "y" | "$GIT_WT" destroy destroy-by-name
 
-	assert_worktree_not_exists "$TEST_DIR/destroy-by-name"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/destroy-by-name"
 	assert_branch_not_exists "destroy-by-name"
 }
 
 @test "destroy: resolves worktree by relative path" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../destroy-rel destroy-rel
+	create_worktree destroy-rel destroy-rel
 
-	echo "y" | "$GIT_WT" destroy ../destroy-rel
+	echo "y" | "$GIT_WT" destroy ./destroy-rel
 
-	assert_worktree_not_exists "$TEST_DIR/destroy-rel"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/destroy-rel"
 	assert_branch_not_exists "destroy-rel"
 }
 
 @test "destroy: resolves multiple worktrees by name" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../dest-name-one dest-name-one
-	create_worktree ../dest-name-two dest-name-two
+	create_worktree dest-name-one dest-name-one
+	create_worktree dest-name-two dest-name-two
 
 	echo "y" | "$GIT_WT" destroy dest-name-one dest-name-two
 
-	assert_worktree_not_exists "$TEST_DIR/dest-name-one"
-	assert_worktree_not_exists "$TEST_DIR/dest-name-two"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/dest-name-one"
+	assert_worktree_not_exists "$TEST_DIR/myrepo/dest-name-two"
 }
 
 @test "destroy: invalid name lists available worktrees" {
 	init_bare_repo myrepo
 	cd myrepo
-	create_worktree ../some-dest some-dest
+	create_worktree some-dest some-dest
 
 	run "$GIT_WT" destroy no-such-wt
 	[ "$status" -ne 0 ]
