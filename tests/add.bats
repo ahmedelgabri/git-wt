@@ -214,3 +214,69 @@ teardown() {
 	assert_worktree_exists "$TEST_DIR/reset-wt"
 	assert_branch_exists "reset-branch"
 }
+
+# Smart default tests: single name with no branch flags
+
+@test "add: single name creates new branch when none exists" {
+	init_repo_with_remote myrepo
+	cd myrepo
+
+	run "$GIT_WT" add feature-new
+	[ "$status" -eq 0 ]
+	assert_branch_exists "feature-new"
+	assert_worktree_exists "$TEST_DIR/myrepo/feature-new"
+	[[ "$output" == *"Creating new branch 'feature-new'"* ]]
+}
+
+@test "add: single name checks out existing local branch" {
+	init_repo_with_remote myrepo
+	cd myrepo
+	command git branch existing-local --quiet
+
+	run "$GIT_WT" add existing-local
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/existing-local"
+	[[ "$output" == *"Found existing branch 'existing-local'"* ]]
+}
+
+@test "add: single name checks out remote branch and sets upstream" {
+	init_repo_with_remote myrepo
+	cd myrepo
+
+	# Create a branch on origin only (no local branch)
+	command git checkout -b remote-only --quiet
+	create_commit "remote-only.txt"
+	command git push --quiet -u origin remote-only
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D remote-only --quiet
+
+	run "$GIT_WT" add remote-only
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/remote-only"
+	[[ "$output" == *"Found remote branch 'origin/remote-only'"* ]]
+	[[ "$output" == *"Setting upstream to origin/remote-only"* ]]
+}
+
+@test "add: two positional args pass through without smart default" {
+	init_repo_with_remote myrepo
+	cd myrepo
+
+	# Create a branch to check out (main is already checked out)
+	command git branch passthrough-branch --quiet
+
+	run "$GIT_WT" add ../passthrough-wt passthrough-branch
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/passthrough-wt"
+}
+
+@test "add: -b flag bypasses smart default" {
+	init_repo_with_remote myrepo
+	cd myrepo
+
+	run "$GIT_WT" add -b explicit-branch ../explicit-wt
+	[ "$status" -eq 0 ]
+	assert_branch_exists "explicit-branch"
+	assert_worktree_exists "$TEST_DIR/explicit-wt"
+	# Should NOT show smart default messages
+	[[ "$output" != *"Creating new branch 'explicit-branch'"* ]]
+}

@@ -793,7 +793,13 @@ add)
 
 			Usage:
 			  git wt add                              Interactive mode (fzf)
+			  git wt add <name>                       Smart default (see below)
 			  git wt add [options] <path> [<commit-ish>]
+
+			Smart default (single name, no branch flags):
+			  When called with a single name and no -b, -B, -d, --detach, or --orphan:
+			    - If the branch exists locally or on origin, checks it out
+			    - Otherwise, creates a new branch with that name
 
 			Options:
 			  All git worktree add options are supported:
@@ -814,14 +820,15 @@ add)
 
 			Examples:
 			  git wt add                               # Interactive selection
-			  git wt add feature origin/feature        # From remote branch
-			  git wt add -b new-feature new-feature    # New branch
+			  git wt add my-feature                    # Create new branch (or checkout existing)
+			  git wt add feature origin/feature        # From remote branch (passthrough)
+			  git wt add -b new-feature new-feature    # Explicit new branch
 			  git wt add --detach hotfix HEAD~5        # Detached HEAD worktree
 			  git wt add --lock --reason "WIP" feature # Locked worktree
 
 			Note: Always fetches from origin to ensure up-to-date refs.
-			      When using -b/-B, upstream tracking is set automatically if
-			      the branch exists on origin.
+			      Upstream tracking is set automatically when the branch exists
+			      on origin.
 		EOF
 		exit 0
 	fi
@@ -909,6 +916,8 @@ add)
 	# We capture -b/-B branch name for upstream tracking setup
 	BRANCH=""
 	ARGS=()
+	HAS_BRANCH_FLAG=false
+	POSITIONAL_ARGS=()
 
 	# Parse arguments, capturing branch name while passing everything through
 	# Flags that take arguments: -b, -B, --reason
@@ -917,8 +926,14 @@ add)
 		-b | -B)
 			# Capture branch name for upstream tracking
 			BRANCH=$2
+			HAS_BRANCH_FLAG=true
 			ARGS+=("$1" "$2")
 			shift 2
+			;;
+		-d | --detach | --orphan)
+			HAS_BRANCH_FLAG=true
+			ARGS+=("$1")
+			shift
 			;;
 		--reason)
 			# --reason takes an argument
@@ -930,20 +945,67 @@ add)
 			ARGS+=("$1")
 			shift
 			;;
-		*)
-			# All other flags and arguments pass through as-is
-			# This includes: -f, --force, --no-force, -d, --detach, --no-detach,
+		-*)
+			# All other flags pass through as-is
+			# This includes: -f, --force, --no-force, --no-detach,
 			# --checkout, --no-checkout, --lock, --no-lock, -q, --quiet, --no-quiet,
-			# --track, --no-track, --guess-remote, --no-guess-remote, --orphan,
-			# --no-orphan, --relative-paths, --no-relative-paths, <path>, <commit-ish>
+			# --track, --no-track, --guess-remote, --no-guess-remote,
+			# --no-orphan, --relative-paths, --no-relative-paths
+			ARGS+=("$1")
+			shift
+			;;
+		*)
+			# Positional arguments: <path>, <commit-ish>
+			POSITIONAL_ARGS+=("$1")
 			ARGS+=("$1")
 			shift
 			;;
 		esac
 	done
 
-	# Create the worktree
-	# Pass all collected arguments to git worktree add
+	# When a single name is given with no branch flags, default to creating
+	# a new branch -- or check out an existing one if it already exists
+	if [[ ${#POSITIONAL_ARGS[@]} -eq 1 ]] && [[ $HAS_BRANCH_FLAG == false ]]; then
+		NAME="${POSITIONAL_ARGS[0]}"
+
+		if $CMD rev-parse --verify "$NAME" >/dev/null 2>&1; then
+			# Local branch exists
+			echo "Found existing branch '$NAME', checking out..."
+			$CMD worktree add "$NAME"
+			WORKTREE_ADD_EXIT=$?
+			if [[ $WORKTREE_ADD_EXIT -eq 0 ]] && $CMD rev-parse --verify "origin/$NAME" >/dev/null 2>&1; then
+				echo "Setting upstream to origin/$NAME"
+				$CMD branch --set-upstream-to="origin/$NAME" "$NAME"
+			fi
+			exit $WORKTREE_ADD_EXIT
+		elif $CMD rev-parse --verify "origin/$NAME" >/dev/null 2>&1; then
+			# Remote branch exists but no local branch -- create local branch from remote
+			echo "Found remote branch 'origin/$NAME', checking out..."
+			$CMD worktree add -b "$NAME" "$NAME" "origin/$NAME"
+			WORKTREE_ADD_EXIT=$?
+			if [[ $WORKTREE_ADD_EXIT -eq 0 ]]; then
+				echo "Setting upstream to origin/$NAME"
+				$CMD branch --set-upstream-to="origin/$NAME" "$NAME"
+			fi
+			exit $WORKTREE_ADD_EXIT
+		else
+			# No existing branch -- create a new one
+			echo "Creating new branch '$NAME'..."
+			$CMD worktree add -b "$NAME" "$NAME"
+			WORKTREE_ADD_EXIT=$?
+			if [[ $WORKTREE_ADD_EXIT -eq 0 ]]; then
+				cat <<-EOF
+
+					Branch '$NAME' created locally.
+					To push and set upstream:
+					  git push -u origin $NAME
+				EOF
+			fi
+			exit $WORKTREE_ADD_EXIT
+		fi
+	fi
+
+	# Multiple positional args or explicit branch flags -- pass through as-is
 	$CMD worktree add "${ARGS[@]}"
 	WORKTREE_ADD_EXIT=$?
 
@@ -951,7 +1013,7 @@ add)
 	if [[ $WORKTREE_ADD_EXIT -eq 0 ]] && [[ -n $BRANCH ]]; then
 		# Set upstream tracking if the branch exists on origin
 		# This enables git push/pull without specifying remote/branch
-		if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+		if $CMD rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
 			echo "Setting upstream to origin/$BRANCH"
 			$CMD branch --set-upstream-to="origin/$BRANCH" "$BRANCH"
 		else
@@ -1489,10 +1551,16 @@ lock | unlock | move | prune | repair)
 			    Preserves: uncommitted changes, staged changes, untracked files, and stashes
 			    Must be run from within the repository to migrate
 
-			git-wt add [options] [<path>] [<commit-ish>]
+			git-wt add [options] [<name>] [<commit-ish>]
 			    Create a new worktree (enhanced wrapper around git worktree add)
 			    Always fetches latest refs from origin before creating worktree
 			    Supports ALL git worktree add flags (run 'git wt add --help' for full list)
+
+			    Smart default (single name, no branch flags):
+			      git wt add <name>
+			          If branch exists locally or on origin, checks it out
+			          Otherwise, creates a new branch with that name
+			          Automatically sets up upstream tracking when applicable
 
 			    Interactive mode (no arguments):
 			      git wt add
@@ -1510,7 +1578,7 @@ lock | unlock | move | prune | repair)
 			      -q, --quiet     Suppress progress reporting
 
 			    Upstream tracking:
-			      - Automatically sets upstream when using -b if branch exists on origin
+			      - Automatically sets upstream when branch exists on origin
 			      - Always sets upstream in interactive mode
 			      - Provides helpful push instructions for new local branches
 
@@ -1518,14 +1586,14 @@ lock | unlock | move | prune | repair)
 			      git wt add
 			          Interactive mode - select branch with fzf
 
+			      git wt add my-feature
+			          Create new branch 'my-feature' (or checkout if it exists)
+
 			      git wt add feature origin/feature
-			          Create worktree from remote branch
+			          Create worktree from remote branch (passthrough)
 
 			      git wt add -b new-feature new-feature
-			          Create new branch and worktree
-
-			      git wt add existing-branch
-			          Create worktree from existing local branch
+			          Explicit new branch and worktree
 
 			git-wt remove|rm [options] [<worktree>...]
 			    Remove worktree(s) and delete local branch(es)
