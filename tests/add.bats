@@ -11,7 +11,7 @@ teardown() {
 }
 
 @test "add: creates worktree with new branch using -b flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add -b feature-x ../feature-x
@@ -21,7 +21,7 @@ teardown() {
 }
 
 @test "add: creates worktree from remote branch" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 	# Create a branch on origin
 	command git checkout -b develop --quiet
@@ -36,7 +36,7 @@ teardown() {
 }
 
 @test "add: fails when branch already exists" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 	command git branch existing-branch --quiet
 
@@ -45,7 +45,7 @@ teardown() {
 }
 
 @test "add: succeeds when worktree path is existing empty dir" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 	mkdir "$TEST_DIR/existing-dir"
 
@@ -56,7 +56,7 @@ teardown() {
 }
 
 @test "add: --help shows usage" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --help
@@ -65,7 +65,7 @@ teardown() {
 }
 
 @test "add: fails without remote configured" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" add feature-test
@@ -74,7 +74,7 @@ teardown() {
 }
 
 @test "add: handles branch names with slashes" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add -b feature/nested/branch ../feature-nested
@@ -83,7 +83,7 @@ teardown() {
 }
 
 @test "add: supports --detach flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --detach ../detached-wt HEAD
@@ -96,7 +96,7 @@ teardown() {
 }
 
 @test "add: supports -d short flag for detach" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add -d ../detached-wt HEAD
@@ -105,7 +105,7 @@ teardown() {
 }
 
 @test "add: supports --quiet flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --quiet -b quiet-branch ../quiet-wt
@@ -115,7 +115,7 @@ teardown() {
 }
 
 @test "add: supports -q short flag for quiet" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add -q -b quiet-branch ../quiet-wt
@@ -124,7 +124,7 @@ teardown() {
 }
 
 @test "add: supports --lock flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --lock -b locked-branch ../locked-wt
@@ -137,7 +137,7 @@ teardown() {
 }
 
 @test "add: supports --lock with --reason flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --lock --reason "work in progress" -b locked-reason ../locked-reason-wt
@@ -146,7 +146,7 @@ teardown() {
 }
 
 @test "add: supports --reason=value syntax" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --lock --reason="WIP feature" -b locked-eq ../locked-eq-wt
@@ -155,7 +155,7 @@ teardown() {
 }
 
 @test "add: supports --force flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	# Create a branch that's already checked out
@@ -169,7 +169,7 @@ teardown() {
 }
 
 @test "add: supports -f short flag for force" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	command git checkout -b force-test-short --quiet
@@ -181,7 +181,7 @@ teardown() {
 }
 
 @test "add: supports --no-checkout flag" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --no-checkout -b no-checkout-branch ../no-checkout-wt
@@ -192,7 +192,7 @@ teardown() {
 }
 
 @test "add: supports multiple flags combined" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add --quiet --lock -b multi-flag ../multi-flag-wt
@@ -202,7 +202,7 @@ teardown() {
 }
 
 @test "add: supports -B flag to reset branch" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	# Create branch first

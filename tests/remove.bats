@@ -11,7 +11,7 @@ teardown() {
 }
 
 @test "remove: removes worktree by path and deletes branch" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../feature-to-remove feature-to-remove
 
@@ -22,7 +22,7 @@ teardown() {
 }
 
 @test "remove: handles multiple worktrees" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../wt-one wt-one
 	create_worktree ../wt-two wt-two
@@ -34,7 +34,7 @@ teardown() {
 }
 
 @test "remove: fails for invalid worktree path" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" remove "$TEST_DIR/nonexistent"
@@ -42,7 +42,7 @@ teardown() {
 }
 
 @test "remove: fails when trying to remove current worktree" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" remove "$TEST_DIR/myrepo"
@@ -50,7 +50,7 @@ teardown() {
 }
 
 @test "remove: --help shows usage" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" remove --help
@@ -59,7 +59,7 @@ teardown() {
 }
 
 @test "remove: alias 'rm' works" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../to-rm to-rm
 
@@ -69,7 +69,7 @@ teardown() {
 }
 
 @test "remove: --dry-run shows what would be removed" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../dry-run-test dry-run-test
 
@@ -81,7 +81,7 @@ teardown() {
 }
 
 @test "remove: removes worktree with uncommitted changes (force)" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../dirty-wt dirty-wt
 	echo "uncommitted change" > "$TEST_DIR/dirty-wt/dirty.txt"
@@ -92,7 +92,7 @@ teardown() {
 }
 
 @test "remove: resolves worktree by workspace name" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../bex-1697 bex-1697
 
@@ -103,7 +103,7 @@ teardown() {
 }
 
 @test "remove: resolves worktree by relative path" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../rel-path-test rel-path-test
 
@@ -114,7 +114,7 @@ teardown() {
 }
 
 @test "remove: resolves multiple worktrees by name" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../name-one name-one
 	create_worktree ../name-two name-two
@@ -126,7 +126,7 @@ teardown() {
 }
 
 @test "remove: invalid name lists available worktrees" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../some-wt some-wt
 

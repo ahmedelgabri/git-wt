@@ -11,7 +11,7 @@ teardown() {
 }
 
 @test "update: --help shows usage" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" update --help
@@ -21,7 +21,7 @@ teardown() {
 }
 
 @test "update: alias 'u' works with --help" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" u --help
@@ -30,7 +30,7 @@ teardown() {
 }
 
 @test "update: fails gracefully without remote" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" update

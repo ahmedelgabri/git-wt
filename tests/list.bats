@@ -10,8 +10,8 @@ teardown() {
 	teardown_test_env
 }
 
-@test "list: shows single worktree in standard repo" {
-	init_repo myrepo
+@test "list: shows single worktree in bare repo" {
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" list
@@ -21,7 +21,7 @@ teardown() {
 }
 
 @test "list: shows multiple worktrees" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../feature-a feature-a
 	create_worktree ../feature-b feature-b
@@ -53,7 +53,7 @@ teardown() {
 }
 
 @test "list: shows detached HEAD worktrees" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	local sha
 	sha=$(command git rev-parse HEAD)
@@ -70,7 +70,7 @@ teardown() {
 }
 
 @test "list: --help shows usage" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" list --help

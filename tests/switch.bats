@@ -11,7 +11,7 @@ teardown() {
 }
 
 @test "switch: --help shows usage" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" switch --help

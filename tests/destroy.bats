@@ -11,7 +11,7 @@ teardown() {
 }
 
 @test "destroy: removes worktree and deletes local branch with confirmation" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../feature-destroy feature-destroy
 
@@ -23,7 +23,7 @@ teardown() {
 }
 
 @test "destroy: --dry-run shows what would be destroyed" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../dry-run-destroy dry-run-destroy
 
@@ -36,7 +36,7 @@ teardown() {
 }
 
 @test "destroy: -n is alias for --dry-run" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../dry-run-n dry-run-n
 
@@ -47,7 +47,7 @@ teardown() {
 }
 
 @test "destroy: fails for invalid worktree path" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" destroy "$TEST_DIR/nonexistent"
@@ -55,7 +55,7 @@ teardown() {
 }
 
 @test "destroy: can be cancelled" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../cancel-destroy cancel-destroy
 
@@ -68,7 +68,7 @@ teardown() {
 }
 
 @test "destroy: --help shows usage" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" destroy --help
@@ -78,7 +78,7 @@ teardown() {
 }
 
 @test "destroy: attempts to delete remote branch" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 	create_worktree ../feature-remote feature-remote
 	# Push the branch to origin
@@ -92,7 +92,7 @@ teardown() {
 }
 
 @test "destroy: handles multiple worktrees" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../destroy-one destroy-one
 	create_worktree ../destroy-two destroy-two
@@ -105,7 +105,7 @@ teardown() {
 }
 
 @test "destroy: resolves worktree by workspace name" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../destroy-by-name destroy-by-name
 
@@ -116,7 +116,7 @@ teardown() {
 }
 
 @test "destroy: resolves worktree by relative path" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../destroy-rel destroy-rel
 
@@ -127,7 +127,7 @@ teardown() {
 }
 
 @test "destroy: resolves multiple worktrees by name" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../dest-name-one dest-name-one
 	create_worktree ../dest-name-two dest-name-two
@@ -139,7 +139,7 @@ teardown() {
 }
 
 @test "destroy: invalid name lists available worktrees" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../some-dest some-dest
 

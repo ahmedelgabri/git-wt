@@ -31,7 +31,7 @@ teardown() {
 }
 
 @test "general: unknown command shows error" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" nonexistent-command
@@ -46,7 +46,7 @@ teardown() {
 }
 
 @test "error: add fails with invalid base branch" {
-	init_repo_with_remote myrepo
+	init_bare_repo_with_remote myrepo
 	cd myrepo
 
 	run "$GIT_WT" add nonexistent origin/nonexistent
@@ -66,7 +66,7 @@ teardown() {
 }
 
 @test "edge: handles paths with spaces" {
-	init_repo "repo with spaces"
+	init_bare_repo "repo with spaces"
 	cd "repo with spaces"
 
 	run "$GIT_WT" list
@@ -75,7 +75,7 @@ teardown() {
 }
 
 @test "edge: worktree cache is populated correctly" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	create_worktree ../wt-one wt-one
 	create_worktree ../wt-two wt-two
@@ -91,7 +91,7 @@ teardown() {
 }
 
 @test "edge: detached HEAD worktree handling" {
-	init_repo myrepo
+	init_bare_repo myrepo
 	cd myrepo
 	local sha
 	sha=$(command git rev-parse HEAD)
