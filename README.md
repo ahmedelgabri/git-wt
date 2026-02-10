@@ -39,7 +39,7 @@ different directories. This is useful for:
 
 ## Dependencies
 
-- `git` (2.7+ for worktree support)
+- `git` (2.48.0+ for relative worktree support)
 - `fzf` (optional, for interactive commands)
 
 ## Installation
@@ -151,9 +151,9 @@ git wt add feature origin/feature
 git wt add -b new-feature new-feature
 
 # All git worktree add flags are supported
-git wt add --detach hotfix HEAD~5        # Detached HEAD
-git wt add --lock -b wip wip-branch      # Locked worktree
-git wt add --quiet -b feature feature    # Suppress output
+git wt add --detach hotfix HEAD~5     # Detached HEAD
+git wt add --lock -b wip wip-branch   # Locked worktree
+git wt add --quiet -b feature feature # Suppress output
 ```
 
 ### Switch between worktrees
