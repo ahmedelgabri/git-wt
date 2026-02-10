@@ -1081,6 +1081,11 @@ remove | rm)
 		check_fzf_dependency
 		SELECTED=$(select_worktrees_interactive "remove")
 
+		# User cancelled fzf
+		if [[ -z $SELECTED ]]; then
+			exit 0
+		fi
+
 		# Parse selected worktrees into arrays
 		parse_selected_worktrees "$SELECTED"
 		WORKTREES_TO_REMOVE=("${WORKTREE_PATHS[@]}")
@@ -1241,6 +1246,11 @@ destroy)
 	if [[ ${#WORKTREE_ARGS[@]} -eq 0 ]]; then
 		check_fzf_dependency
 		SELECTED=$(select_worktrees_interactive "destroy")
+
+		# User cancelled fzf
+		if [[ -z $SELECTED ]]; then
+			exit 0
+		fi
 
 		# Parse selected worktrees into arrays
 		parse_selected_worktrees "$SELECTED"
