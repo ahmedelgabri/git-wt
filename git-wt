@@ -20,18 +20,38 @@ if [[ -z ${NO_COLOR-} ]]; then
 	GREEN=$'\033[32m'
 	RED=$'\033[31m'
 	YELLOW=$'\033[33m'
+	BOLD=$'\033[1m'
+	DIM=$'\033[2m'
 	RESET=$'\033[0m'
 else
 	GREEN=""
 	RED=""
 	YELLOW=""
+	BOLD=""
+	DIM=""
 	RESET=""
 fi
+
+error() {
+	echo "${RED}Error:${RESET} $*" >&2
+}
+
+warn() {
+	echo "${YELLOW}Warning:${RESET} $*"
+}
+
+info() {
+	echo "${GREEN}$*${RESET}"
+}
+
+success() {
+	echo "${GREEN}✓${RESET} $*"
+}
 
 # Check for required dependencies for interactive commands
 check_fzf_dependency() {
 	if ! command -v fzf >/dev/null 2>&1; then
-		echo "Error: fzf is required for interactive mode" >&2
+		error "fzf is required for interactive mode"
 		echo "Install fzf: https://github.com/junegunn/fzf" >&2
 		exit 1
 	fi
@@ -153,7 +173,7 @@ validate_worktree() {
 	if resolve_worktree_path "$1" >/dev/null; then
 		return 0
 	fi
-	echo "Error: '$1' is not a valid worktree. Available worktrees:" >&2
+	error "'$1' is not a valid worktree. Available worktrees:"
 	local i
 	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
 		echo "  ${WORKTREE_CACHE_PATHS[$i]##*/}" >&2
@@ -183,9 +203,9 @@ format_worktree_for_display() {
 	local display_path="${wt_path/#$HOME/\~}"
 
 	if [[ -n $branch && $branch != "(detached)" ]]; then
-		printf "%s [%s]\t\033[2m%s\033[0m\n" "$workspace" "$branch" "$display_path"
+		printf "%s [%s]\t%s%s%s\n" "$workspace" "$branch" "$DIM" "$display_path" "$RESET"
 	else
-		printf "%s (detached HEAD)\t\033[2m%s\033[0m\n" "$workspace" "$display_path"
+		printf "%s (detached HEAD)\t%s%s%s\n" "$workspace" "$DIM" "$display_path" "$RESET"
 	fi
 }
 
@@ -325,7 +345,6 @@ Local branches will also be deleted (remote branches preserved)"
 
 	# User cancelled
 	if [[ -z $SELECTED ]]; then
-		echo "Cancelled"
 		exit 0
 	fi
 
@@ -337,12 +356,12 @@ validate_branch_name() {
 	local branch_name=$1
 
 	if [[ -z $branch_name ]]; then
-		echo "Error: Branch name cannot be empty" >&2
+		error "Branch name cannot be empty"
 		return 1
 	fi
 
 	if ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
-		echo "Error: Invalid branch name '$branch_name'" >&2
+		error "Invalid branch name '$branch_name'"
 		return 1
 	fi
 
@@ -406,12 +425,12 @@ remove_single_worktree() {
 	local remove_exit=$?
 
 	if [[ $remove_exit -ne 0 ]]; then
-		echo "${failure_prefix}Failed to $action_noun worktree '$worktree_path'"
+		echo "${failure_prefix}${RED}Failed to $action_noun worktree '$worktree_path'${RESET}"
 		return 1
 	fi
 
 	if [[ -z $branch ]]; then
-		echo "${success_prefix}$action_verb worktree '$worktree_path'"
+		echo "${success_prefix}${GREEN}$action_verb worktree '$worktree_path'${RESET}"
 		return 0
 	fi
 
@@ -421,9 +440,9 @@ remove_single_worktree() {
 	if [[ $mode == "destroy" ]]; then
 		local remote_status
 		remote_status=$(delete_remote_branch "$branch")
-		echo "${success_prefix}$action_verb worktree '$worktree_path' and deleted branch '$branch' ($remote_status)"
+		echo "${success_prefix}${GREEN}$action_verb worktree '$worktree_path' and deleted branch '$branch' ($remote_status)${RESET}"
 	else
-		echo "${success_prefix}$action_verb worktree '$worktree_path' and deleted local branch '$branch'"
+		echo "${success_prefix}${GREEN}$action_verb worktree '$worktree_path' and deleted local branch '$branch'${RESET}"
 	fi
 
 	return 0
@@ -457,7 +476,7 @@ clone)
 
 	# Validate repository URL is provided
 	if [[ -z ${1-} ]]; then
-		echo "Error: Repository URL is required" >&2
+		error "Repository URL is required"
 		echo "Usage: git wt clone <repository-url> [folder-name]" >&2
 		exit 1
 	fi
@@ -467,24 +486,24 @@ clone)
 
 	# Check if directory already exists
 	if [[ -d $FOLDER_NAME ]]; then
-		echo "Error: Directory '$FOLDER_NAME' already exists" >&2
+		error "Directory '$FOLDER_NAME' already exists"
 		exit 1
 	fi
 
 	# Create directory with error handling
 	mkdir -p "$FOLDER_NAME" || {
-		echo "Error: Failed to create directory '$FOLDER_NAME'" >&2
+		error "Failed to create directory '$FOLDER_NAME'"
 		exit 1
 	}
 
 	cd "$FOLDER_NAME" || {
-		echo "Error: Failed to change to directory '$FOLDER_NAME'" >&2
+		error "Failed to change to directory '$FOLDER_NAME'"
 		exit 1
 	}
 
 	# Clone with error handling and cleanup on failure
 	$CMD clone --bare "$REPO_URL" .bare || {
-		echo "Error: Failed to clone repository" >&2
+		error "Failed to clone repository"
 		cd ..
 		rm -rf "$FOLDER_NAME"
 		exit 1
@@ -497,36 +516,36 @@ clone)
 	$CMD config worktree.useRelativePaths true
 
 	$CMD fetch --all || {
-		echo "Warning: Failed to fetch all branches"
+		warn "Failed to fetch all branches"
 	}
 
 	# Need to remove all local branches with invalid upstream refs
 	# See: https://stackoverflow.com/a/54408181/213124
 	$CMD for-each-ref --format='%(refname:short)' refs/heads | xargs $CMD branch -D 2>/dev/null || true
 
-	echo "Discovering default branch..."
+	info "Discovering default branch..."
 	default_branch=$(get_default_branch)
 
 	if [[ -z $default_branch ]]; then
-		echo "Warning: Could not discover default branch from remote"
+		warn "Could not discover default branch from remote"
 		echo "Available branches:"
 		git branch -r
-		printf "Enter default branch name (or press Enter to skip): "
+		printf "%sEnter default branch name (or press Enter to skip):%s " "$BOLD" "$RESET"
 		read -r default_branch
 	fi
 
 	if [[ -n $default_branch ]]; then
-		echo "Creating initial worktree for '$default_branch'..."
+		info "Creating initial worktree for '$default_branch'..."
 		$CMD worktree add -B "$default_branch" "$default_branch" "origin/$default_branch" || {
-			echo "Warning: Failed to create worktree for default branch"
+			warn "Failed to create worktree for default branch"
 		}
 	else
 		echo "No worktree created. Use 'git wt add' to create worktrees."
 	fi
 
+	echo ""
+	success "Repository cloned successfully"
 	cat <<-EOF
-
-		✓ Repository cloned successfully
 
 		Repository structure:
 		  $FOLDER_NAME/
@@ -552,7 +571,7 @@ migrate)
 
 	# Check if we're in a git repository
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
-		echo "Error: Not in a git repository" >&2
+		error "Not in a git repository"
 		exit 1
 	fi
 
@@ -565,7 +584,7 @@ migrate)
 	CURRENT_BRANCH=$(git branch --show-current)
 
 	if [[ -z $CURRENT_BRANCH ]]; then
-		echo "Error: Not on a branch (detached HEAD state). Please check out a branch first." >&2
+		error "Not on a branch (detached HEAD state). Please check out a branch first."
 		exit 1
 	fi
 
@@ -573,9 +592,9 @@ migrate)
 	REMOTE_URL=""
 	if git remote get-url origin >/dev/null 2>&1; then
 		REMOTE_URL=$(git remote get-url origin)
-		echo "Remote URL: $REMOTE_URL"
+		info "Remote URL: $REMOTE_URL"
 	else
-		echo "Warning: No remote 'origin' found"
+		warn "No remote 'origin' found"
 	fi
 
 	# Discover the default branch from remote
@@ -594,10 +613,10 @@ migrate)
 		done
 	fi
 
-	echo "Migrating repository: $REPO_NAME"
-	echo "Current branch: $CURRENT_BRANCH"
+	info "Migrating repository: $REPO_NAME"
+	info "Current branch: $CURRENT_BRANCH"
 	if [[ -n $DEFAULT_BRANCH ]]; then
-		echo "Default branch: $DEFAULT_BRANCH"
+		info "Default branch: $DEFAULT_BRANCH"
 	fi
 	echo ""
 
@@ -605,7 +624,7 @@ migrate)
 	HAS_CHANGES=false
 	if ! git diff-index --quiet HEAD -- 2>/dev/null; then
 		HAS_CHANGES=true
-		echo "Detected uncommitted changes - will preserve them in the new worktree"
+		info "Detected uncommitted changes - will preserve them in the new worktree"
 	fi
 
 	# Check if there are untracked files
@@ -615,19 +634,19 @@ migrate)
 	done < <(git ls-files --others --exclude-standard)
 
 	if [[ ${#UNTRACKED_FILES[@]} -gt 0 ]]; then
-		echo "Detected ${#UNTRACKED_FILES[@]} untracked file(s) - will preserve them"
+		info "Detected ${#UNTRACKED_FILES[@]} untracked file(s) - will preserve them"
 	fi
 
 	# Store stash count to migrate later
 	STASH_COUNT=$(git stash list | wc -l | tr -d ' ')
 	if [[ $STASH_COUNT -gt 0 ]]; then
-		echo "Detected $STASH_COUNT stash(es) - will migrate them"
+		info "Detected $STASH_COUNT stash(es) - will migrate them"
 	fi
 
 	echo ""
 
 	# Confirm with user
-	printf "This will restructure the repository. Continue? [y/N]: "
+	printf "⚠️  %sThis will restructure the repository. Continue? [y/N]:%s " "$YELLOW" "$RESET"
 	read -r CONFIRMATION
 
 	if [[ $CONFIRMATION != "y" ]]; then
@@ -656,12 +675,12 @@ migrate)
 	# Set trap to cleanup on interrupt or error
 	trap cleanup_migrate INT TERM
 
-	echo "Creating new repository structure..."
+	info "Creating new repository structure..."
 	mkdir -p "$NEW_STRUCTURE"
 	cd "$NEW_STRUCTURE"
 
 	# Clone the existing repo as bare into .bare
-	echo "Converting to bare repository..."
+	info "Converting to bare repository..."
 	$CMD clone --bare "$REPO_ROOT" .bare
 
 	# Create .git file pointing to .bare directory
@@ -672,7 +691,7 @@ migrate)
 	# Bare repos by default use a different fetch refspec ("+refs/*:refs/*")
 	# We need "+refs/heads/*:refs/remotes/origin/*" to properly track remote branches
 	# This ensures all remote branches are visible and can be checked out as worktrees
-	echo "Configuring bare repository..."
+	info "Configuring bare repository..."
 	$CMD config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
 
 	# Enable reflog in bare repository
@@ -686,7 +705,7 @@ migrate)
 
 	# Fetch all branches from remote if they exist
 	if git remote get-url origin >/dev/null 2>&1; then
-		echo "Fetching all branches from remote..."
+		info "Fetching all branches from remote..."
 		$CMD fetch --all
 	fi
 
@@ -699,14 +718,14 @@ migrate)
 	# When we clone from a local path, git sets origin to that local path
 	# We need to restore the original remote URL so fetch/push work correctly
 	if [ -n "$REMOTE_URL" ]; then
-		echo "Restoring remote URL..."
+		info "Restoring remote URL..."
 		$CMD remote set-url origin "$REMOTE_URL"
 	fi
 
 	# Migrate all stashes to the new bare repository
 	# Stashes are stored in refs/stash, and we need to copy them to the new bare repo
 	if [[ $STASH_COUNT -gt 0 ]]; then
-		echo "Migrating $STASH_COUNT stash(es)..."
+		info "Migrating $STASH_COUNT stash(es)..."
 		# Copy the stash ref and reflog from old repo to new bare repo
 		if [[ -f "$REPO_ROOT/.git/refs/stash" ]]; then
 			cp "$REPO_ROOT/.git/refs/stash" "$NEW_STRUCTURE/.bare/refs/stash"
@@ -721,23 +740,23 @@ migrate)
 	# If current branch is the default branch, only create one worktree
 	# Otherwise, create worktrees for both default and current branches
 	if [[ -n $DEFAULT_BRANCH ]] && [[ $DEFAULT_BRANCH == "$CURRENT_BRANCH" ]]; then
-		echo "Creating worktree for $CURRENT_BRANCH (default branch)..."
+		info "Creating worktree for $CURRENT_BRANCH (default branch)..."
 		git -C "$NEW_STRUCTURE" worktree add "$CURRENT_BRANCH" "$CURRENT_BRANCH"
 	else
 		# Create worktree for default branch first if it exists
 		if [[ -n $DEFAULT_BRANCH ]]; then
-			echo "Creating worktree for default branch: $DEFAULT_BRANCH"
+			info "Creating worktree for default branch: $DEFAULT_BRANCH"
 			git -C "$NEW_STRUCTURE" worktree add "$DEFAULT_BRANCH" "$DEFAULT_BRANCH"
 		fi
 
 		# Create worktree for current branch
-		echo "Creating worktree for current branch: $CURRENT_BRANCH"
+		info "Creating worktree for current branch: $CURRENT_BRANCH"
 		git -C "$NEW_STRUCTURE" worktree add "$CURRENT_BRANCH" "$CURRENT_BRANCH"
 	fi
 
 	# Restore the working directory state to match the original repo
 	# This includes ALL files on disk: tracked, modified, untracked, and gitignored
-	echo "Restoring working directory state..."
+	info "Restoring working directory state..."
 
 	# Copy all files from the original repo to preserve the exact state
 	# We use rsync to preserve file permissions, timestamps, and handle all edge cases
@@ -756,13 +775,13 @@ migrate)
 		cp "$REPO_ROOT/.git/index" "$NEW_STRUCTURE/.bare/worktrees/$CURRENT_BRANCH/index"
 	fi
 
-	echo "Working directory state restored (all files preserved)"
+	success "Working directory state restored (all files preserved)"
 
 	# Success - now replace the old repo with the new structure
 	# Move contents (not the directory itself) to preserve REPO_ROOT's inode,
 	# so any shell whose cwd is REPO_ROOT doesn't lose its working directory.
 	echo ""
-	echo "Finalizing migration..."
+	info "Finalizing migration..."
 
 	cd "$PARENT_DIR"
 	mkdir -p "$TEMP_BACKUP"
@@ -770,12 +789,12 @@ migrate)
 	(shopt -s dotglob && mv "$NEW_STRUCTURE"/* "$REPO_ROOT"/)
 	rmdir "$NEW_STRUCTURE"
 
-	echo "Cleaning up..."
+	info "Cleaning up..."
 	rm -rf "$TEMP_BACKUP"
 
+	echo ""
+	success "Migration complete!"
 	cat <<-EOF
-
-		✓ Migration complete!
 
 		Your repository structure is now:
 		  $REPO_ROOT/
@@ -795,19 +814,19 @@ migrate)
 	echo ""
 
 	if [[ -n $REMOTE_URL ]]; then
-		echo "✓ Remote URL preserved: $REMOTE_URL"
+		success "Remote URL preserved: $REMOTE_URL"
 	fi
 
 	if [[ $STASH_COUNT -gt 0 ]]; then
-		echo "✓ Migrated $STASH_COUNT stash(es)"
+		success "Migrated $STASH_COUNT stash(es)"
 	fi
 
 	if [[ $HAS_CHANGES == true ]]; then
-		echo "✓ Preserved uncommitted changes in $CURRENT_BRANCH/"
+		success "Preserved uncommitted changes in $CURRENT_BRANCH/"
 	fi
 
 	if [[ ${#UNTRACKED_FILES[@]} -gt 0 ]]; then
-		echo "✓ Preserved ${#UNTRACKED_FILES[@]} untracked file(s) in $CURRENT_BRANCH/"
+		success "Preserved ${#UNTRACKED_FILES[@]} untracked file(s) in $CURRENT_BRANCH/"
 	fi
 
 	cat <<-EOF
@@ -872,7 +891,7 @@ add)
 	fi
 
 	# Fetch latest remote branches to ensure we have up-to-date refs
-	echo "Fetching from origin..."
+	info "Fetching from origin..."
 	$CMD fetch origin --prune
 
 	# If no arguments provided, show interactive branch selector with fzf
@@ -908,20 +927,19 @@ add)
 
 		# User cancelled
 		if [[ -z $SELECTED ]]; then
-			echo "Cancelled"
 			exit 0
 		fi
 
 		# Handle "Create new branch" option
 		if [[ $SELECTED == "➕ Create new branch" ]]; then
-			printf "Enter new branch name: "
+			printf "%sEnter new branch name:%s " "$BOLD" "$RESET"
 			read -r NEW_BRANCH
 
 			if ! validate_branch_name "$NEW_BRANCH"; then
 				exit 1
 			fi
 
-			printf "Enter worktree path [default: %s]: " "$NEW_BRANCH"
+			printf "%sEnter worktree path [default: %s]:%s " "$BOLD" "$NEW_BRANCH" "$RESET"
 			read -r WORKTREE_PATH
 
 			# Default to branch name if no path provided
@@ -930,14 +948,14 @@ add)
 			fi
 
 			# Create new branch and worktree
-			echo "Creating new branch '$NEW_BRANCH' and worktree at '$WORKTREE_PATH'..."
+			info "Creating new branch '$NEW_BRANCH' and worktree at '$WORKTREE_PATH'..."
 			$CMD worktree add -b "$NEW_BRANCH" "$WORKTREE_PATH"
 			exit $?
 		fi
 
 		# Handle existing remote branch selection
 		# Create worktree from the selected remote branch
-		echo "Creating worktree for '$SELECTED' from origin/$SELECTED..."
+		info "Creating worktree for '$SELECTED' from origin/$SELECTED..."
 		$CMD worktree add "$SELECTED" "origin/$SELECTED"
 		WORKTREE_ADD_EXIT=$?
 
@@ -1073,7 +1091,7 @@ remove | rm)
 		if [[ $DRY_RUN == true ]]; then
 			echo "[DRY RUN] Would remove ${#WORKTREES_TO_REMOVE[@]} worktree(s):"
 		else
-			echo "About to remove ${#WORKTREES_TO_REMOVE[@]} worktree(s):"
+			info "About to remove ${#WORKTREES_TO_REMOVE[@]} worktree(s):"
 		fi
 		for i in "${!WORKTREES_TO_REMOVE[@]}"; do
 			echo "  [$((i + 1))] ${WORKTREES_TO_REMOVE[$i]} (branch: ${BRANCHES_TO_DELETE[$i]})"
@@ -1087,7 +1105,7 @@ remove | rm)
 			exit 0
 		fi
 
-		printf "Continue? [y/N]: "
+		printf "⚠️  %sContinue? [y/N]:%s " "$YELLOW" "$RESET"
 		read -r CONFIRMATION
 
 		if [[ $CONFIRMATION != "y" ]]; then
@@ -1104,9 +1122,9 @@ remove | rm)
 			WORKTREE_PATH="${WORKTREES_TO_REMOVE[$i]}"
 			BRANCH="${BRANCHES_TO_DELETE[$i]}"
 
-			echo "[$((i + 1))/${#WORKTREES_TO_REMOVE[@]}] Removing $WORKTREE_PATH..."
+			info "[$((i + 1))/${#WORKTREES_TO_REMOVE[@]}] Removing $WORKTREE_PATH..."
 
-			if remove_single_worktree "$WORKTREE_PATH" "$BRANCH" "remove" "  ✓ " "  ✗ "; then
+			if remove_single_worktree "$WORKTREE_PATH" "$BRANCH" "remove" "  ${GREEN}✓${RESET} " "  ${RED}✗${RESET} "; then
 				SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 			else
 				FAILED_COUNT=$((FAILED_COUNT + 1))
@@ -1114,7 +1132,7 @@ remove | rm)
 		done
 
 		echo ""
-		echo "Summary: $SUCCESS_COUNT succeeded, $FAILED_COUNT failed"
+		echo "Summary: ${GREEN}$SUCCESS_COUNT succeeded${RESET}, ${RED}$FAILED_COUNT failed${RESET}"
 
 		if [[ $FAILED_COUNT -gt 0 ]]; then
 			exit 1
@@ -1164,7 +1182,7 @@ remove | rm)
 
 	if [[ ${#WORKTREE_ARGS[@]} -gt 1 ]]; then
 		echo ""
-		echo "Summary: $SUCCESS_COUNT succeeded, $FAILED_COUNT failed"
+		echo "Summary: ${GREEN}$SUCCESS_COUNT succeeded${RESET}, ${RED}$FAILED_COUNT failed${RESET}"
 	fi
 
 	if [[ $FAILED_COUNT -gt 0 ]]; then
@@ -1234,7 +1252,7 @@ destroy)
 		if [[ $DRY_RUN == true ]]; then
 			echo "[DRY RUN] Would DESTROY ${#WORKTREES_TO_DESTROY[@]} worktree(s):"
 		else
-			echo "⚠️  WARNING: DESTRUCTIVE OPERATION"
+			echo "⚠️  ${RED}WARNING: DESTRUCTIVE OPERATION${RESET}"
 			echo ""
 			echo "About to DESTROY ${#WORKTREES_TO_DESTROY[@]} worktree(s):"
 		fi
@@ -1263,7 +1281,7 @@ destroy)
 		# For single selection, require exact branch name
 		# For multiple selections, use 'destroy' confirmation (typing multiple branch names would be tedious)
 		if [[ ${#WORKTREES_TO_DESTROY[@]} -eq 1 ]]; then
-			printf "Type the branch name to confirm: "
+			printf "⚠️  %sType the branch name to confirm:%s " "$YELLOW" "$RESET"
 			read -r CONFIRMATION
 
 			if [[ $CONFIRMATION != "${BRANCHES_TO_DELETE[0]}" ]]; then
@@ -1271,7 +1289,7 @@ destroy)
 				exit 0
 			fi
 		else
-			printf "Type 'destroy' to confirm: "
+			printf "⚠️  %sType 'destroy' to confirm:%s " "$YELLOW" "$RESET"
 			read -r CONFIRMATION
 
 			if [[ $CONFIRMATION != "destroy" ]]; then
@@ -1289,9 +1307,9 @@ destroy)
 			WORKTREE_PATH="${WORKTREES_TO_DESTROY[$i]}"
 			BRANCH="${BRANCHES_TO_DELETE[$i]}"
 
-			echo "[$((i + 1))/${#WORKTREES_TO_DESTROY[@]}] Destroying $WORKTREE_PATH..."
+			info "[$((i + 1))/${#WORKTREES_TO_DESTROY[@]}] Destroying $WORKTREE_PATH..."
 
-			if remove_single_worktree "$WORKTREE_PATH" "$BRANCH" "destroy" "  ✓ " "  ✗ "; then
+			if remove_single_worktree "$WORKTREE_PATH" "$BRANCH" "destroy" "  ${GREEN}✓${RESET} " "  ${RED}✗${RESET} "; then
 				SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 			else
 				FAILED_COUNT=$((FAILED_COUNT + 1))
@@ -1299,7 +1317,7 @@ destroy)
 		done
 
 		echo ""
-		echo "Summary: $SUCCESS_COUNT succeeded, $FAILED_COUNT failed"
+		echo "Summary: ${GREEN}$SUCCESS_COUNT succeeded${RESET}, ${RED}$FAILED_COUNT failed${RESET}"
 
 		if [[ $FAILED_COUNT -gt 0 ]]; then
 			exit 1
@@ -1351,11 +1369,11 @@ destroy)
 		EXTRA_MSG=" and delete its remote branch [$FIRST_BRANCH]"
 	fi
 
-	printf "Are you sure you want to destroy '%s' workspace%s? " "${WORKTREE_ARGS[0]}" "$EXTRA_MSG"
+	printf "⚠️  %sAre you sure you want to destroy '%s' workspace%s? " "$YELLOW" "${WORKTREE_ARGS[0]}" "$EXTRA_MSG"
 	if [[ ${#WORKTREE_ARGS[@]} -gt 1 ]]; then
 		printf "(and %d more) " $((${#WORKTREE_ARGS[@]} - 1))
 	fi
-	printf "[y/N]: "
+	printf "[y/N]:%s " "$RESET"
 	read -r CONFIRMATION
 
 	if [[ $CONFIRMATION != "y" ]]; then
@@ -1375,7 +1393,7 @@ destroy)
 
 	if [[ ${#WORKTREE_ARGS[@]} -gt 1 ]]; then
 		echo ""
-		echo "Summary: $SUCCESS_COUNT succeeded, $FAILED_COUNT failed"
+		echo "Summary: ${GREEN}$SUCCESS_COUNT succeeded${RESET}, ${RED}$FAILED_COUNT failed${RESET}"
 	fi
 
 	if [[ $FAILED_COUNT -gt 0 ]]; then
@@ -1406,14 +1424,14 @@ update | u)
 		exit 0
 	fi
 
-	echo "Fetching from all remotes..."
+	info "Fetching from all remotes..."
 	$CMD fetch --all --prune --prune-tags
 
 	# Discover the default branch
 	default_branch=$(get_default_branch)
 
 	if [[ -z $default_branch ]]; then
-		echo "Error: Could not determine default branch from remote" >&2
+		error "Could not determine default branch from remote"
 		exit 1
 	fi
 
@@ -1421,13 +1439,13 @@ update | u)
 	default_worktree=$(get_worktree_path_for_branch "$default_branch")
 
 	if [[ -z $default_worktree ]]; then
-		echo "Error: No worktree found for default branch '$default_branch'" >&2
+		error "No worktree found for default branch '$default_branch'"
 		echo "Available worktrees:" >&2
 		git worktree list >&2
 		exit 1
 	fi
 
-	echo "Updating default branch '$default_branch' in $default_worktree..."
+	info "Updating default branch '$default_branch' in $default_worktree..."
 	git -C "$default_worktree" pull
 	;;
 
