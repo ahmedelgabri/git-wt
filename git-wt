@@ -646,7 +646,9 @@ migrate)
 			rm -rf "$NEW_STRUCTURE"
 		fi
 		if [[ -d $TEMP_BACKUP ]]; then
-			rm -rf "$TEMP_BACKUP"
+			# Restore original contents from backup into REPO_ROOT
+			(shopt -s dotglob && mv "$TEMP_BACKUP"/* "$REPO_ROOT"/ 2>/dev/null) || true
+			rmdir "$TEMP_BACKUP" 2>/dev/null || rm -rf "$TEMP_BACKUP"
 		fi
 		exit $exit_code
 	}
@@ -757,12 +759,16 @@ migrate)
 	echo "Working directory state restored (all files preserved)"
 
 	# Success - now replace the old repo with the new structure
+	# Move contents (not the directory itself) to preserve REPO_ROOT's inode,
+	# so any shell whose cwd is REPO_ROOT doesn't lose its working directory.
 	echo ""
 	echo "Finalizing migration..."
 
 	cd "$PARENT_DIR"
-	mv "$REPO_ROOT" "$TEMP_BACKUP"
-	mv "$NEW_STRUCTURE" "$REPO_ROOT"
+	mkdir -p "$TEMP_BACKUP"
+	(shopt -s dotglob && mv "$REPO_ROOT"/* "$TEMP_BACKUP"/)
+	(shopt -s dotglob && mv "$NEW_STRUCTURE"/* "$REPO_ROOT"/)
+	rmdir "$NEW_STRUCTURE"
 
 	echo "Cleaning up..."
 	rm -rf "$TEMP_BACKUP"

@@ -130,6 +130,25 @@ teardown() {
 	[[ "$remote_url" == *"myrepo-origin"* ]]
 }
 
+@test "migrate: preserves repo directory inode (no getcwd errors)" {
+	init_repo myrepo
+	cd myrepo
+	create_commit "file.txt"
+
+	# Record the inode of the repo directory before migration
+	local inode_before
+	inode_before=$(command stat -c '%i' "$TEST_DIR/myrepo" 2>/dev/null \
+		|| command stat -f '%i' "$TEST_DIR/myrepo")
+
+	echo "y" | "$GIT_WT" migrate
+
+	# The inode should be the same after migration
+	local inode_after
+	inode_after=$(command stat -c '%i' "$TEST_DIR/myrepo" 2>/dev/null \
+		|| command stat -f '%i' "$TEST_DIR/myrepo")
+	[ "$inode_before" = "$inode_after" ]
+}
+
 @test "migrate: --help shows usage" {
 	# migrate doesn't have --help, so test that running without args in non-repo fails
 	run "$GIT_WT" migrate --help 2>&1
