@@ -201,6 +201,34 @@ teardown() {
 	assert_branch_exists "multi-flag"
 }
 
+@test "add: creates worktree at bare root when run from worktree subdirectory" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	# Create a worktree for main, then cd into a subdirectory of it
+	command git worktree add main HEAD --quiet 2>/dev/null
+	mkdir -p main/src/deep
+	cd main/src/deep
+
+	run "$GIT_WT" add -b feature-sub feature-sub
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature-sub"
+}
+
+@test "add: absolute path works from worktree subdirectory" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	# Create a worktree for main, then cd into a subdirectory of it
+	command git worktree add main HEAD --quiet 2>/dev/null
+	mkdir -p main/src
+	cd main/src
+
+	run "$GIT_WT" add -b feature-abs "$TEST_DIR/myrepo/abs-worktree"
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/abs-worktree"
+}
+
 @test "add: supports -B flag to reset branch" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo

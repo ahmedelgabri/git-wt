@@ -246,6 +246,14 @@ get_worktree_path_for_branch() {
 	echo ""
 }
 
+get_bare_root() {
+	# Get the root directory of the bare repo structure (parent of .bare/)
+	# Works from any subdirectory within a worktree
+	local git_common_dir
+	git_common_dir=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)
+	echo "${git_common_dir%/.bare}"
+}
+
 get_default_branch() {
 	# Get the default branch name, preferring local lookup over network
 	# Returns: branch name (e.g., "main" or "master")
@@ -889,6 +897,8 @@ add)
 		EOF
 		exit 0
 	fi
+
+	cd "$(get_bare_root)"
 
 	# Fetch latest remote branches to ensure we have up-to-date refs
 	info "Fetching from origin..."
