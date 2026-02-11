@@ -31,7 +31,7 @@
           default = self'.packages.git-wt;
           git-wt = pkgs.stdenvNoCC.mkDerivation {
             pname = "git-wt";
-            version = "0.4.0";
+            version = "0.5.0";
 
             src = ./.;
 
