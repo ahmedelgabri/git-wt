@@ -206,7 +206,7 @@ git wt list
 | `clone <url>`        | Clone repo with worktree structure                         |
 | `migrate`            | Convert existing repo to worktree structure (experimental) |
 | `add [options] ...`  | Create new worktree (supports all git worktree flags)      |
-| `remove [worktree]`  | Remove worktree and local branch                           |
+| `remove` / `rm`      | Remove worktree and local branch                           |
 | `destroy [worktree]` | Remove worktree and delete local + remote branches         |
 | `update` / `u`       | Fetch all and update default branch                        |
 | `switch`             | Interactive worktree selection                             |

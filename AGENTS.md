@@ -48,7 +48,7 @@ DEBUG=1 ./git-wt add
 
 ## Architecture
 
-Single bash script (`git-wt`, ~1650 lines) with command dispatch via case statement. Bash 3.x compatible (indexed arrays, no associative arrays) for macOS support.
+Single bash script (`git-wt`) with command dispatch via case statement. Bash 3.x compatible (indexed arrays, no associative arrays) for macOS support.
 
 **Key design patterns:**
 
@@ -73,6 +73,8 @@ Key test fixtures:
 - `init_bare_repo_with_remote [dirname]` - Bare repo with a fake origin for testing remote operations
 - `init_repo [dirname]` - Standard git repo (for migration tests)
 - `init_repo_with_remote [dirname]` - Standard repo with fake origin
+
+All init helpers use `-b main` to ensure deterministic branch naming across environments (CI ubuntu defaults to `master` otherwise).
 
 Each test gets an isolated temp directory via `setup_test_env`/`teardown_test_env`.
 
