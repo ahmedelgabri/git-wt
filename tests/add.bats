@@ -201,6 +201,70 @@ teardown() {
 	assert_branch_exists "multi-flag"
 }
 
+@test "add: copies untracked files from default branch worktree" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	# Detach HEAD so we can create a worktree for main
+	command git checkout --detach --quiet
+	command git worktree add main main --quiet
+
+	# Place untracked config files in the default branch worktree
+	echo "SECRET=foo" >"main/.env"
+	echo "LOCAL=bar" >"main/.env.local"
+	echo "use nix" >"main/.envrc"
+	echo "nodejs 20" >"main/.tool-versions"
+
+	run "$GIT_WT" add -b feature feature
+	[ "$status" -eq 0 ]
+	[ -f "feature/.env" ]
+	[ "$(cat feature/.env)" = "SECRET=foo" ]
+	[ -f "feature/.env.local" ]
+	[ -f "feature/.envrc" ]
+	[ -f "feature/.tool-versions" ]
+}
+
+@test "add: copies untracked files recursively preserving directory structure" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	command git checkout --detach --quiet
+	command git worktree add main main --quiet
+	mkdir -p "main/packages/api"
+	echo "DB_URL=localhost" >"main/packages/api/.env"
+	echo "local_override" >"main/packages/api/.env.local"
+
+	run "$GIT_WT" add -b feature feature
+	[ "$status" -eq 0 ]
+	[ -f "feature/packages/api/.env" ]
+	[ "$(cat feature/packages/api/.env)" = "DB_URL=localhost" ]
+	[ -f "feature/packages/api/.env.local" ]
+}
+
+@test "add: skips copy when default branch worktree does not exist" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	# No default branch worktree exists — should still succeed
+	run "$GIT_WT" add -b feature feature
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature"
+}
+
+@test "add: --no-untracked-files skips copying" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	command git checkout --detach --quiet
+	command git worktree add main main --quiet
+	echo "SECRET=foo" >"main/.env"
+
+	run "$GIT_WT" add --no-untracked-files -b feature feature
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature"
+	[ ! -f "feature/.env" ]
+}
+
 @test "add: supports -B flag to reset branch" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo

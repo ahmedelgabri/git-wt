@@ -48,6 +48,34 @@ success() {
 	echo "${GREEN}✓${RESET} $*"
 }
 
+# Files to copy from existing worktrees into new ones.
+# These are typically untracked sensitive/config files that every worktree needs.
+UNTRACKED_FILE_PATTERNS=(".env" ".env.local" ".envrc" ".tool-versions")
+
+# Copy untracked config files from one worktree to another.
+# Recursively finds files matching UNTRACKED_FILE_PATTERNS in source_dir
+# and copies them to dest_dir, preserving relative directory structure.
+# Args: $1 = source worktree path, $2 = destination worktree path
+copy_untracked_files() {
+	local source_dir="$1" dest_dir="$2"
+	local copied=0
+
+	for pattern in "${UNTRACKED_FILE_PATTERNS[@]}"; do
+		while IFS= read -r -d '' file; do
+			local rel_path="${file#"$source_dir"/}"
+			local dest_file="$dest_dir/$rel_path"
+			mkdir -p "$(dirname "$dest_file")"
+			cp "$file" "$dest_file"
+			copied=$((copied + 1))
+			info "Copied $rel_path"
+		done < <(find "$source_dir" -name "$pattern" -not -path '*/.git/*' -not -path '*/.bare/*' -type f -print0 2>/dev/null)
+	done
+
+	if [[ $copied -gt 0 ]]; then
+		success "Copied $copied untracked file(s) to new worktree"
+	fi
+}
+
 # Check for required dependencies for interactive commands
 check_fzf_dependency() {
 	if ! command -v fzf >/dev/null 2>&1; then
@@ -890,6 +918,49 @@ add)
 		exit 0
 	fi
 
+	# Copy untracked config files from the default branch worktree to a new worktree.
+	# Resolves the default branch and its worktree path automatically.
+	# Args: $1 = destination worktree path (relative or absolute)
+	maybe_copy_untracked_files() {
+		if [[ $COPY_UNTRACKED != true ]]; then
+			return
+		fi
+
+		local dest_path
+		dest_path=$(cd "$1" 2>/dev/null && pwd -P) || return 0
+
+		local default_branch
+		default_branch=$(get_default_branch) || return 0
+		if [[ -z $default_branch ]]; then
+			return 0
+		fi
+
+		local source_path
+		source_path=$(get_worktree_path_for_branch "$default_branch")
+		if [[ -z $source_path ]] || [[ ! -d $source_path ]]; then
+			return 0
+		fi
+
+		# Don't copy from a worktree to itself
+		if [[ $source_path == "$dest_path" ]]; then
+			return 0
+		fi
+
+		copy_untracked_files "$source_path" "$dest_path"
+	}
+
+	# Check for --no-untracked-files flag before other processing
+	COPY_UNTRACKED=true
+	REMAINING_ARGS=()
+	for arg in "$@"; do
+		if [[ $arg == "--no-untracked-files" ]]; then
+			COPY_UNTRACKED=false
+		else
+			REMAINING_ARGS+=("$arg")
+		fi
+	done
+	set -- "${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"}"
+
 	# Fetch latest remote branches to ensure we have up-to-date refs
 	info "Fetching from origin..."
 	$CMD fetch origin --prune
@@ -950,7 +1021,11 @@ add)
 			# Create new branch and worktree
 			info "Creating new branch '$NEW_BRANCH' and worktree at '$WORKTREE_PATH'..."
 			$CMD worktree add -b "$NEW_BRANCH" "$WORKTREE_PATH"
-			exit $?
+			WORKTREE_ADD_EXIT=$?
+			if [[ $WORKTREE_ADD_EXIT -eq 0 ]]; then
+				maybe_copy_untracked_files "$WORKTREE_PATH"
+			fi
+			exit $WORKTREE_ADD_EXIT
 		fi
 
 		# Handle existing remote branch selection
@@ -963,14 +1038,16 @@ add)
 		if [[ $WORKTREE_ADD_EXIT -eq 0 ]]; then
 			echo "Setting upstream to origin/$SELECTED"
 			$CMD branch --set-upstream-to="origin/$SELECTED" "$SELECTED"
+			maybe_copy_untracked_files "$SELECTED"
 		fi
 
 		exit $WORKTREE_ADD_EXIT
 	fi
 
 	# Arguments provided - pass through to git worktree add
-	# We capture -b/-B branch name for upstream tracking setup
+	# We capture -b/-B branch name and worktree path for post-creation steps
 	BRANCH=""
+	WORKTREE_PATH=""
 	ARGS=()
 
 	# Parse arguments, capturing branch name while passing everything through
@@ -993,12 +1070,16 @@ add)
 			ARGS+=("$1")
 			shift
 			;;
+		-*)
+			# All flag arguments pass through as-is
+			ARGS+=("$1")
+			shift
+			;;
 		*)
-			# All other flags and arguments pass through as-is
-			# This includes: -f, --force, --no-force, -d, --detach, --no-detach,
-			# --checkout, --no-checkout, --lock, --no-lock, -q, --quiet, --no-quiet,
-			# --track, --no-track, --guess-remote, --no-guess-remote, --orphan,
-			# --no-orphan, --relative-paths, --no-relative-paths, <path>, <commit-ish>
+			# Positional arguments: first is <path>, second is <commit-ish>
+			if [[ -z $WORKTREE_PATH ]]; then
+				WORKTREE_PATH="$1"
+			fi
 			ARGS+=("$1")
 			shift
 			;;
@@ -1027,6 +1108,11 @@ add)
 				  git push -u origin $BRANCH
 			EOF
 		fi
+	fi
+
+	# Copy untracked files if worktree was created successfully
+	if [[ $WORKTREE_ADD_EXIT -eq 0 ]] && [[ -n $WORKTREE_PATH ]]; then
+		maybe_copy_untracked_files "$WORKTREE_PATH"
 	fi
 
 	exit $WORKTREE_ADD_EXIT
