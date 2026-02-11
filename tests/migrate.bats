@@ -149,6 +149,27 @@ teardown() {
 	[ "$inode_before" = "$inode_after" ]
 }
 
+@test "migrate: succeeds when remote is unreachable" {
+	init_repo_with_remote myrepo
+	cd myrepo
+	create_commit "file.txt"
+
+	# Point origin to a non-existent location
+	command git remote set-url origin "/tmp/nonexistent-repo-$$"
+
+	run bash -c 'echo "y" | '"$GIT_WT"' migrate 2>&1'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Migration complete"* ]]
+	[ -d "$TEST_DIR/myrepo/.bare" ]
+	[ -f "$TEST_DIR/myrepo/.git" ]
+
+	# The unreachable URL should be preserved in the migrated repo
+	cd "$TEST_DIR/myrepo"
+	local remote_url
+	remote_url=$(command git remote get-url origin 2>/dev/null || true)
+	[[ "$remote_url" == "/tmp/nonexistent-repo-$$" ]]
+}
+
 @test "migrate: --help shows usage" {
 	# migrate doesn't have --help, so test that running without args in non-repo fails
 	run "$GIT_WT" migrate --help 2>&1

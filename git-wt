@@ -266,8 +266,9 @@ get_default_branch() {
 		return 0
 	fi
 
-	# Fall back to network call
-	git remote show origin 2>/dev/null | sed -n '/HEAD branch/s/.*: //p'
+	# Fall back to network call (|| true prevents pipefail from propagating
+	# a non-zero exit when the remote is unreachable)
+	git remote show origin 2>/dev/null | sed -n '/HEAD branch/s/.*: //p' || true
 }
 
 build_worktree_display_list() {
@@ -680,8 +681,8 @@ migrate)
 		exit $exit_code
 	}
 
-	# Set trap to cleanup on interrupt or error
-	trap cleanup_migrate INT TERM
+	# Set trap to cleanup on interrupt, error, or unexpected exit
+	trap cleanup_migrate EXIT INT TERM
 
 	info "Creating new repository structure..."
 	mkdir -p "$NEW_STRUCTURE"
@@ -714,7 +715,9 @@ migrate)
 	# Fetch all branches from remote if they exist
 	if git remote get-url origin >/dev/null 2>&1; then
 		info "Fetching all branches from remote..."
-		$CMD fetch --all
+		if ! $CMD fetch --all 2>/dev/null; then
+			warn "Could not fetch from remote (remote may be unreachable) - continuing with local data"
+		fi
 	fi
 
 	# Clean up any local branches with invalid upstream refs
@@ -852,7 +855,7 @@ migrate)
 	EOF
 
 	# Clear trap on successful completion
-	trap - INT TERM
+	trap - EXIT INT TERM
 
 	;;
 add)
