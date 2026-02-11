@@ -22,14 +22,14 @@ init_repo_with_remote() {
 	mkdir -p "${dirname}-origin"
 	(
 		cd "${dirname}-origin" || exit 1
-		command git init --quiet --bare
+		command git init --quiet --bare -b main
 	)
 
 	# Create the actual repo and link to origin
 	mkdir -p "$dirname"
 	(
 		cd "$dirname" || exit 1
-		command git init --quiet
+		command git init --quiet -b main
 		command git config user.email "test@test.com"
 		command git config user.name "Test User"
 		command git remote add origin "../${dirname}-origin"
@@ -53,7 +53,7 @@ init_repo() {
 	mkdir -p "$dirname"
 	(
 		cd "$dirname" || exit 1
-		command git init --quiet
+		command git init --quiet -b main
 		command git config user.email "test@test.com"
 		command git config user.name "Test User"
 		command git commit --quiet --allow-empty -m "initial commit"
@@ -68,7 +68,7 @@ init_bare_repo() {
 	mkdir -p "$dirname"
 	(
 		cd "$dirname" || exit 1
-		command git init --quiet --bare .bare
+		command git init --quiet --bare .bare -b main
 		echo "gitdir: ./.bare" >.git
 		command git config core.bare false
 		command git config user.email "test@test.com"
@@ -87,14 +87,14 @@ init_bare_repo_with_remote() {
 	mkdir -p "${dirname}-origin"
 	(
 		cd "${dirname}-origin" || exit 1
-		command git init --quiet --bare
+		command git init --quiet --bare -b main
 	)
 
 	# Create the bare repo and link to origin
 	mkdir -p "$dirname"
 	(
 		cd "$dirname" || exit 1
-		command git init --quiet --bare .bare
+		command git init --quiet --bare .bare -b main
 		echo "gitdir: ./.bare" >.git
 		command git config core.bare false
 		command git config user.email "test@test.com"
