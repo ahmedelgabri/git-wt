@@ -77,3 +77,17 @@ teardown() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Usage"* ]]
 }
+
+@test "list: works from worktree subdirectory" {
+	init_bare_repo myrepo
+	cd myrepo
+	command git worktree add main HEAD --quiet 2>/dev/null
+	create_worktree feature-list feature-list
+	mkdir -p main/src
+	cd main/src
+
+	run "$GIT_WT" list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"main"* ]]
+	[[ "$output" == *"feature-list"* ]]
+}

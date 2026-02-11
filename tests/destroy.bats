@@ -148,3 +148,17 @@ teardown() {
 	[[ "$output" == *"Available worktrees:"* ]]
 	[[ "$output" == *"some-dest"* ]]
 }
+
+@test "destroy: works from worktree subdirectory" {
+	init_bare_repo myrepo
+	cd myrepo
+	command git worktree add main HEAD --quiet 2>/dev/null
+	create_worktree to-destroy to-destroy
+	mkdir -p main/src
+	cd main/src
+
+	echo "y" | "$GIT_WT" destroy to-destroy
+
+	assert_worktree_not_exists "$TEST_DIR/myrepo/to-destroy"
+	assert_branch_not_exists "to-destroy"
+}

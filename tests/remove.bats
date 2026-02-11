@@ -135,3 +135,17 @@ teardown() {
 	[[ "$output" == *"Available worktrees:"* ]]
 	[[ "$output" == *"some-wt"* ]]
 }
+
+@test "remove: works from worktree subdirectory" {
+	init_bare_repo myrepo
+	cd myrepo
+	command git worktree add main HEAD --quiet 2>/dev/null
+	create_worktree to-remove to-remove
+	mkdir -p main/src
+	cd main/src
+
+	run "$GIT_WT" remove to-remove
+	[ "$status" -eq 0 ]
+	assert_worktree_not_exists "$TEST_DIR/myrepo/to-remove"
+	assert_branch_not_exists "to-remove"
+}
