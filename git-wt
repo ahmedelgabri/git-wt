@@ -597,6 +597,14 @@ clone)
 migrate)
 	shift
 
+	# Check for --no-untracked-files flag
+	COPY_UNTRACKED=true
+	for arg in "$@"; do
+		if [[ $arg == "--no-untracked-files" ]]; then
+			COPY_UNTRACKED=false
+		fi
+	done
+
 	# Check if we're in a git repository
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
 		error "Not in a git repository"
@@ -805,6 +813,13 @@ migrate)
 
 	success "Working directory state restored (all files preserved)"
 
+	# Copy untracked config files to the default branch worktree.
+	# The rsync above only copies into CURRENT_BRANCH, so DEFAULT_BRANCH
+	# misses untracked files like .env unless we copy them explicitly.
+	if [[ $COPY_UNTRACKED == true ]] && [[ -n $DEFAULT_BRANCH ]] && [[ $DEFAULT_BRANCH != "$CURRENT_BRANCH" ]]; then
+		copy_untracked_files "$NEW_STRUCTURE/$CURRENT_BRANCH" "$NEW_STRUCTURE/$DEFAULT_BRANCH"
+	fi
+
 	# Success - now replace the old repo with the new structure
 	# Move contents (not the directory itself) to preserve REPO_ROOT's inode,
 	# so any shell whose cwd is REPO_ROOT doesn't lose its working directory.
@@ -902,6 +917,7 @@ add)
 			    --guess-remote    Match new branch name with remote-tracking branch
 			    --orphan          Create unborn branch
 			    --relative-paths  Use relative paths for worktrees
+			    --no-untracked-files  Skip copying untracked config files
 			    --help, -h        Show this help message
 
 			Examples:
@@ -914,6 +930,8 @@ add)
 			Note: Always fetches from origin to ensure up-to-date refs.
 			      When using -b/-B, upstream tracking is set automatically if
 			      the branch exists on origin.
+			      Untracked files (.env, .env.local, .envrc, .tool-versions) are
+			      automatically copied from the default branch worktree.
 		EOF
 		exit 0
 	fi
@@ -1644,10 +1662,11 @@ lock | unlock | move | prune | repair)
 			    Clone a repository and set it up with worktree structure
 			    Creates .bare directory for git data and initial worktree for default branch
 
-			git-wt migrate [EXPERIMENTAL]
+			git-wt migrate [--no-untracked-files] [EXPERIMENTAL]
 			    Migrate an existing repository to use worktrees
 			    Converts current repo to .bare + worktrees structure
 			    Preserves: uncommitted changes, staged changes, untracked files, and stashes
+			    Copies untracked config files (.env, .envrc, etc.) to default branch worktree
 			    Must be run from within the repository to migrate
 
 			git-wt add [options] [<path>] [<commit-ish>]

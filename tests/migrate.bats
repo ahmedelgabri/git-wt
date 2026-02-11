@@ -149,6 +149,87 @@ teardown() {
 	[ "$inode_before" = "$inode_after" ]
 }
 
+@test "migrate: copies untracked files to default branch worktree" {
+	init_repo_with_remote myrepo
+	cd myrepo
+	create_commit "file.txt"
+
+	# Create untracked config files in the working tree
+	echo "SECRET=prod" >.env
+	echo "LOCAL=dev" >.env.local
+	echo "use nix" >.envrc
+	echo "nodejs 20" >.tool-versions
+	mkdir -p packages/api
+	echo "DB_URL=localhost" >packages/api/.env
+
+	# Switch to a feature branch so migrate creates two worktrees
+	command git checkout -b feature --quiet
+	create_commit "feature.txt"
+
+	echo "y" | "$GIT_WT" migrate
+
+	# Current branch worktree should have all files (via rsync)
+	[ -f "$TEST_DIR/myrepo/feature/.env" ]
+	[ "$(cat "$TEST_DIR/myrepo/feature/.env")" = "SECRET=prod" ]
+
+	# Default branch worktree should also have untracked files copied
+	local default_wt
+	if [ -d "$TEST_DIR/myrepo/main" ]; then
+		default_wt="$TEST_DIR/myrepo/main"
+	else
+		default_wt="$TEST_DIR/myrepo/master"
+	fi
+	[ -f "$default_wt/.env" ]
+	[ "$(cat "$default_wt/.env")" = "SECRET=prod" ]
+	[ -f "$default_wt/.env.local" ]
+	[ -f "$default_wt/.envrc" ]
+	[ -f "$default_wt/.tool-versions" ]
+	[ -f "$default_wt/packages/api/.env" ]
+}
+
+@test "migrate: --no-untracked-files skips copying to default branch worktree" {
+	init_repo_with_remote myrepo
+	cd myrepo
+	create_commit "file.txt"
+	echo "SECRET=prod" >.env
+
+	command git checkout -b feature --quiet
+	create_commit "feature.txt"
+
+	echo "y" | "$GIT_WT" migrate --no-untracked-files
+
+	# Current branch still has it (via rsync, not our feature)
+	[ -f "$TEST_DIR/myrepo/feature/.env" ]
+
+	# Default branch should NOT have it
+	local default_wt
+	if [ -d "$TEST_DIR/myrepo/main" ]; then
+		default_wt="$TEST_DIR/myrepo/main"
+	else
+		default_wt="$TEST_DIR/myrepo/master"
+	fi
+	[ ! -f "$default_wt/.env" ]
+}
+
+@test "migrate: no copy needed when current branch is default branch" {
+	init_repo_with_remote myrepo
+	cd myrepo
+	create_commit "file.txt"
+	echo "SECRET=prod" >.env
+
+	# Stay on main — migrate creates one worktree, rsync copies everything
+	echo "y" | "$GIT_WT" migrate
+
+	local default_wt
+	if [ -d "$TEST_DIR/myrepo/main" ]; then
+		default_wt="$TEST_DIR/myrepo/main"
+	else
+		default_wt="$TEST_DIR/myrepo/master"
+	fi
+	[ -f "$default_wt/.env" ]
+	[ "$(cat "$default_wt/.env")" = "SECRET=prod" ]
+}
+
 @test "migrate: --help shows usage" {
 	# migrate doesn't have --help, so test that running without args in non-repo fails
 	run "$GIT_WT" migrate --help 2>&1

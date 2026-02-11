@@ -43,6 +43,7 @@ _git-wt() {
                 add)
                     _arguments \
                         '(-h --help)'{-h,--help}'[Show help]' \
+                        '--no-untracked-files[Skip copying untracked config files]' \
                         '-b[Create new branch]:branch name:__git_branch_names' \
                         '-B[Create/reset branch]:branch name:__git_branch_names' \
                         '*:path or commit-ish:__git_wt_add_completions'
@@ -59,7 +60,12 @@ _git-wt() {
                         '(-n --dry-run)'{-n,--dry-run}'[Show what would be destroyed]' \
                         '*:worktree:__git_wt_worktrees'
                     ;;
-                update|u|switch|list|migrate|help)
+                migrate)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        '--no-untracked-files[Skip copying untracked config files]'
+                    ;;
+                update|u|switch|list|help)
                     _arguments \
                         '(-h --help)'{-h,--help}'[Show help]'
                     ;;

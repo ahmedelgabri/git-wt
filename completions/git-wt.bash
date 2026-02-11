@@ -35,7 +35,7 @@ _git_wt() {
 			;;
 		*)
 			if [[ $cur == -* ]]; then
-				COMPREPLY=($(compgen -W "-b -B --help -h" -- "$cur"))
+				COMPREPLY=($(compgen -W "-b -B --no-untracked-files --help -h" -- "$cur"))
 			else
 				# Complete with remote branches or directories
 				local branches
@@ -66,7 +66,12 @@ _git_wt() {
 			COMPREPLY=($(compgen -W "$worktrees" -- "$cur"))
 		fi
 		;;
-	update | u | switch | list | migrate | help)
+	migrate)
+		if [[ $cur == -* ]]; then
+			COMPREPLY=($(compgen -W "--no-untracked-files --help -h" -- "$cur"))
+		fi
+		;;
+	update | u | switch | list | help)
 		if [[ $cur == -* ]]; then
 			COMPREPLY=($(compgen -W "--help -h" -- "$cur"))
 		fi

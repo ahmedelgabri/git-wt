@@ -53,6 +53,7 @@ complete -c git-wt -n '__fish_git_wt_using_command clone' -F -d 'Folder name'
 
 # add completions
 complete -c git-wt -n '__fish_git_wt_using_command add' -s h -l help -d 'Show help'
+complete -c git-wt -n '__fish_git_wt_using_command add' -l no-untracked-files -d 'Skip copying untracked config files'
 complete -c git-wt -n '__fish_git_wt_using_command add' -s b -d 'Create new branch' -xa '(__fish_git_wt_all_branches)'
 complete -c git-wt -n '__fish_git_wt_using_command add' -s B -d 'Create/reset branch' -xa '(__fish_git_wt_all_branches)'
 complete -c git-wt -n '__fish_git_wt_using_command add' -xa '(__fish_git_wt_remote_branches)'
@@ -83,6 +84,7 @@ complete -c git-wt -n '__fish_git_wt_using_command list' -s h -l help -d 'Show h
 
 # migrate completions
 complete -c git-wt -n '__fish_git_wt_using_command migrate' -s h -l help -d 'Show help'
+complete -c git-wt -n '__fish_git_wt_using_command migrate' -l no-untracked-files -d 'Skip copying untracked config files'
 
 # lock/unlock/move/prune/repair completions
 complete -c git-wt -n '__fish_git_wt_using_command lock' -s h -l help -d 'Show help'
