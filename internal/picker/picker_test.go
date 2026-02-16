@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -116,7 +117,7 @@ func TestModelFilterEmpty(t *testing.T) {
 	}
 }
 
-func TestApplyFilterPopulatesMatchMap(t *testing.T) {
+func TestApplyFilterPopulatesMatches(t *testing.T) {
 	items := []Item{
 		{Label: "main"},
 		{Label: "feature"},
@@ -131,18 +132,17 @@ func TestApplyFilterPopulatesMatchMap(t *testing.T) {
 	if len(m.filtered) == 0 {
 		t.Fatal("expected at least one filtered result for 'feat'")
 	}
+	if len(m.matches) != len(m.filtered) {
+		t.Fatalf("matches length (%d) should equal filtered length (%d)", len(m.matches), len(m.filtered))
+	}
 
-	// "feature" should be in the results
+	// "feature" should be in the results with match positions
 	found := false
-	for _, idx := range m.filtered {
+	for i, idx := range m.filtered {
 		if m.items[idx].Label == "feature" {
 			found = true
-			positions, ok := m.matchMap[idx]
-			if !ok {
-				t.Error("matchMap should contain an entry for matched item")
-			}
-			if len(positions) == 0 {
-				t.Error("matchMap entry should have non-empty matched positions")
+			if len(m.matches[i].MatchedIndexes) == 0 {
+				t.Error("matched item should have non-empty MatchedIndexes")
 			}
 		}
 	}
@@ -151,7 +151,7 @@ func TestApplyFilterPopulatesMatchMap(t *testing.T) {
 	}
 }
 
-func TestApplyFilterClearsMatchMapOnEmpty(t *testing.T) {
+func TestApplyFilterClearsMatchesOnEmpty(t *testing.T) {
 	items := []Item{
 		{Label: "main"},
 		{Label: "feature"},
@@ -164,8 +164,8 @@ func TestApplyFilterClearsMatchMapOnEmpty(t *testing.T) {
 	m.filter.SetValue("")
 	m.applyFilter()
 
-	if len(m.matchMap) != 0 {
-		t.Errorf("matchMap should be empty after clearing filter, got %d entries", len(m.matchMap))
+	if m.matches != nil {
+		t.Errorf("matches should be nil after clearing filter, got %d entries", len(m.matches))
 	}
 	if len(m.filtered) != 2 {
 		t.Errorf("all items should be shown after clearing filter, got %d", len(m.filtered))
@@ -174,10 +174,44 @@ func TestApplyFilterClearsMatchMapOnEmpty(t *testing.T) {
 
 func TestRenderLabelNoMatch(t *testing.T) {
 	m := newModel(Config{Items: []Item{{Label: "hello"}}})
-	// No filter applied, so matchMap is empty
+	// No filter applied, so matches is nil
 	got := m.renderLabel(0, "hello")
 	if got != "hello" {
 		t.Errorf("renderLabel with no matches should return plain label, got %q", got)
+	}
+}
+
+func BenchmarkApplyFilter50k(b *testing.B) {
+	items := make([]Item, 50_000)
+	for i := range items {
+		items[i] = Item{
+			Label: fmt.Sprintf("feature/PROJ-%d-some-branch-name", i),
+			Value: fmt.Sprintf("/workspace/feature-PROJ-%d", i),
+		}
+	}
+	m := newModel(Config{Items: items})
+	m.filter.SetValue("proj-123")
+
+	b.ResetTimer()
+	for range b.N {
+		m.applyFilter()
+	}
+}
+
+func BenchmarkApplyFilterEmpty50k(b *testing.B) {
+	items := make([]Item, 50_000)
+	for i := range items {
+		items[i] = Item{
+			Label: fmt.Sprintf("feature/PROJ-%d-some-branch-name", i),
+			Value: fmt.Sprintf("/workspace/feature-PROJ-%d", i),
+		}
+	}
+	m := newModel(Config{Items: items})
+	m.filter.SetValue("")
+
+	b.ResetTimer()
+	for range b.N {
+		m.applyFilter()
 	}
 }
 

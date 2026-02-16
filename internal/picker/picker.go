@@ -27,8 +27,9 @@ var (
 
 type model struct {
 	items    []Item
+	labels   []string      // cached for fuzzy search, built once
 	filtered []int         // indices into items
-	matchMap map[int][]int // itemIndex -> matched character positions
+	matches  []fuzzy.Match // fuzzy results aligned with filtered (nil when unfiltered)
 	cursor   int
 	multi    bool
 	prompt   string
@@ -62,15 +63,17 @@ func newModel(cfg Config) model {
 
 	vp := viewport.New(40, 20)
 
+	labels := make([]string, len(cfg.Items))
 	indices := make([]int, len(cfg.Items))
-	for i := range cfg.Items {
+	for i, item := range cfg.Items {
 		indices[i] = i
+		labels[i] = item.Label
 	}
 
 	return model{
 		items:       cfg.Items,
+		labels:      labels,
 		filtered:    indices,
-		matchMap:    make(map[int][]int),
 		multi:       cfg.Multi,
 		prompt:      cfg.Prompt,
 		header:      cfg.Header,
@@ -163,24 +166,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) applyFilter() {
 	query := m.filter.Value()
-	m.matchMap = make(map[int][]int)
 
 	if query == "" {
 		m.filtered = make([]int, len(m.items))
 		for i := range m.items {
 			m.filtered[i] = i
 		}
+		m.matches = nil
 	} else {
-		labels := make([]string, len(m.items))
-		for i, item := range m.items {
-			labels[i] = item.Label
-		}
-		matches := fuzzy.Find(query, labels)
-		m.filtered = make([]int, len(matches))
-		for i, match := range matches {
+		results := fuzzy.Find(query, m.labels)
+		m.filtered = make([]int, len(results))
+		for i, match := range results {
 			m.filtered[i] = match.Index
-			m.matchMap[match.Index] = match.MatchedIndexes
 		}
+		m.matches = results
 	}
 	if m.cursor >= len(m.filtered) {
 		m.cursor = max(0, len(m.filtered)-1)
@@ -216,21 +215,23 @@ func (m model) collectResult() Result {
 }
 
 // renderLabel renders an item label with fuzzy match characters highlighted.
-func (m model) renderLabel(itemIdx int, label string) string {
-	positions, ok := m.matchMap[itemIdx]
-	if !ok || len(positions) == 0 {
+// filteredIdx is the index into m.matches (aligned with m.filtered).
+func (m model) renderLabel(filteredIdx int, label string) string {
+	if m.matches == nil || filteredIdx >= len(m.matches) {
+		return label
+	}
+	positions := m.matches[filteredIdx].MatchedIndexes
+	if len(positions) == 0 {
 		return label
 	}
 
-	posSet := make(map[int]struct{}, len(positions))
-	for _, p := range positions {
-		posSet[p] = struct{}{}
-	}
-
+	// positions from sahilm/fuzzy are sorted, so scan with an index pointer
 	var b strings.Builder
+	pi := 0
 	for i, ch := range label {
-		if _, match := posSet[i]; match {
+		if pi < len(positions) && positions[pi] == i {
 			b.WriteString(matchStyle.Render(string(ch)))
+			pi++
 		} else {
 			b.WriteRune(ch)
 		}
@@ -285,7 +286,7 @@ func (m model) View() string {
 			prefix = cursorStyle.Render("> ")
 		}
 
-		label := m.renderLabel(idx, item.Label)
+		label := m.renderLabel(vi, item.Label)
 
 		if m.multi {
 			check := dimStyle.Render("○")
