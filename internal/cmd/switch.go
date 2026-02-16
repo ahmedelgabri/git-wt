@@ -11,17 +11,9 @@ import (
 var switchCmd = &cobra.Command{
 	Use:   "switch",
 	Short: "Interactively switch to a different worktree",
-	Long: `git wt switch - Interactively switch to a different worktree
-
-Usage:
-  cd $(git wt switch)                      Change to selected worktree
-  git wt switch                            Print selected worktree path
-
-Options:
-  --help, -h      Show this help message
-
-Example:
-  cd $(git wt switch)                      # Select worktree and cd into it`,
+	Long: `Interactively select a worktree with a fuzzy picker and print its path.
+Use with cd to change directories: cd $(git wt switch)`,
+	Example:       `  cd $(git wt switch)`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

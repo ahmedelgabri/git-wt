@@ -18,24 +18,12 @@ var removeCmd = &cobra.Command{
 	Use:     "remove [<worktree>...]",
 	Aliases: []string{"rm"},
 	Short:   "Remove worktree(s) and delete local branch(es)",
-	Long: `git wt remove - Remove worktree(s) and delete local branch(es)
-
-Usage:
-  git wt remove                            Interactive mode (fzf)
-  git wt remove <path> [<path>...]         Remove specific worktree(s)
-  git wt remove --dry-run                  Preview without changes
-
-Options:
-  --dry-run, -n   Show what would be removed without making changes
-  --help, -h      Show this help message
-
-Examples:
-  git wt remove                            # Interactive selection
+	Long: `Remove worktree(s) and delete local branch(es). With no arguments, opens
+an interactive picker with multi-select (TAB to toggle). Supports --dry-run (-n)
+to preview without changes. Remote branches are NOT deleted; use 'destroy' for that.`,
+	Example: `  git wt remove                            # Interactive selection
   git wt remove feature-1 feature-2        # Remove multiple
-  git wt remove --dry-run                  # Preview in interactive mode
-  git wt remove -n feature-1 feature-2     # Preview specific worktrees
-
-Note: Remote branches are NOT deleted. Use 'destroy' for that.`,
+  git wt remove -n feature-1 feature-2     # Preview specific worktrees`,
 	DisableFlagParsing: true,
 	SilenceUsage:       true,
 	SilenceErrors:      true,

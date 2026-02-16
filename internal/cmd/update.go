@@ -14,17 +14,10 @@ var updateCmd = &cobra.Command{
 	Use:     "update",
 	Aliases: []string{"u"},
 	Short:   "Fetch and update the default branch worktree",
-	Long: `git wt update - Fetch and update the default branch worktree
-
-Usage:
-  git wt update                            Fetch all and pull default branch
-  git wt u                                 Alias for update
-
-Options:
-  --help, -h      Show this help message
-
-Example:
-  git wt update                            # Fetch all, then pull main/master`,
+	Long: `Fetch all remotes (with prune) and pull the default branch (main/master)
+in its worktree.`,
+	Example: `  git wt update
+  git wt u`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

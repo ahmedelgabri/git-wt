@@ -7,24 +7,12 @@ import (
 var destroyCmd = &cobra.Command{
 	Use:   "destroy [<worktree>...]",
 	Short: "Remove worktree(s) and delete LOCAL and REMOTE branch(es)",
-	Long: `git wt destroy - Remove worktree(s) and delete LOCAL and REMOTE branch(es)
-
-Usage:
-  git wt destroy                           Interactive mode (fzf)
-  git wt destroy <path> [<path>...]        Destroy specific worktree(s)
-  git wt destroy --dry-run                 Preview without changes
-
-Options:
-  --dry-run, -n   Show what would be destroyed without making changes
-  --help, -h      Show this help message
-
-Examples:
-  git wt destroy                           # Interactive selection
+	Long: `Remove worktree(s) and delete both LOCAL and REMOTE branch(es). With no
+arguments, opens an interactive picker with multi-select (TAB to toggle). Supports
+--dry-run (-n) to preview without changes. Requires confirmation before destroying.`,
+	Example: `  git wt destroy                           # Interactive selection
   git wt destroy feature-1 feature-2       # Destroy multiple
-  git wt destroy --dry-run                 # Preview in interactive mode
-  git wt destroy -n feature-1 feature-2    # Preview specific worktrees
-
-Warning: This deletes both local AND remote branches permanently.`,
+  git wt destroy -n feature-1 feature-2    # Preview specific worktrees`,
 	DisableFlagParsing: true,
 	SilenceUsage:       true,
 	SilenceErrors:      true,

@@ -8,15 +8,8 @@ import (
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all worktrees",
-	Long: `git wt list - List all worktrees
-
-Usage:
-  git wt list                              List all worktrees
-
-Options:
-  --help, -h      Show this help message
-
-Note: This is a wrapper around 'git worktree list'`,
+	Long: `List all worktrees. This is a pass-through to 'git worktree list', so all
+git worktree list flags are supported (e.g. --porcelain).`,
 	DisableFlagParsing: true,
 	SilenceUsage:       true,
 	SilenceErrors:      true,

@@ -16,39 +16,16 @@ import (
 var addCmd = &cobra.Command{
 	Use:   "add [options] [<path>] [<commit-ish>]",
 	Short: "Create a new worktree",
-	Long: `git wt add - Create a new worktree
+	Long: `Create a new worktree. With no arguments, opens an interactive picker to
+select from remote branches or create a new branch. All git worktree add
+flags are supported (-b, -B, -d, --lock, --quiet, etc).
 
-Usage:
-  git wt add                              Interactive mode (fzf)
-  git wt add [options] <path> [<commit-ish>]
-
-Options:
-  All git worktree add options are supported:
-    -f, --force       Checkout even if already checked out elsewhere
-    -b <branch>       Create new branch
-    -B <branch>       Create or reset branch
-    -d, --detach      Detach HEAD at named commit
-    --checkout        Populate the new working tree (default)
-    --no-checkout     Don't populate the new working tree
-    --lock            Keep the new working tree locked
-    --reason <str>    Reason for locking
-    -q, --quiet       Suppress progress reporting
-    --track           Set up tracking mode
-    --guess-remote    Match new branch name with remote-tracking branch
-    --orphan          Create unborn branch
-    --relative-paths  Use relative paths for worktrees
-    --help, -h        Show this help message
-
-Examples:
-  git wt add                               # Interactive selection
+Always fetches from origin before creating the worktree. When using -b/-B,
+upstream tracking is set automatically if the branch exists on origin.`,
+	Example: `  git wt add                               # Interactive selection
   git wt add feature origin/feature        # From remote branch
   git wt add -b new-feature new-feature    # New branch
-  git wt add --detach hotfix HEAD~5        # Detached HEAD worktree
-  git wt add --lock --reason "WIP" feature # Locked worktree
-
-Note: Always fetches from origin to ensure up-to-date refs.
-      When using -b/-B, upstream tracking is set automatically if
-      the branch exists on origin.`,
+  git wt add --detach hotfix HEAD~5        # Detached HEAD worktree`,
 	// Disable Cobra's flag parsing so we can pass all flags through to git
 	DisableFlagParsing: true,
 	SilenceUsage:       true,

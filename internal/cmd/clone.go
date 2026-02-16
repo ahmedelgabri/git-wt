@@ -16,19 +16,10 @@ import (
 var cloneCmd = &cobra.Command{
 	Use:   "clone <repository-url> [folder-name]",
 	Short: "Clone a repository with worktree structure",
-	Long: `git wt clone - Clone a repository with worktree structure
-
-Usage:
-  git wt clone <repository-url> [folder-name]
-
-Options:
-  --help, -h      Show this help message
-
-Examples:
-  git wt clone https://github.com/user/repo.git
-  git wt clone git@github.com:user/repo.git my-repo
-
-Note: Creates .bare directory structure and initial worktree for default branch`,
+	Long: `Clone a repository and set up the bare worktree structure. Creates a .bare
+directory for git data and an initial worktree for the default branch.`,
+	Example: `  git wt clone https://github.com/user/repo.git
+  git wt clone git@github.com:user/repo.git my-repo`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	Args:          cobra.RangeArgs(1, 2),
