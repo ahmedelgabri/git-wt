@@ -149,3 +149,38 @@ teardown() {
 	assert_worktree_not_exists "$TEST_DIR/myrepo/to-remove"
 	assert_branch_not_exists "to-remove"
 }
+
+@test "remove: interactive mode removes selected worktree" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree int-remove int-remove
+
+	# Create a fake fzf that outputs in the display format
+	local wt_path="$TEST_DIR/myrepo/int-remove"
+	mkdir -p "$TEST_DIR/bin"
+	printf '#!/usr/bin/env bash\nprintf "int-remove [int-remove]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	# Confirm removal via stdin
+	echo "y" | PATH="$TEST_DIR/bin:$PATH" "$GIT_WT" remove
+
+	assert_worktree_not_exists "$TEST_DIR/myrepo/int-remove"
+	assert_branch_not_exists "int-remove"
+}
+
+@test "remove: interactive mode dry-run preserves worktree" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree dry-int dry-int
+
+	# Create a fake fzf that outputs in the display format
+	local wt_path="$TEST_DIR/myrepo/dry-int"
+	mkdir -p "$TEST_DIR/bin"
+	printf '#!/usr/bin/env bash\nprintf "dry-int [dry-int]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	PATH="$TEST_DIR/bin:$PATH" run "$GIT_WT" remove --dry-run
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"DRY RUN"* ]]
+	assert_worktree_exists "$TEST_DIR/myrepo/dry-int"
+}

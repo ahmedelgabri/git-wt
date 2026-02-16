@@ -35,6 +35,49 @@ teardown() {
 	assert_worktree_exists "$TEST_DIR/myrepo/develop"
 }
 
+@test "add: interactive mode creates local branch from remote (not detached HEAD)" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	# Create a branch on origin that only exists remotely
+	command git checkout -b remote-only --quiet
+	create_commit "remote-only.txt"
+	command git push --quiet -u origin remote-only
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D remote-only --quiet
+
+	# Create a fake fzf that returns the branch name
+	mkdir -p "$TEST_DIR/bin"
+	printf '#!/usr/bin/env bash\necho "remote-only"\n' >"$TEST_DIR/bin/fzf"
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	# Run interactive mode (no arguments) with fake fzf on PATH
+	PATH="$TEST_DIR/bin:$PATH" run "$GIT_WT" add
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/remote-only"
+	assert_branch_exists "remote-only"
+	# Verify it's not detached
+	local branch
+	branch=$(command git -C "$TEST_DIR/myrepo/remote-only" symbolic-ref --short HEAD)
+	[ "$branch" = "remote-only" ]
+}
+
+@test "add: interactive mode creates new branch" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	# Create a fake fzf that selects "Create new branch"
+	mkdir -p "$TEST_DIR/bin"
+	printf '#!/usr/bin/env bash\necho "➕ Create new branch"\n' >"$TEST_DIR/bin/fzf"
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	# Provide branch name and accept default path via stdin
+	# Can't use bats `run` with piped stdin, so run directly
+	printf 'my-new-branch\n\n' | PATH="$TEST_DIR/bin:$PATH" "$GIT_WT" add
+
+	assert_branch_exists "my-new-branch"
+	assert_worktree_exists "$TEST_DIR/myrepo/my-new-branch"
+}
+
 @test "add: fails when branch already exists" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
