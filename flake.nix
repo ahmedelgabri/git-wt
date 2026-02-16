@@ -109,6 +109,11 @@
             lefthook
             prettier
             bats
+            go
+            gopls
+            go-tools # staticcheck, etc...
+            gomodifytags
+            gotools # goimports
           ];
 
           inputsFrom = [config.treefmt.build.devShell];
