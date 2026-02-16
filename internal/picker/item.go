@@ -26,7 +26,7 @@ type Result struct {
 // Config configures the picker behavior.
 type Config struct {
 	Items       []Item
-	Multi       bool   // Enable multi-select (TAB to toggle)
+	Multi       bool // Enable multi-select (TAB to toggle)
 	Prompt      string
 	Header      string
 	PreviewFunc func(Item) string // Generate preview content for focused item

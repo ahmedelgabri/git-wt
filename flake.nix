@@ -29,38 +29,32 @@
       }: {
         packages = {
           default = self'.packages.git-wt;
-          git-wt = pkgs.stdenvNoCC.mkDerivation {
+          git-wt = pkgs.buildGoModule {
             pname = "git-wt";
-            version = "0.8.1";
+            version = "1.0.0";
 
-            src = ./.;
+            src = lib.cleanSource ./.;
+
+            vendorHash = "sha256-Px34pkxei+W09TrP//a3vzJ+9iD8Igl7ThC7F1wh+Xo=";
 
             nativeBuildInputs = with pkgs; [
-              makeWrapper
               installShellFiles
+              makeWrapper
             ];
 
-            installPhase = ''
-              runHook preInstall
-
-              mkdir -p $out/bin
-              cp git-wt $out/bin/git-wt
-              chmod +x $out/bin/git-wt
-              wrapProgram $out/bin/git-wt \
-                --prefix PATH : ${
-                pkgs.lib.makeBinPath [
-                  pkgs.git
-                  pkgs.fzf
-                ]
-              }
-
-              runHook postInstall
-            '';
+            subPackages = ["cmd/git-wt"];
 
             postInstall = ''
-              installShellCompletion --bash ${./completions/git-wt.bash}
-              installShellCompletion --zsh ${./completions/git-wt.zsh}
-              installShellCompletion --fish ${./completions/git-wt.fish}
+              # Generate shell completions before wrapping
+              $out/bin/git-wt completion bash > git-wt.bash
+              $out/bin/git-wt completion zsh > _git-wt
+              $out/bin/git-wt completion fish > git-wt.fish
+              installShellCompletion --bash git-wt.bash
+              installShellCompletion --zsh _git-wt
+              installShellCompletion --fish git-wt.fish
+
+              wrapProgram $out/bin/git-wt \
+                --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.git]}
             '';
 
             meta = {
@@ -77,6 +71,7 @@
           projectRootFile = "flake.nix";
 
           programs = {
+            gofumpt.enable = true;
             shfmt = {
               enable = true;
               indent_size = 0; # 0 = tabs
@@ -95,7 +90,6 @@
           };
 
           settings.formatter.shfmt.includes = [
-            "git-wt"
             "completions/*.bash"
           ];
         };
@@ -103,7 +97,6 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             git
-            fzf
             nixd
             shellcheck
             lefthook
@@ -111,6 +104,7 @@
             bats
             go
             gopls
+            gofumpt
             go-tools # staticcheck, etc...
             gomodifytags
             gotools # goimports
