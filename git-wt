@@ -969,7 +969,7 @@ add)
 		# Handle existing remote branch selection
 		# Create worktree from the selected remote branch
 		info "Creating worktree for '$SELECTED' from origin/$SELECTED..."
-		$CMD worktree add "$SELECTED" "origin/$SELECTED"
+		$CMD worktree add -b "$SELECTED" "$SELECTED" "origin/$SELECTED"
 		WORKTREE_ADD_EXIT=$?
 
 		# Set upstream tracking if worktree was created successfully
