@@ -22,11 +22,11 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - name: Run shellcheck
-        run: nix develop --command shellcheck git-wt completions/*.bash
-
       - name: Check formatting
         run: nix fmt -- --fail-on-change
+
+      - name: Go vet
+        run: nix develop --command go vet ./...
 
   test:
     name: Test
@@ -37,6 +37,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
       - name: Install bats
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
@@ -45,7 +50,10 @@ jobs:
             brew install bats-core
           fi
 
-      - name: Run tests
+      - name: Run unit tests
+        run: go test ./...
+
+      - name: Run E2E tests
         run: bats tests/
 
   build:

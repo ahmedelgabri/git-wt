@@ -85,11 +85,10 @@ jobs:
             nix run github:${{ github.repository }}
             ```
 
-            ### Manual Installation
+            ### Using Homebrew
 
             ```bash
-            curl -o ~/.local/bin/git-wt https://raw.githubusercontent.com/${{ github.repository }}/v${{ steps.version.outputs.version }}/git-wt
-            chmod +x ~/.local/bin/git-wt
+            brew install ahmedelgabri/git-wt/git-wt
             ```
           draft: false
           prerelease: false
