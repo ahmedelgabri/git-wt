@@ -10,15 +10,10 @@ var listCmd = &cobra.Command{
 	Short: "List all worktrees",
 	Long: `List all worktrees. This is a pass-through to 'git worktree list', so all
 git worktree list flags are supported (e.g. --porcelain).`,
-	DisableFlagParsing: true,
+	FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 	SilenceUsage:       true,
 	SilenceErrors:      true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		for _, a := range args {
-			if a == "--help" || a == "-h" {
-				return cmd.Help()
-			}
-		}
 		fullArgs := append([]string{"worktree", "list"}, args...)
 		return git.Run(fullArgs...)
 	},

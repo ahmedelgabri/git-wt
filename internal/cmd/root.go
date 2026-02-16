@@ -38,7 +38,7 @@ func init() {
 		rootCmd.AddCommand(&cobra.Command{
 			Use:                name,
 			Short:              fmt.Sprintf("Pass-through to git worktree %s", name),
-			DisableFlagParsing: true,
+			FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 			SilenceUsage:       true,
 			SilenceErrors:      true,
 			RunE: func(cmd *cobra.Command, args []string) error {

@@ -25,8 +25,7 @@ upstream tracking is set automatically if the branch exists on origin.`,
   git wt add feature origin/feature        # From remote branch
   git wt add -b new-feature new-feature    # New branch
   git wt add --detach hotfix HEAD~5        # Detached HEAD worktree`,
-	// Disable Cobra's flag parsing so we can pass all flags through to git
-	DisableFlagParsing: true,
+	FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 	SilenceUsage:       true,
 	SilenceErrors:      true,
 	RunE:               runAdd,
@@ -37,13 +36,6 @@ func init() {
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
-	// Handle --help / -h
-	for _, a := range args {
-		if a == "--help" || a == "-h" {
-			return cmd.Help()
-		}
-	}
-
 	// Change to bare root
 	root, err := worktree.BareRoot()
 	if err != nil {

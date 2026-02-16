@@ -72,10 +72,6 @@
 
           programs = {
             gofumpt.enable = true;
-            shfmt = {
-              enable = true;
-              indent_size = 0; # 0 = tabs
-            };
             prettier = {
               enable = true;
               includes = [
@@ -88,17 +84,12 @@
             };
             alejandra.enable = true;
           };
-
-          settings.formatter.shfmt.includes = [
-            "completions/*.bash"
-          ];
         };
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             git
             nixd
-            shellcheck
             lefthook
             prettier
             bats

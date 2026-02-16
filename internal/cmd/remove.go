@@ -18,18 +18,18 @@ var removeCmd = &cobra.Command{
 	Aliases: []string{"rm"},
 	Short:   "Remove worktree(s) and delete local branch(es)",
 	Long: `Remove worktree(s) and delete local branch(es). With no arguments, opens
-an interactive picker with multi-select (TAB to toggle). Supports --dry-run (-n)
-to preview without changes. Remote branches are NOT deleted; use 'destroy' for that.`,
+an interactive picker with multi-select (TAB to toggle). Remote branches are NOT
+deleted; use 'destroy' for that.`,
 	Example: `  git wt remove                            # Interactive selection
   git wt remove feature-1 feature-2        # Remove multiple
   git wt remove -n feature-1 feature-2     # Preview specific worktrees`,
-	DisableFlagParsing: true,
-	SilenceUsage:       true,
-	SilenceErrors:      true,
-	RunE:               runRemove,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	RunE:          runRemove,
 }
 
 func init() {
+	removeCmd.Flags().BoolP("dry-run", "n", false, "Preview what would be removed without making changes")
 	rootCmd.AddCommand(removeCmd)
 }
 
@@ -40,20 +40,7 @@ func runRemove(cmd *cobra.Command, args []string) error {
 // runRemoveOrDestroy handles both remove and destroy commands since they share
 // most of their logic.
 func runRemoveOrDestroy(cmd *cobra.Command, args []string, mode string) error {
-	// Parse flags
-	dryRun := false
-	var worktreeArgs []string
-
-	for _, a := range args {
-		switch a {
-		case "--help", "-h":
-			return cmd.Help()
-		case "--dry-run", "-n":
-			dryRun = true
-		default:
-			worktreeArgs = append(worktreeArgs, a)
-		}
-	}
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	entries, err := worktree.List()
 	if err != nil {
@@ -61,12 +48,12 @@ func runRemoveOrDestroy(cmd *cobra.Command, args []string, mode string) error {
 	}
 
 	// Interactive mode
-	if len(worktreeArgs) == 0 {
+	if len(args) == 0 {
 		return removeInteractive(entries, mode, dryRun)
 	}
 
 	// Non-interactive mode
-	return removeNonInteractive(entries, worktreeArgs, mode, dryRun)
+	return removeNonInteractive(entries, args, mode, dryRun)
 }
 
 func removeInteractive(entries []worktree.Entry, mode string, dryRun bool) error {

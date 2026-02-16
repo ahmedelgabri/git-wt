@@ -21,7 +21,7 @@ nix develop
 ## Common Commands
 
 ```bash
-# Format all files (gofumpt for Go, shfmt for bash, prettier for md/yml/json/svg, alejandra for nix)
+# Format all files (gofumpt for Go, prettier for md/yml/json/svg, alejandra for nix)
 nix fmt
 
 # Run Go unit tests
@@ -95,7 +95,6 @@ internal/
 ## Formatting
 
 - Go: gofumpt
-- Bash: tabs (shfmt with `indent_size=0`)
 - Markdown/YAML/JSON/SVG: prettier
 - Nix: alejandra
 
@@ -124,7 +123,7 @@ The test helper auto-builds the Go binary if it's missing or stale. You can also
 
 ## Git Hooks (lefthook)
 
-- **pre-commit**: `go vet` on Go files + `nix fmt -- --fail-on-change`
+- **pre-commit**: `go vet` + `nix fmt -- --fail-on-change`
 - **pre-push**: `nix build --no-link`
 
 ## Distribution
