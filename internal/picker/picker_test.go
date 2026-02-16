@@ -116,6 +116,71 @@ func TestModelFilterEmpty(t *testing.T) {
 	}
 }
 
+func TestApplyFilterPopulatesMatchMap(t *testing.T) {
+	items := []Item{
+		{Label: "main"},
+		{Label: "feature"},
+		{Label: "bugfix"},
+	}
+	m := newModel(Config{Items: items})
+
+	// Simulate typing "feat" into the filter
+	m.filter.SetValue("feat")
+	m.applyFilter()
+
+	if len(m.filtered) == 0 {
+		t.Fatal("expected at least one filtered result for 'feat'")
+	}
+
+	// "feature" should be in the results
+	found := false
+	for _, idx := range m.filtered {
+		if m.items[idx].Label == "feature" {
+			found = true
+			positions, ok := m.matchMap[idx]
+			if !ok {
+				t.Error("matchMap should contain an entry for matched item")
+			}
+			if len(positions) == 0 {
+				t.Error("matchMap entry should have non-empty matched positions")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected 'feature' in filtered results")
+	}
+}
+
+func TestApplyFilterClearsMatchMapOnEmpty(t *testing.T) {
+	items := []Item{
+		{Label: "main"},
+		{Label: "feature"},
+	}
+	m := newModel(Config{Items: items})
+
+	// Filter then clear
+	m.filter.SetValue("main")
+	m.applyFilter()
+	m.filter.SetValue("")
+	m.applyFilter()
+
+	if len(m.matchMap) != 0 {
+		t.Errorf("matchMap should be empty after clearing filter, got %d entries", len(m.matchMap))
+	}
+	if len(m.filtered) != 2 {
+		t.Errorf("all items should be shown after clearing filter, got %d", len(m.filtered))
+	}
+}
+
+func TestRenderLabelNoMatch(t *testing.T) {
+	m := newModel(Config{Items: []Item{{Label: "hello"}}})
+	// No filter applied, so matchMap is empty
+	got := m.renderLabel(0, "hello")
+	if got != "hello" {
+		t.Errorf("renderLabel with no matches should return plain label, got %q", got)
+	}
+}
+
 func TestEmptyItems(t *testing.T) {
 	result, err := Run(Config{Items: nil})
 	if err != nil {

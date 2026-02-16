@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -145,30 +144,18 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool) error
 		fmt.Println("This action CANNOT be undone.")
 		fmt.Println()
 		if len(targets) == 1 {
-			fmt.Printf("%s ", ui.Yellow("Type the branch name to confirm:"))
-			reader := bufio.NewReader(os.Stdin)
-			confirm, _ := reader.ReadString('\n')
-			confirm = strings.TrimSpace(confirm)
-			if confirm != targets[0].branch {
+			if !ui.PromptDangerous("Type the branch name to confirm:", targets[0].branch) {
 				fmt.Println("Cancelled (confirmation did not match branch name)")
 				return nil
 			}
 		} else {
-			fmt.Printf("%s ", ui.Yellow("Type 'destroy' to confirm:"))
-			reader := bufio.NewReader(os.Stdin)
-			confirm, _ := reader.ReadString('\n')
-			confirm = strings.TrimSpace(confirm)
-			if confirm != "destroy" {
+			if !ui.PromptDangerous("Type 'destroy' to confirm:", "destroy") {
 				fmt.Println("Cancelled (must type 'destroy' to confirm)")
 				return nil
 			}
 		}
 	} else {
-		fmt.Printf("%s ", ui.Yellow("Continue? [y/N]:"))
-		reader := bufio.NewReader(os.Stdin)
-		confirm, _ := reader.ReadString('\n')
-		confirm = strings.TrimSpace(confirm)
-		if confirm != "y" {
+		if !ui.Confirm("Continue? [y/N]:") {
 			fmt.Println("Cancelled")
 			return nil
 		}
@@ -231,17 +218,13 @@ func removeNonInteractive(entries []worktree.Entry, args []string, mode string, 
 		if firstBranch != "" {
 			extraMsg = fmt.Sprintf(" and delete its remote branch [%s]", firstBranch)
 		}
-		fmt.Printf("%s ", ui.Yellow(fmt.Sprintf("Are you sure you want to destroy '%s' workspace%s?",
-			filepath.Base(targets[0].path), extraMsg)))
+		msg := fmt.Sprintf("Are you sure you want to destroy '%s' workspace%s?",
+			filepath.Base(targets[0].path), extraMsg)
 		if len(targets) > 1 {
-			fmt.Printf("(and %d more) ", len(targets)-1)
+			msg += fmt.Sprintf(" (and %d more)", len(targets)-1)
 		}
-		fmt.Printf("[y/N]: ")
-
-		reader := bufio.NewReader(os.Stdin)
-		confirm, _ := reader.ReadString('\n')
-		confirm = strings.TrimSpace(confirm)
-		if confirm != "y" {
+		msg += " [y/N]:"
+		if !ui.Confirm(msg) {
 			fmt.Println("Cancelled")
 			return fmt.Errorf("cancelled")
 		}
@@ -261,10 +244,11 @@ func executeRemoval(targets []removalTarget, mode string) error {
 
 	for i, t := range targets {
 		if len(targets) > 1 {
+			counter := ui.Dim(fmt.Sprintf("[%d/%d]", i+1, len(targets)))
 			if mode == "destroy" {
-				ui.Infof("[%d/%d] Destroying %s...", i+1, len(targets), t.path)
+				fmt.Printf("%s Destroying %s...\n", counter, ui.Bold(t.path))
 			} else {
-				ui.Infof("[%d/%d] Removing %s...", i+1, len(targets), t.path)
+				fmt.Printf("%s Removing %s...\n", counter, ui.Bold(t.path))
 			}
 		}
 
@@ -277,8 +261,11 @@ func executeRemoval(targets []removalTarget, mode string) error {
 
 	if len(targets) > 1 {
 		fmt.Println()
-		fmt.Printf("Summary: %s, %s\n", ui.Green(fmt.Sprintf("%d succeeded", successCount)),
-			ui.Red(fmt.Sprintf("%d failed", failedCount)))
+		summary := fmt.Sprintf("Summary: %s", ui.Green(fmt.Sprintf("%d succeeded", successCount)))
+		if failedCount > 0 {
+			summary += fmt.Sprintf(", %s", ui.Red(fmt.Sprintf("%d failed", failedCount)))
+		}
+		fmt.Println(summary)
 	}
 
 	if failedCount > 0 {
@@ -362,38 +349,46 @@ func generateWorktreePreview(item picker.Item, mode string) string {
 	var b strings.Builder
 
 	if mode == "destroy" {
-		b.WriteString("DESTROY MODE - PERMANENT DELETION\n\n")
+		b.WriteString(ui.Bold(ui.Red("DESTROY MODE")) + "\n\n")
 	}
 
-	b.WriteString(fmt.Sprintf("Worktree: %s\n", item.Value))
+	b.WriteString(ui.Bold(ui.Accent("Worktree")) + "\n")
+	b.WriteString(fmt.Sprintf("  %s %s\n", ui.Subtle("Path:"), item.Value))
 
 	// Try to get branch from value
 	entries, _ := worktree.List()
 	branch := worktree.BranchFor(entries, item.Value)
 	if branch != "" {
-		b.WriteString(fmt.Sprintf("Branch: %s\n", branch))
+		b.WriteString(fmt.Sprintf("  %s %s\n", ui.Subtle("Branch:"), branch))
 	}
 
 	if mode == "destroy" {
-		b.WriteString(fmt.Sprintf("\nThis will:\n  1. Remove worktree directory\n  2. Delete local branch\n  3. Delete remote branch (origin/%s)\n", branch))
+		b.WriteString("\n")
+		b.WriteString(ui.Yellow("  - Remove worktree directory") + "\n")
+		b.WriteString(ui.Yellow("  - Delete local branch") + "\n")
+		b.WriteString(ui.Yellow(fmt.Sprintf("  - Delete remote branch (origin/%s)", branch)) + "\n")
 	}
 
-	b.WriteString("\nStatus:\n")
+	b.WriteString("\n" + ui.Bold(ui.Accent("Status")) + "\n")
 	status, err := git.QueryIn(item.Value, "status", "--short", "--branch")
 	if err != nil {
-		b.WriteString("(unable to get status)\n")
+		b.WriteString("  (unable to get status)\n")
 	} else {
-		b.WriteString(status + "\n")
+		for _, line := range strings.Split(status, "\n") {
+			b.WriteString("  " + line + "\n")
+		}
 	}
 
-	b.WriteString("\nRecent commits:\n")
+	b.WriteString("\n" + ui.Bold(ui.Accent("Recent Commits")) + "\n")
 	if branch != "" {
 		log, err := git.Query("log", "--oneline", "--graph", "--date=short",
 			"--color=always", "--pretty=format:%C(auto)%cd %h%d %s", branch, "-10", "--")
 		if err != nil {
-			b.WriteString("(unable to get log)\n")
+			b.WriteString("  (unable to get log)\n")
 		} else {
-			b.WriteString(log + "\n")
+			for _, line := range strings.Split(log, "\n") {
+				b.WriteString("  " + line + "\n")
+			}
 		}
 	}
 

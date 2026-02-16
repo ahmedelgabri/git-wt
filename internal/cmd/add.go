@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -133,11 +132,7 @@ func runAddInteractive() error {
 }
 
 func createNewBranch() error {
-	reader := bufio.NewReader(os.Stdin)
-
-	fmt.Printf("%s ", ui.Bold("Enter new branch name:"))
-	branchName, _ := reader.ReadString('\n')
-	branchName = strings.TrimSpace(branchName)
+	branchName := ui.PromptInput("Enter new branch name:")
 
 	if branchName == "" {
 		ui.Error("Branch name cannot be empty")
@@ -150,9 +145,7 @@ func createNewBranch() error {
 		return fmt.Errorf("invalid branch name '%s'", branchName)
 	}
 
-	fmt.Printf("%s ", ui.Bold(fmt.Sprintf("Enter worktree path [default: %s]:", branchName)))
-	wtPath, _ := reader.ReadString('\n')
-	wtPath = strings.TrimSpace(wtPath)
+	wtPath := ui.PromptInput(fmt.Sprintf("Enter worktree path [default: %s]:", branchName))
 	if wtPath == "" {
 		wtPath = branchName
 	}

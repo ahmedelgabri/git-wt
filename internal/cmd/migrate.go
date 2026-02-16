@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/signal"
@@ -106,11 +105,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Confirm
-	fmt.Printf("%s ", ui.Yellow("This will restructure the repository. Continue? [y/N]:"))
-	reader := bufio.NewReader(os.Stdin)
-	confirm, _ := reader.ReadString('\n')
-	confirm = strings.TrimSpace(confirm)
-	if confirm != "y" {
+	if !ui.Confirm("This will restructure the repository. Continue? [y/N]:") {
 		fmt.Println("Migration cancelled.")
 		return nil
 	}

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -99,10 +98,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 		ui.Warn("Could not discover default branch from remote")
 		fmt.Println("Available branches:")
 		git.Run("branch", "-r")
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Printf("%s ", ui.Bold("Enter default branch name (or press Enter to skip):"))
-		input, _ := reader.ReadString('\n')
-		defaultBranch = strings.TrimSpace(input)
+		defaultBranch = ui.PromptInput("Enter default branch name (or press Enter to skip):")
 	}
 
 	if defaultBranch != "" {

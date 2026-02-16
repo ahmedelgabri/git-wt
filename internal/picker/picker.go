@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -13,22 +14,26 @@ import (
 )
 
 var (
-	selectedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	cursorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	dimStyle        = lipgloss.NewStyle().Faint(true)
-	headerStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	previewBorder   = lipgloss.NewStyle().BorderLeft(true).BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("8")).PaddingLeft(1)
-	checkboxChecked = selectedStyle.Render("[x]")
-	checkboxEmpty   = dimStyle.Render("[ ]")
+	selectedStyle = lipgloss.NewStyle().Foreground(ui.SuccessColor())
+	cursorStyle   = lipgloss.NewStyle().Foreground(ui.AccentColor()).Bold(true)
+	dimStyle      = lipgloss.NewStyle().Faint(true)
+	headerStyle   = lipgloss.NewStyle().Foreground(ui.WarnColor())
+	matchStyle    = lipgloss.NewStyle().Foreground(ui.HighlightColor()).Bold(true)
+	previewSep    = lipgloss.NewStyle().Foreground(ui.MutedColor())
+	descStyle     = lipgloss.NewStyle().Foreground(ui.SubtleColor())
+	keyStyle      = lipgloss.NewStyle().Foreground(ui.AccentColor())
+	filterPrompt  = lipgloss.NewStyle().Foreground(ui.AccentColor())
 )
 
 type model struct {
-	items       []Item
-	filtered    []int // indices into items
-	cursor      int
-	multi       bool
-	prompt      string
-	header      string
+	items    []Item
+	filtered []int         // indices into items
+	matchMap map[int][]int // itemIndex -> matched character positions
+	cursor   int
+	multi    bool
+	prompt   string
+	header   string
+
 	previewFunc func(Item) string
 
 	filter   textinput.Model
@@ -65,6 +70,7 @@ func newModel(cfg Config) model {
 	return model{
 		items:       cfg.Items,
 		filtered:    indices,
+		matchMap:    make(map[int][]int),
 		multi:       cfg.Multi,
 		prompt:      cfg.Prompt,
 		header:      cfg.Header,
@@ -157,6 +163,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) applyFilter() {
 	query := m.filter.Value()
+	m.matchMap = make(map[int][]int)
+
 	if query == "" {
 		m.filtered = make([]int, len(m.items))
 		for i := range m.items {
@@ -171,6 +179,7 @@ func (m *model) applyFilter() {
 		m.filtered = make([]int, len(matches))
 		for i, match := range matches {
 			m.filtered[i] = match.Index
+			m.matchMap[match.Index] = match.MatchedIndexes
 		}
 	}
 	if m.cursor >= len(m.filtered) {
@@ -206,6 +215,29 @@ func (m model) collectResult() Result {
 	return Result{Canceled: true}
 }
 
+// renderLabel renders an item label with fuzzy match characters highlighted.
+func (m model) renderLabel(itemIdx int, label string) string {
+	positions, ok := m.matchMap[itemIdx]
+	if !ok || len(positions) == 0 {
+		return label
+	}
+
+	posSet := make(map[int]struct{}, len(positions))
+	for _, p := range positions {
+		posSet[p] = struct{}{}
+	}
+
+	var b strings.Builder
+	for i, ch := range label {
+		if _, match := posSet[i]; match {
+			b.WriteString(matchStyle.Render(string(ch)))
+		} else {
+			b.WriteRune(ch)
+		}
+	}
+	return b.String()
+}
+
 func (m model) View() string {
 	if m.done {
 		return ""
@@ -218,7 +250,8 @@ func (m model) View() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("> ")
+	b.WriteString(filterPrompt.Render("/"))
+	b.WriteString(" ")
 	b.WriteString(m.filter.View())
 	b.WriteString("\n")
 
@@ -252,18 +285,20 @@ func (m model) View() string {
 			prefix = cursorStyle.Render("> ")
 		}
 
+		label := m.renderLabel(idx, item.Label)
+
 		if m.multi {
-			check := checkboxEmpty
+			check := dimStyle.Render("○")
 			if item.selected {
-				check = checkboxChecked
+				check = selectedStyle.Render("◉")
 			}
-			line = fmt.Sprintf("%s %s %s", prefix, check, item.Label)
+			line = fmt.Sprintf("%s %s %s", prefix, check, label)
 		} else {
-			line = fmt.Sprintf("%s %s", prefix, item.Label)
+			line = fmt.Sprintf("%s %s", prefix, label)
 		}
 
 		if item.Desc != "" {
-			line += "\t" + dimStyle.Render(item.Desc)
+			line += " " + descStyle.Render("·") + " " + descStyle.Render(item.Desc)
 		}
 
 		listLines = append(listLines, line)
@@ -281,6 +316,7 @@ func (m model) View() string {
 		// Render side by side
 		leftLines := strings.Split(listContent, "\n")
 		rightLines := strings.Split(m.viewport.View(), "\n")
+		sep := previewSep.Render("│")
 
 		maxLines := max(len(leftLines), len(rightLines))
 		var combined strings.Builder
@@ -296,7 +332,9 @@ func (m model) View() string {
 			// Pad left column
 			left = padRight(left, listWidth)
 			combined.WriteString(left)
-			combined.WriteString(" | ")
+			combined.WriteString(" ")
+			combined.WriteString(sep)
+			combined.WriteString(" ")
 			combined.WriteString(right)
 			if i < maxLines-1 {
 				combined.WriteString("\n")
@@ -309,11 +347,22 @@ func (m model) View() string {
 
 	b.WriteString("\n")
 
-	// Footer
+	// Footer with styled keys
 	if m.multi {
-		b.WriteString(dimStyle.Render("TAB: select  ENTER: confirm  ESC: cancel"))
+		b.WriteString(keyStyle.Render("TAB"))
+		b.WriteString(dimStyle.Render(" select"))
+		b.WriteString(dimStyle.Render(" · "))
+		b.WriteString(keyStyle.Render("ENTER"))
+		b.WriteString(dimStyle.Render(" confirm"))
+		b.WriteString(dimStyle.Render(" · "))
+		b.WriteString(keyStyle.Render("ESC"))
+		b.WriteString(dimStyle.Render(" cancel"))
 	} else {
-		b.WriteString(dimStyle.Render("ENTER: select  ESC: cancel"))
+		b.WriteString(keyStyle.Render("ENTER"))
+		b.WriteString(dimStyle.Render(" select"))
+		b.WriteString(dimStyle.Render(" · "))
+		b.WriteString(keyStyle.Render("ESC"))
+		b.WriteString(dimStyle.Render(" cancel"))
 	}
 
 	return b.String()
