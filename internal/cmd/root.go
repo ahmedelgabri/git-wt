@@ -177,6 +177,16 @@ func init() {
 // Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		// If Cobra doesn't recognize the subcommand, pass through to git worktree.
+		// This matches the bash version's catch-all: $CMD worktree "$@"
+		if args := os.Args[1:]; len(args) > 0 {
+			passErr := git.Run(append([]string{"worktree"}, args...)...)
+			if passErr != nil {
+				os.Exit(1)
+			}
+			return
+		}
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
