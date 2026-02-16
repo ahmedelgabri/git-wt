@@ -2,8 +2,11 @@ pre-commit:
   parallel: true
   commands:
     shellcheck:
-      glob: "{git-wt,completions/*.bash}"
+      glob: "completions/*.bash"
       run: shellcheck {staged_files}
+    govet:
+      glob: "**/*.go"
+      run: go vet ./...
     treefmt:
       env:
         TERM: dumb

@@ -1,8 +1,18 @@
 # Test helper for git-wt bats tests
 # Provides setup/teardown functions and utilities for testing
 
-# Path to the git-wt script under test
-GIT_WT="${BATS_TEST_DIRNAME}/../git-wt"
+# Path to the git-wt binary under test
+# Use GIT_WT env var if set, otherwise build from source
+if [[ -z ${GIT_WT:-} ]]; then
+	GIT_WT="${BATS_TEST_DIRNAME}/../git-wt"
+	# Build from Go source if the binary doesn't exist or is stale
+	if [[ ! -x $GIT_WT ]] || [[ -f "${BATS_TEST_DIRNAME}/../cmd/git-wt/main.go" && "${BATS_TEST_DIRNAME}/../cmd/git-wt/main.go" -nt $GIT_WT ]]; then
+		(cd "${BATS_TEST_DIRNAME}/.." && go build -o git-wt ./cmd/git-wt/) || {
+			echo "Failed to build git-wt binary" >&2
+			exit 1
+		}
+	fi
+fi
 
 # Create a temporary directory for test repos
 setup_test_env() {

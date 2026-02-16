@@ -177,9 +177,10 @@ func init() {
 // Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		// If Cobra doesn't recognize the subcommand, pass through to git worktree.
-		// This matches the bash version's catch-all: $CMD worktree "$@"
-		if args := os.Args[1:]; len(args) > 0 {
+		// Only pass through to git worktree for unknown subcommands.
+		// Check if the error is an "unknown command" error by seeing if the
+		// first arg matches any registered command.
+		if args := os.Args[1:]; len(args) > 0 && !isKnownCommand(args[0]) {
 			passErr := git.Run(append([]string{"worktree"}, args...)...)
 			if passErr != nil {
 				os.Exit(1)
@@ -189,4 +190,19 @@ func Execute() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func isKnownCommand(name string) bool {
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == name {
+			return true
+		}
+		for _, alias := range cmd.Aliases {
+			if alias == name {
+				return true
+			}
+		}
+	}
+	// Also check built-in names
+	return name == "help" || name == "--help" || name == "-h"
 }

@@ -1,6 +1,6 @@
 # What is git-wt
 
-A bash script (`git-wt`) that implements the [bare repository worktree pattern](https://gabri.me/blog/git-worktrees-done-right). Instead of a traditional `.git/` directory, the git database lives in `.bare/` and a `.git` **file** (not directory) points to it with `gitdir: ./.bare`. Each branch gets its own sibling worktree directory, so `ls` shows your branches:
+A Go CLI tool that implements the [bare repository worktree pattern](https://gabri.me/blog/git-worktrees-done-right). Instead of a traditional `.git/` directory, the git database lives in `.bare/` and a `.git` **file** (not directory) points to it with `gitdir: ./.bare`. Each branch gets its own sibling worktree directory, so `ls` shows your branches:
 
 ```
 my-project/
@@ -21,13 +21,13 @@ nix develop
 ## Common Commands
 
 ```bash
-# Format all files (shfmt for bash, prettier for md/yml/json/svg, alejandra for nix)
+# Format all files (gofumpt for Go, shfmt for bash, prettier for md/yml/json/svg, alejandra for nix)
 nix fmt
 
-# Lint
-shellcheck git-wt completions/*.bash
+# Run Go unit tests
+go test ./...
 
-# Run all tests
+# Run all E2E tests (auto-builds binary if needed)
 bats tests/
 
 # Run a single test file
@@ -36,7 +36,10 @@ bats tests/add.bats
 # Run a specific test by name
 bats tests/add.bats -f "test name pattern"
 
-# Build
+# Build locally
+go build -o git-wt ./cmd/git-wt/
+
+# Build with Nix
 nix build
 
 # Run all checks (build + format verification)
@@ -48,22 +51,61 @@ DEBUG=1 ./git-wt add
 
 ## Architecture
 
-Single bash script (`git-wt`) with command dispatch via case statement. Bash 3.x compatible (indexed arrays, no associative arrays) for macOS support.
+Go CLI built with [cobra](https://github.com/spf13/cobra) for command routing and [bubbletea](https://github.com/charmbracelet/bubbletea) for interactive TUI.
 
-**Key design patterns:**
+### Project Structure
 
-- **`$CMD` vs direct `git`**: Mutation operations use `$CMD` (which becomes `echo git` in DEBUG mode). Read-only operations call `git` directly. This is how the DEBUG/dry-run system works.
-- **Worktree cache**: `load_worktree_cache()` parses `git worktree list --porcelain` once per invocation into parallel indexed arrays (`WORKTREE_CACHE_PATHS`, `WORKTREE_CACHE_BRANCHES`, `WORKTREE_CACHE_HEADS`).
-- **`resolve_worktree_path()`**: Central resolver that takes user input (name, relative path, absolute path) and resolves it to a full worktree path.
-- **NO_COLOR**: Color output respects the `NO_COLOR` environment variable.
+```
+cmd/git-wt/main.go          # Entry point
+internal/
+├── cmd/                     # Cobra command definitions
+│   ├── root.go              # Root command, help, pass-throughs
+│   ├── clone.go
+│   ├── migrate.go
+│   ├── add.go
+│   ├── remove.go            # Also handles destroy via shared logic
+│   ├── destroy.go
+│   ├── update.go
+│   ├── switch.go
+│   ├── list.go
+│   └── completion.go        # Shell completion generation
+├── git/
+│   └── git.go               # Git command runner with DEBUG mode
+├── worktree/
+│   ├── cache.go             # Worktree cache ([]Entry structs)
+│   └── resolve.go           # Path resolution, BareRoot, DefaultBranch
+├── picker/                  # Bubbletea-based fuzzy picker (replaces fzf)
+│   ├── picker.go
+│   └── item.go
+├── ui/
+│   └── ui.go                # Color output with lipgloss, NO_COLOR support
+└── fsutil/
+    └── copy.go              # Directory copy (replaces rsync)
+```
+
+### Key design patterns
+
+- **`git.Run()` vs `git.Query()`**: Mutation operations use `git.Run()` (which becomes a print in DEBUG mode). Read-only operations use `git.Query()` (always runs, even in DEBUG mode).
+- **Worktree cache**: `worktree.List()` parses `git worktree list --porcelain` into `[]worktree.Entry` structs.
+- **`worktree.Resolve()`**: Central resolver that takes user input (name, relative path, absolute path) and resolves it to a full worktree path.
+- **NO_COLOR**: Color output via lipgloss respects the `NO_COLOR` environment variable.
+- **Interactive TUI**: `internal/picker` provides a bubbletea-based fuzzy finder with preview, replacing fzf.
+- **Pure Go copy**: `internal/fsutil` provides directory copy, replacing rsync.
 
 ## Formatting
 
+- Go: gofumpt
 - Bash: tabs (shfmt with `indent_size=0`)
 - Markdown/YAML/JSON/SVG: prettier
 - Nix: alejandra
 
 ## Testing
+
+### Go Unit Tests
+
+Each `internal/` package has `_test.go` files. Run with `go test ./...`.
+
+### BATS E2E Tests
 
 Tests use [bats](https://github.com/bats-core/bats-core) (Bash Automated Testing System). Test helpers are in `tests/test_helper.bash`.
 
@@ -78,16 +120,18 @@ All init helpers use `-b main` to ensure deterministic branch naming across envi
 
 Each test gets an isolated temp directory via `setup_test_env`/`teardown_test_env`.
 
+The test helper auto-builds the Go binary if it's missing or stale. You can also override with `GIT_WT=/path/to/binary bats tests/`.
+
 ## Git Hooks (lefthook)
 
-- **pre-commit**: shellcheck on staged files + `nix fmt -- --fail-on-change`
+- **pre-commit**: `go vet` on Go files + `nix fmt -- --fail-on-change`
 - **pre-push**: `nix build --no-link`
 
 ## Distribution
 
-- **Nix Flakes**: `flake.nix` in this repo
+- **Nix Flakes**: `flake.nix` in this repo (uses `buildGoModule`)
 - **Homebrew**: separate tap repo at [ahmedelgabri/homebrew-git-wt](https://github.com/ahmedelgabri/homebrew-git-wt)
 
 ## Shell Completions
 
-Completion scripts for bash, zsh, and fish live in `completions/`. These are installed automatically by the Nix package.
+Generated automatically by cobra during the nix build. Supports bash, zsh, and fish.

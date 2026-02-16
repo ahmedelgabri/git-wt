@@ -21,6 +21,11 @@ Note: This is a wrapper around 'git worktree list'`,
 	SilenceUsage:       true,
 	SilenceErrors:      true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		for _, a := range args {
+			if a == "--help" || a == "-h" {
+				return cmd.Help()
+			}
+		}
 		fullArgs := append([]string{"worktree", "list"}, args...)
 		return git.Run(fullArgs...)
 	},
