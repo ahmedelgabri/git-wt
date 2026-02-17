@@ -26,6 +26,17 @@ func Resolve(entries []Entry, input string) (string, error) {
 		}
 	}
 
+	// Relative-to-bare-root match (handles slash-containing paths like feature/my-thing)
+	bareRoot, err := BareRoot()
+	if err == nil {
+		candidate := filepath.Join(bareRoot, input)
+		for _, e := range entries {
+			if e.Path == candidate {
+				return e.Path, nil
+			}
+		}
+	}
+
 	// Realpath match (resolve relative/symlinked paths)
 	resolved, err := filepath.EvalSymlinks(input)
 	if err == nil {
@@ -50,9 +61,14 @@ func Validate(entries []Entry, input string) error {
 		return nil
 	}
 
+	bareRoot, _ := BareRoot()
 	names := make([]string, len(entries))
 	for i, e := range entries {
-		names[i] = filepath.Base(e.Path)
+		if bareRoot != "" {
+			names[i] = strings.TrimPrefix(e.Path, bareRoot+string(os.PathSeparator))
+		} else {
+			names[i] = filepath.Base(e.Path)
+		}
 	}
 	return fmt.Errorf("'%s' is not a valid worktree. Available worktrees:\n  %s",
 		input, strings.Join(names, "\n  "))
