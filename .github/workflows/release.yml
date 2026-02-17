@@ -65,8 +65,24 @@ jobs:
 
             ### Using Nix Flakes
 
+            Add to your flake inputs:
+
+            ```nix
+            {
+              inputs.git-wt.url = "github:${{ github.repository }}";
+            }
+            ```
+
+            Then add to your packages:
+
+            ```nix
+            inputs.git-wt.packages.${system}.default
+            ```
+
+            Or run directly:
+
             ```bash
-            nix profile install github:${{ github.repository }}
+            nix run github:${{ github.repository }}
             ```
 
             ### Manual Installation
