@@ -35,7 +35,7 @@
 
             src = lib.cleanSource ./.;
 
-            vendorHash = "sha256-XzLxvvd5WAhBiSIql9XV0xQxOvLWK1buF83pFVZxi3c=";
+            vendorHash = "sha256-poFuKaGgetruPsMLM3HZ1vgZNKmLWNqB2B4MJrTTjEc=";
 
             nativeBuildInputs = with pkgs; [
               installShellFiles
@@ -52,6 +52,11 @@
               installShellCompletion --bash git-wt.bash
               installShellCompletion --zsh _git-wt
               installShellCompletion --fish git-wt.fish
+
+              # Generate and install man pages
+              mkdir -p $TMPDIR/man
+              $out/bin/git-wt man $TMPDIR/man
+              installManPage $TMPDIR/man/*.1
 
               wrapProgram $out/bin/git-wt \
                 --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.git]}
