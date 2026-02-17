@@ -1,8 +1,13 @@
 package picker
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/exp/teatest"
 )
 
 func TestItemFilterValue(t *testing.T) {
@@ -222,5 +227,244 @@ func TestEmptyItems(t *testing.T) {
 	}
 	if !result.Canceled {
 		t.Error("Run with empty items should return canceled")
+	}
+}
+
+// --- GIT_WT_SELECT env var bypass tests ---
+
+func TestResolveEnvSelectionByValue(t *testing.T) {
+	cfg := Config{
+		Items: []Item{
+			{Label: "main [main]", Value: "/project/main"},
+			{Label: "feature [feature]", Value: "/project/feature"},
+		},
+	}
+	result, err := resolveEnvSelection(cfg, "/project/feature")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Canceled {
+		t.Fatal("should not be canceled")
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	if result.Items[0].Value != "/project/feature" {
+		t.Errorf("value = %q, want %q", result.Items[0].Value, "/project/feature")
+	}
+}
+
+func TestResolveEnvSelectionByLabel(t *testing.T) {
+	cfg := Config{
+		Items: []Item{
+			{Label: "main", Value: "/project/main"},
+			{Label: "feature", Value: "/project/feature"},
+		},
+	}
+	result, err := resolveEnvSelection(cfg, "feature")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Canceled {
+		t.Fatal("should not be canceled")
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	if result.Items[0].Label != "feature" {
+		t.Errorf("label = %q, want %q", result.Items[0].Label, "feature")
+	}
+}
+
+func TestResolveEnvSelectionMulti(t *testing.T) {
+	cfg := Config{
+		Items: []Item{
+			{Label: "main", Value: "/project/main"},
+			{Label: "feature", Value: "/project/feature"},
+			{Label: "bugfix", Value: "/project/bugfix"},
+		},
+	}
+	result, err := resolveEnvSelection(cfg, "main,bugfix")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Canceled {
+		t.Fatal("should not be canceled")
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(result.Items))
+	}
+	if result.Items[0].Label != "main" {
+		t.Errorf("first = %q, want %q", result.Items[0].Label, "main")
+	}
+	if result.Items[1].Label != "bugfix" {
+		t.Errorf("second = %q, want %q", result.Items[1].Label, "bugfix")
+	}
+}
+
+func TestResolveEnvSelectionNoMatch(t *testing.T) {
+	cfg := Config{
+		Items: []Item{
+			{Label: "main", Value: "/project/main"},
+		},
+	}
+	result, err := resolveEnvSelection(cfg, "nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Canceled {
+		t.Fatal("should be canceled when no match")
+	}
+}
+
+func TestRunWithEnvBypass(t *testing.T) {
+	t.Setenv("GIT_WT_SELECT", "feature")
+	result, err := Run(Config{
+		Items: []Item{
+			{Label: "main", Value: "/project/main"},
+			{Label: "feature", Value: "/project/feature"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Canceled {
+		t.Fatal("should not be canceled")
+	}
+	if len(result.Items) != 1 || result.Items[0].Label != "feature" {
+		t.Errorf("expected feature, got %v", result.Items)
+	}
+}
+
+// --- teatest interaction tests ---
+
+var testItems = []Item{
+	{Label: "main", Value: "/project/main"},
+	{Label: "feature", Value: "/project/feature"},
+	{Label: "bugfix", Value: "/project/bugfix"},
+}
+
+func waitForRender(t *testing.T, tm *teatest.TestModel, text string) {
+	t.Helper()
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte(text))
+	}, teatest.WithDuration(3*time.Second))
+}
+
+func TestTeatestSingleSelection(t *testing.T) {
+	tm := teatest.NewTestModel(t, newModel(Config{Items: testItems}),
+		teatest.WithInitialTermSize(80, 24))
+
+	waitForRender(t, tm, "feature")
+
+	// Move down to "feature", then confirm
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	final := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(model)
+	if final.result.Canceled {
+		t.Fatal("should not be canceled")
+	}
+	if len(final.result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(final.result.Items))
+	}
+	if final.result.Items[0].Label != "feature" {
+		t.Errorf("selected = %q, want %q", final.result.Items[0].Label, "feature")
+	}
+}
+
+func TestTeatestMultiSelect(t *testing.T) {
+	tm := teatest.NewTestModel(t, newModel(Config{Items: testItems, Multi: true}),
+		teatest.WithInitialTermSize(80, 24))
+
+	waitForRender(t, tm, "main")
+
+	// Tab selects "main" and advances cursor to "feature"
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	// Move down to "bugfix"
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	// Tab selects "bugfix"
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	final := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(model)
+	if final.result.Canceled {
+		t.Fatal("should not be canceled")
+	}
+	if len(final.result.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(final.result.Items))
+	}
+	if final.result.Items[0].Label != "main" {
+		t.Errorf("first = %q, want %q", final.result.Items[0].Label, "main")
+	}
+	if final.result.Items[1].Label != "bugfix" {
+		t.Errorf("second = %q, want %q", final.result.Items[1].Label, "bugfix")
+	}
+}
+
+func TestTeatestCancel(t *testing.T) {
+	tm := teatest.NewTestModel(t, newModel(Config{Items: testItems}),
+		teatest.WithInitialTermSize(80, 24))
+
+	waitForRender(t, tm, "main")
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
+
+	final := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(model)
+	if !final.result.Canceled {
+		t.Fatal("should be canceled")
+	}
+}
+
+func TestTeatestFilter(t *testing.T) {
+	tm := teatest.NewTestModel(t, newModel(Config{Items: testItems}),
+		teatest.WithInitialTermSize(80, 24))
+
+	waitForRender(t, tm, "main")
+
+	tm.Type("feat")
+
+	waitForRender(t, tm, "feature")
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	final := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(model)
+	if final.result.Canceled {
+		t.Fatal("should not be canceled")
+	}
+	if len(final.result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(final.result.Items))
+	}
+	if final.result.Items[0].Label != "feature" {
+		t.Errorf("selected = %q, want %q", final.result.Items[0].Label, "feature")
+	}
+}
+
+func TestTeatestFilterClear(t *testing.T) {
+	tm := teatest.NewTestModel(t, newModel(Config{Items: testItems}),
+		teatest.WithInitialTermSize(80, 24))
+
+	waitForRender(t, tm, "bugfix")
+
+	tm.Type("feat")
+
+	waitForRender(t, tm, "feature")
+
+	// Clear filter with backspaces
+	for range 4 {
+		tm.Send(tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+
+	// All items should be restored
+	waitForRender(t, tm, "bugfix")
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	final := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(model)
+	if final.result.Canceled {
+		t.Fatal("should not be canceled")
+	}
+	if final.result.Items[0].Label != "main" {
+		t.Errorf("selected = %q, want %q", final.result.Items[0].Label, "main")
 	}
 }

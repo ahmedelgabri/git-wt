@@ -2,6 +2,7 @@ package picker
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/ui"
@@ -379,9 +380,14 @@ func padRight(s string, width int) string {
 }
 
 // Run displays the picker and returns the result.
+// If GIT_WT_SELECT is set, bypasses the TUI and selects matching items directly.
 func Run(cfg Config) (Result, error) {
 	if len(cfg.Items) == 0 {
 		return Result{Canceled: true}, nil
+	}
+
+	if sel := os.Getenv("GIT_WT_SELECT"); sel != "" {
+		return resolveEnvSelection(cfg, sel)
 	}
 
 	m := newModel(cfg)
@@ -392,4 +398,40 @@ func Run(cfg Config) (Result, error) {
 	}
 
 	return finalModel.(model).result, nil
+}
+
+// resolveEnvSelection matches comma-separated values from GIT_WT_SELECT against
+// item Value first, then Label. Returns Canceled if nothing matches.
+func resolveEnvSelection(cfg Config, sel string) (Result, error) {
+	parts := strings.Split(sel, ",")
+	var matched []Item
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if item, ok := findItem(cfg.Items, part); ok {
+			matched = append(matched, item)
+		}
+	}
+	if len(matched) == 0 {
+		return Result{Canceled: true}, nil
+	}
+	return Result{Items: matched}, nil
+}
+
+func findItem(items []Item, needle string) (Item, bool) {
+	// Match by Value first
+	for _, item := range items {
+		if item.Value == needle {
+			return item, true
+		}
+	}
+	// Fall back to Label
+	for _, item := range items {
+		if item.Label == needle {
+			return item, true
+		}
+	}
+	return Item{}, false
 }
