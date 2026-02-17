@@ -25,13 +25,24 @@ upstream tracking is set automatically if the branch exists on origin.`,
   git wt add feature origin/feature        # From remote branch
   git wt add -b new-feature new-feature    # New branch
   git wt add --detach hotfix HEAD~5        # Detached HEAD worktree`,
-	FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
-	SilenceUsage:       true,
-	SilenceErrors:      true,
-	RunE:               runAdd,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	RunE:          runAdd,
 }
 
 func init() {
+	f := addCmd.Flags()
+	f.StringP("branch", "b", "", "Create a new branch")
+	f.StringP("force-branch", "B", "", "Create or reset a branch")
+	f.BoolP("detach", "d", false, "Detach HEAD at the new worktree")
+	f.BoolP("force", "f", false, "Checkout even if branch is checked out in another worktree")
+	f.Bool("lock", false, "Lock the worktree after creation")
+	f.String("reason", "", "Lock reason (use with --lock)")
+	f.BoolP("quiet", "q", false, "Suppress feedback messages")
+	f.Bool("no-checkout", false, "Don't populate the worktree")
+	f.Bool("no-track", false, "Don't set up upstream tracking")
+	f.Bool("guess-remote", false, "Try to match new branch with remote-tracking branch")
+	f.Bool("orphan", false, "Create worktree with an orphan branch")
 	rootCmd.AddCommand(addCmd)
 }
 
@@ -51,13 +62,13 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// If no arguments, run interactive mode
-	if len(args) == 0 {
+	// If no arguments and no flags set, run interactive mode
+	if len(args) == 0 && !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("force-branch") {
 		return runAddInteractive()
 	}
 
-	// Non-interactive: parse flags and pass through to git worktree add
-	return runAddDirect(args)
+	// Non-interactive: build git args from parsed flags
+	return runAddDirect(cmd, args)
 }
 
 func runAddInteractive() error {
@@ -146,28 +157,47 @@ func createNewBranch() error {
 	return git.Run("worktree", "add", "-b", branchName, wtPath)
 }
 
-func runAddDirect(args []string) error {
-	// Parse arguments to capture -b/-B branch name for upstream tracking
-	var branch string
+func runAddDirect(cmd *cobra.Command, args []string) error {
 	var gitArgs []string
 
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "-b", "-B":
-			if i+1 < len(args) {
-				branch = args[i+1]
-				gitArgs = append(gitArgs, args[i], args[i+1])
-				i++
-			}
-		case "--reason":
-			if i+1 < len(args) {
-				gitArgs = append(gitArgs, args[i], args[i+1])
-				i++
-			}
-		default:
-			gitArgs = append(gitArgs, args[i])
-		}
+	branch, _ := cmd.Flags().GetString("branch")
+	if branch != "" {
+		gitArgs = append(gitArgs, "-b", branch)
 	}
+	forceBranch, _ := cmd.Flags().GetString("force-branch")
+	if forceBranch != "" {
+		gitArgs = append(gitArgs, "-B", forceBranch)
+	}
+	if detach, _ := cmd.Flags().GetBool("detach"); detach {
+		gitArgs = append(gitArgs, "--detach")
+	}
+	if force, _ := cmd.Flags().GetBool("force"); force {
+		gitArgs = append(gitArgs, "--force")
+	}
+	if lock, _ := cmd.Flags().GetBool("lock"); lock {
+		gitArgs = append(gitArgs, "--lock")
+	}
+	if reason, _ := cmd.Flags().GetString("reason"); reason != "" {
+		gitArgs = append(gitArgs, "--reason", reason)
+	}
+	if quiet, _ := cmd.Flags().GetBool("quiet"); quiet {
+		gitArgs = append(gitArgs, "--quiet")
+	}
+	if noCheckout, _ := cmd.Flags().GetBool("no-checkout"); noCheckout {
+		gitArgs = append(gitArgs, "--no-checkout")
+	}
+	if noTrack, _ := cmd.Flags().GetBool("no-track"); noTrack {
+		gitArgs = append(gitArgs, "--no-track")
+	}
+	if guessRemote, _ := cmd.Flags().GetBool("guess-remote"); guessRemote {
+		gitArgs = append(gitArgs, "--guess-remote")
+	}
+	if orphan, _ := cmd.Flags().GetBool("orphan"); orphan {
+		gitArgs = append(gitArgs, "--orphan")
+	}
+
+	// Append positional args (path, commit-ish)
+	gitArgs = append(gitArgs, args...)
 
 	// Create the worktree
 	fullArgs := append([]string{"worktree", "add"}, gitArgs...)
@@ -176,12 +206,16 @@ func runAddDirect(args []string) error {
 	}
 
 	// Set upstream tracking if -b/-B was used
-	if branch != "" {
-		if _, err := git.Query("rev-parse", "--verify", "origin/"+branch); err == nil {
-			fmt.Printf("Setting upstream to origin/%s\n", branch)
-			return git.Run("branch", "--set-upstream-to=origin/"+branch, branch)
+	trackBranch := branch
+	if trackBranch == "" {
+		trackBranch = forceBranch
+	}
+	if trackBranch != "" {
+		if _, err := git.Query("rev-parse", "--verify", "origin/"+trackBranch); err == nil {
+			fmt.Printf("Setting upstream to origin/%s\n", trackBranch)
+			return git.Run("branch", "--set-upstream-to=origin/"+trackBranch, trackBranch)
 		}
-		fmt.Printf("\nBranch '%s' created locally.\nTo push and set upstream:\n  git push -u origin %s\n", branch, branch)
+		fmt.Printf("\nBranch '%s' created locally.\nTo push and set upstream:\n  git push -u origin %s\n", trackBranch, trackBranch)
 	}
 
 	return nil
