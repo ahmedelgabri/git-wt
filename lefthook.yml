@@ -5,6 +5,8 @@ pre-commit:
       glob: "{git-wt,completions/*.bash}"
       run: shellcheck {staged_files}
     treefmt:
+      env:
+        TERM: dumb
       run: nix fmt -- --fail-on-change
 
 pre-push:

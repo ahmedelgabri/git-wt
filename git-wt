@@ -137,6 +137,17 @@ resolve_worktree_path() {
 		fi
 	done
 
+	# Relative-to-bare-root match (handles slash-containing paths like feature/my-thing)
+	local bare_root candidate
+	bare_root=$(get_bare_root)
+	candidate="$bare_root/$input"
+	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
+		if [[ ${WORKTREE_CACHE_PATHS[$i]} == "$candidate" ]]; then
+			echo "$candidate"
+			return 0
+		fi
+	done
+
 	# Realpath match (resolve relative/symlinked paths)
 	local resolved
 	resolved=$(realpath "$input" 2>/dev/null) || return 1
@@ -174,9 +185,10 @@ validate_worktree() {
 		return 0
 	fi
 	error "'$1' is not a valid worktree. Available worktrees:"
-	local i
+	local i bare_root
+	bare_root=$(get_bare_root)
 	for i in "${!WORKTREE_CACHE_PATHS[@]}"; do
-		echo "  ${WORKTREE_CACHE_PATHS[$i]##*/}" >&2
+		echo "  ${WORKTREE_CACHE_PATHS[$i]#"$bare_root"/}" >&2
 	done
 	return 1
 }

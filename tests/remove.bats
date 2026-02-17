@@ -136,6 +136,52 @@ teardown() {
 	[[ "$output" == *"some-wt"* ]]
 }
 
+@test "remove: invalid name lists available nested worktrees with full relative path" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/nested feature/nested
+
+	run "$GIT_WT" remove no-such-wt
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Available worktrees:"* ]]
+	[[ "$output" == *"feature/nested"* ]]
+}
+
+@test "remove: resolves worktree with slash-containing path by name" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/my-thing feature/my-thing
+
+	run "$GIT_WT" remove feature/my-thing
+	[ "$status" -eq 0 ]
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/my-thing"
+	assert_branch_not_exists "feature/my-thing"
+}
+
+@test "remove: resolves worktree with slash-containing path by full path" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/another feature/another
+
+	run "$GIT_WT" remove "$TEST_DIR/myrepo/feature/another"
+	[ "$status" -eq 0 ]
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/another"
+	assert_branch_not_exists "feature/another"
+}
+
+@test "remove: resolves worktree with slash-containing path from another worktree" {
+	init_bare_repo myrepo
+	cd myrepo
+	command git worktree add main HEAD --quiet 2>/dev/null
+	create_worktree feature/nested feature/nested
+	cd main
+
+	run "$GIT_WT" remove feature/nested
+	[ "$status" -eq 0 ]
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/nested"
+	assert_branch_not_exists "feature/nested"
+}
+
 @test "remove: works from worktree subdirectory" {
 	init_bare_repo myrepo
 	cd myrepo
