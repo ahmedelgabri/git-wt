@@ -81,7 +81,7 @@ func runAddInteractive() error {
 	var items []picker.Item
 	// Add "Create new branch" option first
 	items = append(items, picker.Item{
-		Label: "Create new branch",
+		Label: "➕ Create new branch",
 		Value: "__create_new__",
 	})
 

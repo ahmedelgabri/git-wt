@@ -34,9 +34,8 @@ func Run(cfg Config) (Result, error) {
 		"--ansi",
 		"--delimiter", "\t",
 		"--with-nth", "2..",
-		"--nth", "2..",
 		"--reverse",
-		"--height", "~40%",
+		"--height", "50%",
 	}
 
 	if cfg.Multi {
