@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestNoColorOutput(t *testing.T) {
@@ -327,5 +329,171 @@ func TestSpinFallbackError(t *testing.T) {
 	})
 	if !errors.Is(err, testErr) {
 		t.Errorf("Spin() = %v, want %v", err, testErr)
+	}
+}
+
+func TestSuccessPrefix(t *testing.T) {
+	old := noColor
+	noColor = true
+	defer func() { noColor = old }()
+
+	got := SuccessPrefix("  ", "done")
+	if !strings.Contains(got, "●") {
+		t.Errorf("SuccessPrefix should contain ●, got %q", got)
+	}
+	if !strings.Contains(got, "done") {
+		t.Errorf("SuccessPrefix should contain msg, got %q", got)
+	}
+	if !strings.HasPrefix(got, "  ") {
+		t.Errorf("SuccessPrefix should start with prefix, got %q", got)
+	}
+}
+
+func TestFailPrefix(t *testing.T) {
+	old := noColor
+	noColor = true
+	defer func() { noColor = old }()
+
+	got := FailPrefix("  ", "failed")
+	if !strings.Contains(got, "●") {
+		t.Errorf("FailPrefix should contain ●, got %q", got)
+	}
+	if !strings.Contains(got, "failed") {
+		t.Errorf("FailPrefix should contain msg, got %q", got)
+	}
+}
+
+func TestColorAccessors(t *testing.T) {
+	accessors := []struct {
+		name string
+		fn   func() lipgloss.TerminalColor
+	}{
+		{"AccentColor", AccentColor},
+		{"SuccessColor", SuccessColor},
+		{"ErrorColor", ErrorColor},
+		{"WarnColor", WarnColor},
+		{"SubtleColor", SubtleColor},
+		{"MutedColor", MutedColor},
+		{"HighlightColor", HighlightColor},
+	}
+	for _, a := range accessors {
+		if a.fn() == nil {
+			t.Errorf("%s() returned nil", a.name)
+		}
+	}
+}
+
+func TestConfirmModelCtrlC(t *testing.T) {
+	m := newConfirmModel("Continue?")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	result := updated.(confirmModel)
+	if result.confirmed {
+		t.Error("confirmModel should not be confirmed after ctrl+c")
+	}
+	if !result.done {
+		t.Error("confirmModel should be done after ctrl+c")
+	}
+}
+
+func TestConfirmModelViewDoneYes(t *testing.T) {
+	m := newConfirmModel("Continue?")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	result := updated.(confirmModel)
+	view := result.View()
+	if !strings.Contains(view, "Continue?") {
+		t.Errorf("view should contain message, got %q", view)
+	}
+	if !strings.Contains(view, "y") {
+		t.Errorf("view should contain 'y', got %q", view)
+	}
+}
+
+func TestConfirmModelViewDoneNo(t *testing.T) {
+	m := newConfirmModel("Continue?")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result := updated.(confirmModel)
+	view := result.View()
+	if !strings.Contains(view, "Continue?") {
+		t.Errorf("view should contain message, got %q", view)
+	}
+	if !strings.Contains(view, "n") {
+		t.Errorf("view should contain 'n', got %q", view)
+	}
+}
+
+func TestInputModelCtrlC(t *testing.T) {
+	m := newInputModel("Branch name:", "?", "")
+
+	for _, r := range "test" {
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = result.(inputModel)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	result := updated.(inputModel)
+	if !result.canceled {
+		t.Error("inputModel should be canceled after ctrl+c")
+	}
+	if result.Value() != "" {
+		t.Errorf("inputModel value after ctrl+c = %q, want empty", result.Value())
+	}
+}
+
+func TestInputModelViewSubmitted(t *testing.T) {
+	m := newInputModel("Branch name:", "?", "")
+
+	for _, r := range "test" {
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = result.(inputModel)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result := updated.(inputModel)
+	view := result.View()
+	if !strings.Contains(view, "test") {
+		t.Errorf("submitted view should contain 'test', got %q", view)
+	}
+}
+
+func TestInputModelViewCanceled(t *testing.T) {
+	m := newInputModel("Branch name:", "?", "")
+
+	for _, r := range "test" {
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = result.(inputModel)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result := updated.(inputModel)
+	view := result.View()
+	if !strings.Contains(view, "Branch name:") {
+		t.Errorf("canceled view should contain message, got %q", view)
+	}
+}
+
+func TestSpinnerModelCtrlC(t *testing.T) {
+	m := newSpinnerModel("Loading", func() error { return nil })
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	result := updated.(spinnerModel)
+	if !result.done {
+		t.Error("spinnerModel should be done after ctrl+c")
+	}
+	if result.err == nil || result.err.Error() != "interrupted" {
+		t.Errorf("spinnerModel err = %v, want 'interrupted'", result.err)
+	}
+}
+
+func TestSpinnerModelTickMsg(t *testing.T) {
+	m := newSpinnerModel("Loading", func() error { return nil })
+	// Should not panic
+	updated, _ := m.Update(spinner.TickMsg{})
+	_ = updated.(spinnerModel)
+}
+
+func TestSpinnerModelViewRunning(t *testing.T) {
+	m := newSpinnerModel("Loading", func() error { return nil })
+	view := m.View()
+	if !strings.Contains(view, "Loading") {
+		t.Errorf("running view should contain message, got %q", view)
 	}
 }

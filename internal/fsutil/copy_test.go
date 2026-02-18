@@ -99,3 +99,68 @@ func TestCopyDirSymlinks(t *testing.T) {
 		t.Errorf("symlink target = %q, want %q", link, "target.txt")
 	}
 }
+
+func TestCopyDirExcludesFile(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	os.WriteFile(filepath.Join(src, "keep.txt"), []byte("keep"), 0o644)
+	os.WriteFile(filepath.Join(src, "skip.log"), []byte("skip"), 0o644)
+
+	if err := CopyDir(src, dst, []string{"skip.log"}); err != nil {
+		t.Fatalf("CopyDir error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dst, "keep.txt")); err != nil {
+		t.Error("keep.txt should exist in dst")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "skip.log")); !os.IsNotExist(err) {
+		t.Error("skip.log should not exist in dst")
+	}
+}
+
+func TestCopyDirNonExistentSource(t *testing.T) {
+	dst := t.TempDir()
+	err := CopyDir(filepath.Join(t.TempDir(), "nonexistent"), dst, nil)
+	if err == nil {
+		t.Error("CopyDir with nonexistent source should return error")
+	}
+}
+
+func TestCopyDirEmptySource(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	if err := CopyDir(src, dst, nil); err != nil {
+		t.Fatalf("CopyDir error: %v", err)
+	}
+
+	entries, err := os.ReadDir(dst)
+	if err != nil {
+		t.Fatalf("ReadDir error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("dst should be empty, got %d entries", len(entries))
+	}
+}
+
+func TestCopyDirDeepNesting(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	deep := filepath.Join(src, "a", "b", "c")
+	os.MkdirAll(deep, 0o755)
+	os.WriteFile(filepath.Join(deep, "file.txt"), []byte("deep"), 0o644)
+
+	if err := CopyDir(src, dst, nil); err != nil {
+		t.Fatalf("CopyDir error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dst, "a", "b", "c", "file.txt"))
+	if err != nil {
+		t.Fatalf("read deep file: %v", err)
+	}
+	if string(data) != "deep" {
+		t.Errorf("deep file = %q, want %q", data, "deep")
+	}
+}

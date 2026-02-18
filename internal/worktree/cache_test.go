@@ -139,3 +139,29 @@ func TestBranchFor(t *testing.T) {
 		t.Errorf("BranchFor nonexistent = %q, want empty", branch)
 	}
 }
+
+func TestParsePorcelainShortSHA(t *testing.T) {
+	input := `worktree /home/user/project/main
+HEAD abc1234
+branch refs/heads/main
+`
+	entries := ParsePorcelain(input)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Head != "abc1234" {
+		t.Errorf("Head = %q, want %q", entries[0].Head, "abc1234")
+	}
+}
+
+func TestParsePorcelainBareOnly(t *testing.T) {
+	input := `worktree /home/user/project/.bare
+HEAD abc1234567890abcdef1234567890abcdef123456
+branch refs/heads/main
+bare
+`
+	entries := ParsePorcelain(input)
+	if entries != nil {
+		t.Errorf("expected nil for bare-only input, got %v", entries)
+	}
+}
