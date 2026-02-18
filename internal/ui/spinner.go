@@ -65,9 +65,9 @@ func (m spinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m spinnerModel) View() string {
 	if m.done {
 		if m.err != nil {
-			return fmt.Sprintf("%s %s\n", Red("✗"), m.message)
+			return fmt.Sprintf("%s %s\n", Red("●"), m.message)
 		}
-		return fmt.Sprintf("%s %s\n", Green("✓"), m.message)
+		return fmt.Sprintf("%s %s\n", Green("●"), m.message)
 	}
 	return fmt.Sprintf("%s %s\n", m.spinner.View(), m.message)
 }

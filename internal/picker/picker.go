@@ -36,6 +36,7 @@ func Run(cfg Config) (Result, error) {
 		"--with-nth", "2..",
 		"--reverse",
 		"--height", "50%",
+		"--color", "16",
 	}
 
 	if cfg.Multi {

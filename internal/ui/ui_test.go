@@ -276,7 +276,7 @@ func TestSpinnerModelSuccess(t *testing.T) {
 	if !result.done {
 		t.Error("spinnerModel should be done after taskDoneMsg")
 	}
-	if !strings.Contains(result.View(), "✓") {
+	if !strings.Contains(result.View(), "●") {
 		t.Errorf("spinnerModel success view should contain checkmark, got %q", result.View())
 	}
 }
@@ -294,7 +294,7 @@ func TestSpinnerModelFailure(t *testing.T) {
 	if !result.done {
 		t.Error("spinnerModel should be done after taskDoneMsg")
 	}
-	if !strings.Contains(result.View(), "✗") {
+	if !strings.Contains(result.View(), "●") {
 		t.Errorf("spinnerModel failure view should contain cross, got %q", result.View())
 	}
 }

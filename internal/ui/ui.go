@@ -86,7 +86,7 @@ func Info(msg string) {
 }
 
 func Success(msg string) {
-	fmt.Printf("%s %s\n", Green("✓"), msg)
+	fmt.Printf("%s %s\n", Green("●"), msg)
 }
 
 func Errorf(format string, a ...any) {
@@ -107,12 +107,12 @@ func Successf(format string, a ...any) {
 
 // SuccessPrefix returns a formatted success message with a custom prefix.
 func SuccessPrefix(prefix, msg string) string {
-	return fmt.Sprintf("%s%s%s", prefix, Green("✓"), " "+msg)
+	return fmt.Sprintf("%s%s%s", prefix, Green("●"), " "+msg)
 }
 
 // FailPrefix returns a formatted failure message with a custom prefix.
 func FailPrefix(prefix, msg string) string {
-	return fmt.Sprintf("%s%s%s", prefix, Red("✗"), " "+msg)
+	return fmt.Sprintf("%s%s%s", prefix, Red("●"), " "+msg)
 }
 
 // stdinReader can be overridden in tests to provide canned input.
@@ -195,12 +195,12 @@ func PromptDangerous(msg, expect string) bool {
 // git.Query instead of git.Run).
 func Spin(msg string, fn func() error) error {
 	if useSimpleIO() {
-		fmt.Printf("%s %s...\n", Accent("⟳"), msg)
+		fmt.Printf("%s %s...\n", Accent("●"), msg)
 		if err := fn(); err != nil {
-			fmt.Printf("%s %s\n", Red("✗"), msg)
+			fmt.Printf("%s %s\n", Red("●"), msg)
 			return err
 		}
-		fmt.Printf("%s %s\n", Green("✓"), msg)
+		fmt.Printf("%s %s\n", Green("●"), msg)
 		return nil
 	}
 
