@@ -214,6 +214,43 @@ teardown() {
 	assert_branch_not_exists "int-remove"
 }
 
+@test "remove: interactive mode removes slash-containing worktree" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/slash-rm feature/slash-rm
+
+	# Create a fake fzf that outputs in the display format with relative path as workspace
+	local wt_path="$TEST_DIR/myrepo/feature/slash-rm"
+	mkdir -p "$TEST_DIR/bin"
+	printf '#!/usr/bin/env bash\nprintf "feature/slash-rm [feature/slash-rm]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	# Confirm removal via stdin
+	echo "y" | PATH="$TEST_DIR/bin:$PATH" "$GIT_WT" remove
+
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/slash-rm"
+	assert_branch_not_exists "feature/slash-rm"
+}
+
+@test "remove: display list shows relative path for slash-containing worktrees" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/my-thing feature/my-thing
+
+	# Create a fake fzf that captures its input to a file and outputs nothing (user cancel)
+	local capture_file="$TEST_DIR/fzf_input"
+	mkdir -p "$TEST_DIR/bin"
+	printf '#!/usr/bin/env bash\ncat > "%s"\n' "$capture_file" >"$TEST_DIR/bin/fzf"
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	# Run interactive mode - fzf captures display list, outputs nothing (user cancel)
+	PATH="$TEST_DIR/bin:$PATH" "$GIT_WT" remove
+
+	# Verify the display list uses relative path, not basename
+	run cat "$capture_file"
+	[[ "$output" == *"feature/my-thing [feature/my-thing]"* ]]
+}
+
 @test "remove: interactive mode dry-run preserves worktree" {
 	init_bare_repo myrepo
 	cd myrepo

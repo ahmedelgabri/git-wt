@@ -194,6 +194,43 @@ teardown() {
 	assert_branch_not_exists "int-destroy"
 }
 
+@test "destroy: interactive mode destroys slash-containing worktree" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/slash-dest feature/slash-dest
+
+	# Create a fake fzf that outputs in the display format with relative path as workspace
+	local wt_path="$TEST_DIR/myrepo/feature/slash-dest"
+	mkdir -p "$TEST_DIR/bin"
+	printf '#!/usr/bin/env bash\nprintf "feature/slash-dest [feature/slash-dest]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	# Single worktree destroy requires typing the branch name to confirm
+	echo "feature/slash-dest" | PATH="$TEST_DIR/bin:$PATH" "$GIT_WT" destroy
+
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/slash-dest"
+	assert_branch_not_exists "feature/slash-dest"
+}
+
+@test "destroy: display list shows relative path for slash-containing worktrees" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/my-thing feature/my-thing
+
+	# Create a fake fzf that captures its input to a file and outputs nothing (user cancel)
+	local capture_file="$TEST_DIR/fzf_input"
+	mkdir -p "$TEST_DIR/bin"
+	printf '#!/usr/bin/env bash\ncat > "%s"\n' "$capture_file" >"$TEST_DIR/bin/fzf"
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	# Run interactive mode - fzf captures display list, outputs nothing (user cancel)
+	PATH="$TEST_DIR/bin:$PATH" "$GIT_WT" destroy
+
+	# Verify the display list uses relative path, not basename
+	run cat "$capture_file"
+	[[ "$output" == *"feature/my-thing [feature/my-thing]"* ]]
+}
+
 @test "destroy: interactive mode dry-run preserves worktree" {
 	init_bare_repo myrepo
 	cd myrepo
