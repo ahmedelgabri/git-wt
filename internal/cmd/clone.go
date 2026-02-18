@@ -127,11 +127,19 @@ func runClone(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	ui.Success("Repository cloned successfully")
 	fmt.Printf("\n  Repository structure:\n")
-	fmt.Printf("    %s/\n", ui.Bold(folderName))
-	fmt.Printf("    ├── %s %s\n", ui.Muted(".bare/"), ui.Dim("(git data)"))
-	fmt.Printf("    ├── %s %s\n", ui.Muted(".git"), ui.Dim("(pointer to .bare)"))
+	// Compute padding for aligned descriptions
+	treeWidth := len(".bare/")
 	if defaultBranch != "" {
-		fmt.Printf("    └── %s/ %s\n", ui.Accent(defaultBranch), ui.Dim("(worktree)"))
+		if w := len(defaultBranch) + 1; w > treeWidth {
+			treeWidth = w
+		}
+	}
+
+	fmt.Printf("    %s/\n", ui.Bold(folderName))
+	fmt.Printf("    ├── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".bare/")), ui.Dim("(git data)"))
+	fmt.Printf("    ├── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".git")), ui.Dim("(pointer to .bare)"))
+	if defaultBranch != "" {
+		fmt.Printf("    └── %s  %s\n", ui.Accent(fmt.Sprintf("%-*s", treeWidth, defaultBranch+"/")), ui.Dim("(worktree)"))
 	}
 	fmt.Printf("\n  To create additional worktrees:\n")
 	fmt.Printf("    %s\n", ui.Muted("cd "+folderName))

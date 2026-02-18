@@ -283,17 +283,25 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	ui.Success("Migration complete")
 	fmt.Printf("\n  Repository structure:\n")
+	// Compute padding for aligned descriptions
+	treeWidth := len(".bare/")
+	for _, name := range []string{currentBranch + "/", defaultBranch + "/"} {
+		if len(name) > treeWidth {
+			treeWidth = len(name)
+		}
+	}
+
 	fmt.Printf("    %s/\n", ui.Bold(repoRoot))
-	fmt.Printf("    ├── %s %s\n", ui.Muted(".bare/"), ui.Dim("(git data)"))
-	fmt.Printf("    ├── %s %s\n", ui.Muted(".git"), ui.Dim("(pointer to .bare)"))
+	fmt.Printf("    ├── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".bare/")), ui.Dim("(git data)"))
+	fmt.Printf("    ├── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".git")), ui.Dim("(pointer to .bare)"))
 
 	if defaultBranch != "" && defaultBranch == currentBranch {
-		fmt.Printf("    └── %s/ %s\n", ui.Accent(currentBranch), ui.Dim("(worktree)"))
+		fmt.Printf("    └── %s  %s\n", ui.Accent(fmt.Sprintf("%-*s", treeWidth, currentBranch+"/")), ui.Dim("(worktree)"))
 	} else {
 		if defaultBranch != "" {
-			fmt.Printf("    ├── %s/ %s\n", ui.Accent(defaultBranch), ui.Dim("(default branch)"))
+			fmt.Printf("    ├── %s  %s\n", ui.Accent(fmt.Sprintf("%-*s", treeWidth, defaultBranch+"/")), ui.Dim("(default branch)"))
 		}
-		fmt.Printf("    └── %s/ %s\n", ui.Accent(currentBranch), ui.Dim("(current branch)"))
+		fmt.Printf("    └── %s  %s\n", ui.Accent(fmt.Sprintf("%-*s", treeWidth, currentBranch+"/")), ui.Dim("(current branch)"))
 	}
 	fmt.Println()
 

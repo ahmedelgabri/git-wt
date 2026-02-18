@@ -21,7 +21,7 @@ type spinnerModel struct {
 
 func newSpinnerModel(message string, fn func() error) spinnerModel {
 	s := spinner.New(
-		spinner.WithSpinner(spinner.Dot),
+		spinner.WithSpinner(spinner.Line),
 		spinner.WithStyle(accentStyle),
 	)
 	return spinnerModel{
