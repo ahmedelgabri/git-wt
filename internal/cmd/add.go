@@ -89,7 +89,11 @@ func runAddInteractive() error {
 		if strings.Contains(line, "HEAD") {
 			continue
 		}
-		branch := strings.TrimPrefix(line, "origin/")
+		// Strip remote name prefix (e.g., "origin/feature" -> "feature")
+		_, branch, _ := strings.Cut(line, "/")
+		if branch == "" {
+			continue
+		}
 		items = append(items, picker.Item{
 			Label: branch,
 			Value: branch,
