@@ -128,10 +128,10 @@ func runClone(cmd *cobra.Command, args []string) error {
 	ui.Success("Repository cloned successfully")
 	fmt.Printf("\n  Repository structure:\n")
 	fmt.Printf("    %s/\n", ui.Bold(folderName))
-	fmt.Printf("    ├── %s              %s\n", ui.Muted(".bare/"), ui.Dim("(git data)"))
-	fmt.Printf("    ├── %s                %s\n", ui.Muted(".git"), ui.Dim("(pointer to .bare)"))
+	fmt.Printf("    ├── %s %s\n", ui.Muted(".bare/"), ui.Dim("(git data)"))
+	fmt.Printf("    ├── %s %s\n", ui.Muted(".git"), ui.Dim("(pointer to .bare)"))
 	if defaultBranch != "" {
-		fmt.Printf("    └── %s/           %s\n", ui.Accent(defaultBranch), ui.Dim("(worktree)"))
+		fmt.Printf("    └── %s/ %s\n", ui.Accent(defaultBranch), ui.Dim("(worktree)"))
 	}
 	fmt.Printf("\n  To create additional worktrees:\n")
 	fmt.Printf("    %s\n", ui.Muted("cd "+folderName))

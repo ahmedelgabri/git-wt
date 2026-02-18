@@ -56,7 +56,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	// Get remote URL
 	remoteURL, _ := git.Query("remote", "get-url", "origin")
 	if remoteURL != "" {
-		fmt.Printf("  Remote URL: %s\n", ui.Accent(remoteURL))
+		fmt.Printf("Remote URL:     %s\n", ui.Accent(remoteURL))
 	} else {
 		ui.Warn("No remote 'origin' found")
 	}
@@ -75,10 +75,10 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("  Repository:     %s\n", ui.Bold(repoName))
-	fmt.Printf("  Current branch: %s\n", ui.Accent(currentBranch))
+	fmt.Printf("Repository:      %s\n", ui.Bold(repoName))
+	fmt.Printf("Current branch:  %s\n", ui.Accent(currentBranch))
 	if defaultBranch != "" {
-		fmt.Printf("  Default branch: %s\n", ui.Accent(defaultBranch))
+		fmt.Printf("Default branch:  %s\n", ui.Accent(defaultBranch))
 	}
 	fmt.Println()
 
@@ -86,20 +86,20 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	hasChanges := false
 	if err := checkGitDiff(repoRoot); err != nil {
 		hasChanges = true
-		fmt.Printf("  %s uncommitted changes %s\n", ui.Yellow("!"), ui.Dim("(will preserve)"))
+		fmt.Printf("%s uncommitted changes %s\n", ui.Yellow("!"), ui.Dim("(will preserve)"))
 	}
 
 	// Detect untracked files
 	untrackedFiles, _ := git.QueryLines("ls-files", "--others", "--exclude-standard")
 	if len(untrackedFiles) > 0 {
-		fmt.Printf("  %s %d untracked file(s) %s\n", ui.Yellow("!"), len(untrackedFiles), ui.Dim("(will preserve)"))
+		fmt.Printf("%s %d untracked file(s) %s\n", ui.Yellow("!"), len(untrackedFiles), ui.Dim("(will preserve)"))
 	}
 
 	// Store stash count
 	stashList, _ := git.QueryLines("stash", "list")
 	stashCount := len(stashList)
 	if stashCount > 0 {
-		fmt.Printf("  %s %d stash(es) %s\n", ui.Yellow("!"), stashCount, ui.Dim("(will migrate)"))
+		fmt.Printf("%s %d stash(es) %s\n", ui.Yellow("!"), stashCount, ui.Dim("(will migrate)"))
 	}
 
 	fmt.Println()
@@ -198,20 +198,22 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// Migrate stashes
 	if stashCount > 0 {
-		ui.Infof("Migrating %d stash(es)...", stashCount)
-		oldGitDir := filepath.Join(repoRoot, ".git")
-		newBareDir := filepath.Join(newStructure, ".bare")
+		ui.Spin(fmt.Sprintf("Migrating %d stash(es)", stashCount), func() error {
+			oldGitDir := filepath.Join(repoRoot, ".git")
+			newBareDir := filepath.Join(newStructure, ".bare")
 
-		stashRef := filepath.Join(oldGitDir, "refs", "stash")
-		if _, err := os.Stat(stashRef); err == nil {
-			copyFileSimple(stashRef, filepath.Join(newBareDir, "refs", "stash"))
-		}
+			stashRef := filepath.Join(oldGitDir, "refs", "stash")
+			if _, err := os.Stat(stashRef); err == nil {
+				copyFileSimple(stashRef, filepath.Join(newBareDir, "refs", "stash"))
+			}
 
-		stashLog := filepath.Join(oldGitDir, "logs", "refs", "stash")
-		if _, err := os.Stat(stashLog); err == nil {
-			os.MkdirAll(filepath.Join(newBareDir, "logs", "refs"), 0o755)
-			copyFileSimple(stashLog, filepath.Join(newBareDir, "logs", "refs", "stash"))
-		}
+			stashLog := filepath.Join(oldGitDir, "logs", "refs", "stash")
+			if _, err := os.Stat(stashLog); err == nil {
+				os.MkdirAll(filepath.Join(newBareDir, "logs", "refs"), 0o755)
+				copyFileSimple(stashLog, filepath.Join(newBareDir, "logs", "refs", "stash"))
+			}
+			return nil
+		})
 	}
 
 	// Create worktrees
@@ -258,47 +260,40 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// Atomic swap: move contents to preserve REPO_ROOT's inode
 	fmt.Println()
-	ui.Info("Finalizing migration...")
-
-	if err := os.Chdir(parentDir); err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(tempBackup, 0o755); err != nil {
-		return err
-	}
-
-	// Move original contents to backup
-	if err := moveContents(repoRoot, tempBackup); err != nil {
-		return fmt.Errorf("failed to backup original repo: %w", err)
-	}
-
-	// Move new structure contents to repo root
-	if err := moveContents(newStructure, repoRoot); err != nil {
-		return fmt.Errorf("failed to move new structure: %w", err)
-	}
-
-	os.Remove(newStructure) // remove empty dir
-
-	ui.Spin("Cleaning up", func() error {
+	if err := ui.Spin("Finalizing migration", func() error {
+		if err := os.Chdir(parentDir); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(tempBackup, 0o755); err != nil {
+			return err
+		}
+		if err := moveContents(repoRoot, tempBackup); err != nil {
+			return fmt.Errorf("failed to backup original repo: %w", err)
+		}
+		if err := moveContents(newStructure, repoRoot); err != nil {
+			return fmt.Errorf("failed to move new structure: %w", err)
+		}
+		os.Remove(newStructure)
 		os.RemoveAll(tempBackup)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 
 	fmt.Println()
 	ui.Success("Migration complete")
 	fmt.Printf("\n  Repository structure:\n")
 	fmt.Printf("    %s/\n", ui.Bold(repoRoot))
-	fmt.Printf("    ├── %s              %s\n", ui.Muted(".bare/"), ui.Dim("(git data)"))
-	fmt.Printf("    ├── %s                %s\n", ui.Muted(".git"), ui.Dim("(pointer to .bare)"))
+	fmt.Printf("    ├── %s %s\n", ui.Muted(".bare/"), ui.Dim("(git data)"))
+	fmt.Printf("    ├── %s %s\n", ui.Muted(".git"), ui.Dim("(pointer to .bare)"))
 
 	if defaultBranch != "" && defaultBranch == currentBranch {
-		fmt.Printf("    └── %s/           %s\n", ui.Accent(currentBranch), ui.Dim("(worktree - default branch)"))
+		fmt.Printf("    └── %s/ %s\n", ui.Accent(currentBranch), ui.Dim("(worktree)"))
 	} else {
 		if defaultBranch != "" {
-			fmt.Printf("    ├── %s/           %s\n", ui.Accent(defaultBranch), ui.Dim("(worktree - default branch)"))
+			fmt.Printf("    ├── %s/ %s\n", ui.Accent(defaultBranch), ui.Dim("(default branch)"))
 		}
-		fmt.Printf("    └── %s/           %s\n", ui.Accent(currentBranch), ui.Dim("(worktree - current branch)"))
+		fmt.Printf("    └── %s/ %s\n", ui.Accent(currentBranch), ui.Dim("(current branch)"))
 	}
 	fmt.Println()
 
