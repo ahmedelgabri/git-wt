@@ -35,7 +35,7 @@
 
             src = lib.cleanSource ./.;
 
-            vendorHash = "sha256-ono3ROh/4JWxHXzEFzqL8NfFurfSw/QiMAroZkmniRM=";
+            vendorHash = "sha256-qDEbnnCd47RxEoXH4TXlcMHjAIVTMq/1ypNd7AdT/Bc=";
 
             nativeBuildInputs = with pkgs; [
               installShellFiles

@@ -6,7 +6,9 @@ import (
 	"os"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
 
 var noColor = os.Getenv("NO_COLOR") != ""
@@ -123,27 +125,90 @@ func getReader() *bufio.Reader {
 	return bufio.NewReader(os.Stdin)
 }
 
+// useSimpleIO returns true when bubbletea should not be used (test mocks or
+// non-TTY stdin like piped input in scripts and E2E tests).
+func useSimpleIO() bool {
+	return stdinReader != nil || !term.IsTerminal(int(os.Stdin.Fd()))
+}
+
 // Confirm prints a styled prompt and returns true if the user enters "y".
+// Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
 func Confirm(msg string) bool {
-	fmt.Printf("%s %s ", Accent("?"), msg)
-	reader := getReader()
-	input, _ := reader.ReadString('\n')
-	return strings.TrimSpace(input) == "y"
+	if useSimpleIO() {
+		fmt.Printf("%s %s ", Accent("?"), msg)
+		reader := getReader()
+		input, _ := reader.ReadString('\n')
+		return strings.TrimSpace(input) == "y"
+	}
+
+	m := newConfirmModel(msg)
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return false
+	}
+	return result.(confirmModel).confirmed
 }
 
 // PromptInput prints a styled prompt and returns the trimmed user input.
+// Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
 func PromptInput(msg string) string {
-	fmt.Printf("%s %s ", Accent("?"), msg)
-	reader := getReader()
-	input, _ := reader.ReadString('\n')
-	return strings.TrimSpace(input)
+	if useSimpleIO() {
+		fmt.Printf("%s %s ", Accent("?"), msg)
+		reader := getReader()
+		input, _ := reader.ReadString('\n')
+		return strings.TrimSpace(input)
+	}
+
+	m := newInputModel(msg, Accent("?"), "")
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return ""
+	}
+	return result.(inputModel).Value()
 }
 
 // PromptDangerous prints a red-styled prompt and returns true if the user's
 // input matches the expected confirmation string exactly.
+// Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
 func PromptDangerous(msg, expect string) bool {
-	fmt.Printf("%s %s ", Red("!"), msg)
-	reader := getReader()
-	input, _ := reader.ReadString('\n')
-	return strings.TrimSpace(input) == expect
+	if useSimpleIO() {
+		fmt.Printf("%s %s ", Red("!"), msg)
+		reader := getReader()
+		input, _ := reader.ReadString('\n')
+		return strings.TrimSpace(input) == expect
+	}
+
+	m := newInputModel(msg, Red("!"), "")
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return false
+	}
+	return result.(inputModel).Value() == expect
+}
+
+// Spin shows an animated spinner while running fn. On TTYs, renders a
+// bubbletea spinner; otherwise prints a static message.
+// The callback must NOT write to stdout (use git.RunWithOutput or
+// git.Query instead of git.Run).
+func Spin(msg string, fn func() error) error {
+	if useSimpleIO() {
+		fmt.Printf("%s %s...\n", Accent("⟳"), msg)
+		if err := fn(); err != nil {
+			fmt.Printf("%s %s\n", Red("✗"), msg)
+			return err
+		}
+		fmt.Printf("%s %s\n", Green("✓"), msg)
+		return nil
+	}
+
+	m := newSpinnerModel(msg, fn)
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+	return result.(spinnerModel).err
 }

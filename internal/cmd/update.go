@@ -21,8 +21,10 @@ in its worktree.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ui.Info("Fetching from all remotes...")
-		if err := git.Run("fetch", "--all", "--prune", "--prune-tags"); err != nil {
+		if err := ui.Spin("Fetching from all remotes", func() error {
+			_, err := git.RunWithOutput("fetch", "--all", "--prune", "--prune-tags")
+			return err
+		}); err != nil {
 			return err
 		}
 

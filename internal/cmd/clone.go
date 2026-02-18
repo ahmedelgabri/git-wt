@@ -53,7 +53,10 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	// Clone with cleanup on failure
-	if err := git.Run("clone", "--bare", repoURL, ".bare"); err != nil {
+	if err := ui.Spin("Cloning repository", func() error {
+		_, err := git.RunWithOutput("clone", "--bare", repoURL, ".bare")
+		return err
+	}); err != nil {
 		ui.Error("Failed to clone repository")
 		os.Chdir("..")
 		os.RemoveAll(folderName)
@@ -76,7 +79,10 @@ func runClone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := git.Run("fetch", "--all"); err != nil {
+	if err := ui.Spin("Fetching all branches", func() error {
+		_, err := git.RunWithOutput("fetch", "--all")
+		return err
+	}); err != nil {
 		ui.Warn("Failed to fetch all branches")
 	}
 

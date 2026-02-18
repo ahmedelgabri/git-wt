@@ -57,8 +57,10 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fetch latest remote branches
-	ui.Info("Fetching from origin...")
-	if err := git.Run("fetch", "origin", "--prune"); err != nil {
+	if err := ui.Spin("Fetching from origin", func() error {
+		_, err := git.RunWithOutput("fetch", "origin", "--prune")
+		return err
+	}); err != nil {
 		return err
 	}
 

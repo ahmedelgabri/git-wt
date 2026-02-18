@@ -149,8 +149,10 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Clone existing repo as bare into .bare
-	ui.Info("Converting to bare repository...")
-	if err := git.Run("clone", "--bare", repoRoot, filepath.Join(newStructure, ".bare")); err != nil {
+	if err := ui.Spin("Converting to bare repository", func() error {
+		_, err := git.RunWithOutput("clone", "--bare", repoRoot, filepath.Join(newStructure, ".bare"))
+		return err
+	}); err != nil {
 		return err
 	}
 
@@ -174,8 +176,10 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// Fetch from remote if available
 	if remoteURL, _ := git.QueryIn(newStructure, "remote", "get-url", "origin"); remoteURL != "" {
-		ui.Info("Fetching all branches from remote...")
-		if err := gitArgs("fetch", "--all"); err != nil {
+		if err := ui.Spin("Fetching all branches from remote", func() error {
+			_, err := git.RunInWithOutput(newStructure, "fetch", "--all")
+			return err
+		}); err != nil {
 			ui.Warn("Could not fetch from remote (remote may be unreachable) - continuing with local data")
 		}
 	}

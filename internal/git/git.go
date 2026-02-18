@@ -50,6 +50,20 @@ func RunWithOutput(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+// RunInWithOutput executes a git mutation command in the specified directory
+// and returns its combined output.
+func RunInWithOutput(dir string, args ...string) (string, error) {
+	if Debug {
+		s := fmt.Sprintf("git -C %s %s", dir, strings.Join(args, " "))
+		fmt.Println(s)
+		return "", nil
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
 // Query executes a read-only git command (always runs, even in DEBUG mode).
 func Query(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)

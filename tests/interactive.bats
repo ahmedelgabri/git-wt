@@ -50,7 +50,7 @@ teardown() {
 	cd myrepo
 
 	# Pipe branch name; empty second line uses default worktree path
-	echo "new-feature" | env GIT_WT_SELECT="Create new branch" "$GIT_WT" add
+	echo "new-feature" | env GIT_WT_SELECT="➕ Create new branch" "$GIT_WT" add
 
 	assert_branch_exists new-feature
 	assert_worktree_exists "$TEST_DIR/myrepo/new-feature"
