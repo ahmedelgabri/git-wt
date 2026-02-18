@@ -36,3 +36,7 @@ result-*
 .hooks
 
 vendor/
+
+# Test coverage
+coverage.out
+coverage.html
