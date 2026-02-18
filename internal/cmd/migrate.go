@@ -56,7 +56,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	// Get remote URL
 	remoteURL, _ := git.Query("remote", "get-url", "origin")
 	if remoteURL != "" {
-		ui.Infof("Remote URL: %s", remoteURL)
+		fmt.Printf("  Remote URL: %s\n", ui.Accent(remoteURL))
 	} else {
 		ui.Warn("No remote 'origin' found")
 	}
@@ -75,10 +75,10 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	ui.Infof("Migrating repository: %s", repoName)
-	ui.Infof("Current branch: %s", currentBranch)
+	fmt.Printf("  Repository:     %s\n", ui.Bold(repoName))
+	fmt.Printf("  Current branch: %s\n", ui.Accent(currentBranch))
 	if defaultBranch != "" {
-		ui.Infof("Default branch: %s", defaultBranch)
+		fmt.Printf("  Default branch: %s\n", ui.Accent(defaultBranch))
 	}
 	fmt.Println()
 
@@ -86,20 +86,20 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	hasChanges := false
 	if err := checkGitDiff(repoRoot); err != nil {
 		hasChanges = true
-		ui.Info("Detected uncommitted changes - will preserve them in the new worktree")
+		fmt.Printf("  %s uncommitted changes %s\n", ui.Yellow("!"), ui.Dim("(will preserve)"))
 	}
 
 	// Detect untracked files
 	untrackedFiles, _ := git.QueryLines("ls-files", "--others", "--exclude-standard")
 	if len(untrackedFiles) > 0 {
-		ui.Infof("Detected %d untracked file(s) - will preserve them", len(untrackedFiles))
+		fmt.Printf("  %s %d untracked file(s) %s\n", ui.Yellow("!"), len(untrackedFiles), ui.Dim("(will preserve)"))
 	}
 
 	// Store stash count
 	stashList, _ := git.QueryLines("stash", "list")
 	stashCount := len(stashList)
 	if stashCount > 0 {
-		ui.Infof("Detected %d stash(es) - will migrate them", stashCount)
+		fmt.Printf("  %s %d stash(es) %s\n", ui.Yellow("!"), stashCount, ui.Dim("(will migrate)"))
 	}
 
 	fmt.Println()
@@ -143,7 +143,6 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	ui.Info("Creating new repository structure...")
 	if err := os.MkdirAll(newStructure, 0o755); err != nil {
 		return err
 	}
@@ -162,15 +161,10 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Configure bare repo
-	ui.Info("Configuring bare repository...")
-	gitArgs := func(args ...string) error {
-		return git.RunIn(newStructure, args...)
-	}
-
-	if err := gitArgs("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
+	if _, err := git.RunInWithOutput(newStructure, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
 		return err
 	}
-	if err := gitArgs("config", "core.logallrefupdates", "true"); err != nil {
+	if _, err := git.RunInWithOutput(newStructure, "config", "core.logallrefupdates", "true"); err != nil {
 		return err
 	}
 
@@ -190,15 +184,14 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		for _, ref := range strings.Split(refs, "\n") {
 			ref = strings.TrimSpace(ref)
 			if ref != "" {
-				gitArgs("branch", "-D", ref)
+				git.RunInWithOutput(newStructure, "branch", "-D", ref)
 			}
 		}
 	}
 
 	// Restore remote URL (clone set it to the local path)
 	if remoteURL != "" {
-		ui.Info("Restoring remote URL...")
-		if err := gitArgs("remote", "set-url", "origin", remoteURL); err != nil {
+		if _, err := git.RunInWithOutput(newStructure, "remote", "set-url", "origin", remoteURL); err != nil {
 			return err
 		}
 	}
@@ -223,32 +216,45 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// Create worktrees
 	if defaultBranch != "" && defaultBranch == currentBranch {
-		ui.Infof("Creating worktree for %s (default branch)...", currentBranch)
-		git.RunIn(newStructure, "worktree", "add", currentBranch, currentBranch)
+		if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(currentBranch)), func() error {
+			_, err := git.RunInWithOutput(newStructure, "worktree", "add", currentBranch, currentBranch)
+			return err
+		}); err != nil {
+			return err
+		}
 	} else {
 		if defaultBranch != "" {
-			ui.Infof("Creating worktree for default branch: %s", defaultBranch)
-			git.RunIn(newStructure, "worktree", "add", defaultBranch, defaultBranch)
+			if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)), func() error {
+				_, err := git.RunInWithOutput(newStructure, "worktree", "add", defaultBranch, defaultBranch)
+				return err
+			}); err != nil {
+				return err
+			}
 		}
-		ui.Infof("Creating worktree for current branch: %s", currentBranch)
-		git.RunIn(newStructure, "worktree", "add", currentBranch, currentBranch)
+		if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(currentBranch)), func() error {
+			_, err := git.RunInWithOutput(newStructure, "worktree", "add", currentBranch, currentBranch)
+			return err
+		}); err != nil {
+			return err
+		}
 	}
 
 	// Restore working directory state
-	ui.Info("Restoring working directory state...")
 	destDir := filepath.Join(newStructure, currentBranch)
-	if err := fsutil.CopyDir(repoRoot, destDir, []string{".git"}); err != nil {
-		return fmt.Errorf("failed to copy working directory: %w", err)
+	if err := ui.Spin("Restoring working directory state", func() error {
+		if err := fsutil.CopyDir(repoRoot, destDir, []string{".git"}); err != nil {
+			return fmt.Errorf("failed to copy working directory: %w", err)
+		}
+		// Restore git index (staged changes)
+		oldIndex := filepath.Join(repoRoot, ".git", "index")
+		if _, err := os.Stat(oldIndex); err == nil {
+			newIndex := filepath.Join(newStructure, ".bare", "worktrees", currentBranch, "index")
+			copyFileSimple(oldIndex, newIndex)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
-
-	// Restore git index (staged changes)
-	oldIndex := filepath.Join(repoRoot, ".git", "index")
-	if _, err := os.Stat(oldIndex); err == nil {
-		newIndex := filepath.Join(newStructure, ".bare", "worktrees", currentBranch, "index")
-		copyFileSimple(oldIndex, newIndex)
-	}
-
-	ui.Success("Working directory state restored (all files preserved)")
 
 	// Atomic swap: move contents to preserve REPO_ROOT's inode
 	fmt.Println()
@@ -274,55 +280,55 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	os.Remove(newStructure) // remove empty dir
 
-	ui.Info("Cleaning up...")
-	os.RemoveAll(tempBackup)
+	ui.Spin("Cleaning up", func() error {
+		os.RemoveAll(tempBackup)
+		return nil
+	})
 
 	fmt.Println()
-	ui.Success("Migration complete!")
-	fmt.Printf("\n  Your repository structure is now:\n")
-	fmt.Printf("    %s/\n", repoRoot)
-	fmt.Printf("    ├── .bare/              (git data)\n")
-	fmt.Printf("    ├── .git                (pointer to .bare)\n")
+	ui.Success("Migration complete")
+	fmt.Printf("\n  Repository structure:\n")
+	fmt.Printf("    %s/\n", ui.Bold(repoRoot))
+	fmt.Printf("    ├── %s              %s\n", ui.Muted(".bare/"), ui.Dim("(git data)"))
+	fmt.Printf("    ├── %s                %s\n", ui.Muted(".git"), ui.Dim("(pointer to .bare)"))
 
 	if defaultBranch != "" && defaultBranch == currentBranch {
-		fmt.Printf("    └── %s/           (worktree - default branch)\n", currentBranch)
+		fmt.Printf("    └── %s/           %s\n", ui.Accent(currentBranch), ui.Dim("(worktree - default branch)"))
 	} else {
 		if defaultBranch != "" {
-			fmt.Printf("    ├── %s/           (worktree - default branch)\n", defaultBranch)
+			fmt.Printf("    ├── %s/           %s\n", ui.Accent(defaultBranch), ui.Dim("(worktree - default branch)"))
 		}
-		fmt.Printf("    └── %s/           (worktree - current branch)\n", currentBranch)
+		fmt.Printf("    └── %s/           %s\n", ui.Accent(currentBranch), ui.Dim("(worktree - current branch)"))
 	}
 	fmt.Println()
 
 	if remoteURL != "" {
-		ui.Successf("Remote URL preserved: %s", remoteURL)
+		ui.Successf("Remote URL preserved: %s", ui.Accent(remoteURL))
 	}
 	if stashCount > 0 {
 		ui.Successf("Migrated %d stash(es)", stashCount)
 	}
 	if hasChanges {
-		ui.Successf("Preserved uncommitted changes in %s/", currentBranch)
+		ui.Successf("Preserved uncommitted changes in %s/", ui.Accent(currentBranch))
 	}
 	if len(untrackedFiles) > 0 {
-		ui.Successf("Preserved %d untracked file(s) in %s/", len(untrackedFiles), currentBranch)
+		ui.Successf("Preserved %d untracked file(s) in %s/", len(untrackedFiles), ui.Accent(currentBranch))
 	}
 
 	fmt.Printf("\n  To create additional worktrees:\n")
-	fmt.Printf("    cd %s\n", repoRoot)
-	fmt.Printf("    git wt add <branch-name> <branch-name>\n")
+	fmt.Printf("    %s\n", ui.Muted("cd "+repoRoot))
+	fmt.Printf("    %s\n", ui.Muted("git wt add <branch-name> <branch-name>"))
 	fmt.Printf("\n  To view migrated stashes:\n")
-	fmt.Printf("    cd %s/%s\n", repoRoot, currentBranch)
-	fmt.Printf("    git stash list\n")
+	fmt.Printf("    %s\n", ui.Muted(fmt.Sprintf("cd %s/%s", repoRoot, currentBranch)))
+	fmt.Printf("    %s\n", ui.Muted("git stash list"))
 	fmt.Printf("\n  Navigate to your worktree:\n")
-	fmt.Printf("    cd %s/%s\n", repoRoot, currentBranch)
+	fmt.Printf("    %s\n", ui.Muted(fmt.Sprintf("cd %s/%s", repoRoot, currentBranch)))
 
 	success = true
 	return nil
 }
 
 func checkGitDiff(repoRoot string) error {
-	cmd := fmt.Sprintf("diff-index --quiet HEAD --")
-	_ = cmd
 	_, err := git.QueryIn(repoRoot, "diff-index", "--quiet", "HEAD", "--")
 	return err
 }

@@ -47,7 +47,7 @@ in its worktree.`,
 			return fmt.Errorf("no worktree for default branch '%s'", defaultBranch)
 		}
 
-		ui.Infof("Updating default branch '%s' in %s...", defaultBranch, entry.Path)
+		fmt.Printf("Updating %s in %s\n", ui.Accent(defaultBranch), ui.Muted(entry.Path))
 		return git.RunIn(entry.Path, "pull")
 	},
 }

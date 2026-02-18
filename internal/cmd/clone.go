@@ -69,13 +69,13 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	// Configure the bare repo
-	if err := git.Run("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
+	if _, err := git.RunWithOutput("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
 		return err
 	}
-	if err := git.Run("config", "core.logallrefupdates", "true"); err != nil {
+	if _, err := git.RunWithOutput("config", "core.logallrefupdates", "true"); err != nil {
 		return err
 	}
-	if err := git.Run("config", "worktree.useRelativePaths", "true"); err != nil {
+	if _, err := git.RunWithOutput("config", "worktree.useRelativePaths", "true"); err != nil {
 		return err
 	}
 
@@ -92,13 +92,19 @@ func runClone(cmd *cobra.Command, args []string) error {
 		for _, ref := range strings.Split(refs, "\n") {
 			ref = strings.TrimSpace(ref)
 			if ref != "" {
-				git.Run("branch", "-D", ref)
+				git.RunWithOutput("branch", "-D", ref)
 			}
 		}
 	}
 
-	ui.Info("Discovering default branch...")
-	defaultBranch := worktree.DefaultBranch()
+	var defaultBranch string
+	ui.Spin("Discovering default branch", func() error {
+		defaultBranch = worktree.DefaultBranch()
+		if defaultBranch == "" {
+			return fmt.Errorf("not found")
+		}
+		return nil
+	})
 
 	if defaultBranch == "" {
 		ui.Warn("Could not discover default branch from remote")
@@ -108,26 +114,28 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	if defaultBranch != "" {
-		ui.Infof("Creating initial worktree for '%s'...", defaultBranch)
-		if err := git.Run("worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch); err != nil {
+		if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)), func() error {
+			_, err := git.RunWithOutput("worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch)
+			return err
+		}); err != nil {
 			ui.Warn("Failed to create worktree for default branch")
 		}
 	} else {
-		fmt.Println("No worktree created. Use 'git wt add' to create worktrees.")
+		fmt.Printf("No worktree created. Use %s to create worktrees.\n", ui.Accent("git wt add"))
 	}
 
 	fmt.Println()
 	ui.Success("Repository cloned successfully")
 	fmt.Printf("\n  Repository structure:\n")
-	fmt.Printf("    %s/\n", folderName)
-	fmt.Printf("    ├── .bare/              (git data)\n")
-	fmt.Printf("    ├── .git                (pointer to .bare)\n")
+	fmt.Printf("    %s/\n", ui.Bold(folderName))
+	fmt.Printf("    ├── %s              %s\n", ui.Muted(".bare/"), ui.Dim("(git data)"))
+	fmt.Printf("    ├── %s                %s\n", ui.Muted(".git"), ui.Dim("(pointer to .bare)"))
 	if defaultBranch != "" {
-		fmt.Printf("    └── %s/           (worktree)\n", defaultBranch)
+		fmt.Printf("    └── %s/           %s\n", ui.Accent(defaultBranch), ui.Dim("(worktree)"))
 	}
 	fmt.Printf("\n  To create additional worktrees:\n")
-	fmt.Printf("    cd %s\n", folderName)
-	fmt.Printf("    git wt add\n")
+	fmt.Printf("    %s\n", ui.Muted("cd "+folderName))
+	fmt.Printf("    %s\n", ui.Muted("git wt add"))
 
 	return nil
 }

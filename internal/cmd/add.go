@@ -122,14 +122,21 @@ func runAddInteractive() error {
 
 	// Create worktree from selected remote branch
 	branch := selected.Value
-	ui.Infof("Creating worktree for '%s' from origin/%s...", branch, branch)
-	if err := git.Run("worktree", "add", "-b", branch, "origin/"+branch); err != nil {
+	if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func() error {
+		_, err := git.RunWithOutput("worktree", "add", "-b", branch, "origin/"+branch)
+		return err
+	}); err != nil {
 		return err
 	}
 
 	// Set upstream tracking
-	fmt.Printf("Setting upstream to origin/%s\n", branch)
-	return git.Run("branch", "--set-upstream-to=origin/"+branch, branch)
+	if err := ui.Spin(fmt.Sprintf("Setting upstream to %s", ui.Accent("origin/"+branch)), func() error {
+		_, err := git.RunWithOutput("branch", "--set-upstream-to=origin/"+branch, branch)
+		return err
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func createNewBranch() error {
@@ -151,8 +158,10 @@ func createNewBranch() error {
 		wtPath = branchName
 	}
 
-	ui.Infof("Creating new branch '%s' and worktree at '%s'...", branchName, wtPath)
-	return git.Run("worktree", "add", "-b", branchName, wtPath)
+	return ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func() error {
+		_, err := git.RunWithOutput("worktree", "add", "-b", branchName, wtPath)
+		return err
+	})
 }
 
 func runAddDirect(cmd *cobra.Command, args []string) error {
@@ -199,7 +208,10 @@ func runAddDirect(cmd *cobra.Command, args []string) error {
 
 	// Create the worktree
 	fullArgs := append([]string{"worktree", "add"}, gitArgs...)
-	if err := git.Run(fullArgs...); err != nil {
+	if err := ui.Spin("Creating worktree", func() error {
+		_, err := git.RunWithOutput(fullArgs...)
+		return err
+	}); err != nil {
 		return err
 	}
 
@@ -210,10 +222,16 @@ func runAddDirect(cmd *cobra.Command, args []string) error {
 	}
 	if trackBranch != "" {
 		if _, err := git.Query("rev-parse", "--verify", "origin/"+trackBranch); err == nil {
-			fmt.Printf("Setting upstream to origin/%s\n", trackBranch)
-			return git.Run("branch", "--set-upstream-to=origin/"+trackBranch, trackBranch)
+			if err := ui.Spin(fmt.Sprintf("Setting upstream to %s", ui.Accent("origin/"+trackBranch)), func() error {
+				_, err := git.RunWithOutput("branch", "--set-upstream-to=origin/"+trackBranch, trackBranch)
+				return err
+			}); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("\nBranch %s created locally.\nTo push and set upstream:\n  %s\n",
+				ui.Accent(trackBranch), ui.Muted("git push -u origin "+trackBranch))
 		}
-		fmt.Printf("\nBranch '%s' created locally.\nTo push and set upstream:\n  git push -u origin %s\n", trackBranch, trackBranch)
 	}
 
 	return nil
