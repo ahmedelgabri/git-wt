@@ -22,6 +22,16 @@ teardown() {
 	[[ "$output" == *"$TEST_DIR/myrepo/feature"* ]]
 }
 
+@test "interactive switch: selects slash-containing worktree by label" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/slash-sw feature/slash-sw
+
+	run env GIT_WT_SELECT="feature/slash-sw [feature/slash-sw]" "$GIT_WT" switch
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"$TEST_DIR/myrepo/feature/slash-sw"* ]]
+}
+
 # --- add ---
 
 @test "interactive add: selects remote branch and creates worktree" {
@@ -59,6 +69,17 @@ teardown() {
 	assert_branch_not_exists to-remove
 }
 
+@test "interactive remove: selects slash-containing worktree by label" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/slash-rm feature/slash-rm
+
+	echo "y" | env GIT_WT_SELECT="feature/slash-rm [feature/slash-rm]" "$GIT_WT" remove
+
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/slash-rm"
+	assert_branch_not_exists feature/slash-rm
+}
+
 @test "interactive remove: dry-run preserves worktree" {
 	init_bare_repo myrepo
 	cd myrepo
@@ -83,6 +104,17 @@ teardown() {
 
 	assert_worktree_not_exists "$TEST_DIR/myrepo/to-destroy"
 	assert_branch_not_exists to-destroy
+}
+
+@test "interactive destroy: selects slash-containing worktree by label" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/slash-dest feature/slash-dest
+
+	echo "feature/slash-dest" | env GIT_WT_SELECT="feature/slash-dest [feature/slash-dest]" "$GIT_WT" destroy
+
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/slash-dest"
+	assert_branch_not_exists feature/slash-dest
 }
 
 @test "interactive destroy: dry-run preserves worktree" {

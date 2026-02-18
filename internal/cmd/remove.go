@@ -308,13 +308,20 @@ func deleteRemoteBranch(branch string) string {
 }
 
 func entriesToPickerItems(entries []worktree.Entry) []picker.Item {
+	bareRoot, _ := worktree.BareRoot()
+
 	items := make([]picker.Item, len(entries))
 	for i, e := range entries {
-		label := filepath.Base(e.Path)
+		workspace := filepath.Base(e.Path)
+		if bareRoot != "" {
+			workspace = strings.TrimPrefix(e.Path, bareRoot+string(os.PathSeparator))
+		}
+
+		label := workspace
 		if e.Branch != "" && e.Branch != "(detached)" {
-			label = fmt.Sprintf("%s [%s]", filepath.Base(e.Path), e.Branch)
+			label = fmt.Sprintf("%s [%s]", workspace, e.Branch)
 		} else if e.Branch == "(detached)" {
-			label = fmt.Sprintf("%s (detached HEAD)", filepath.Base(e.Path))
+			label = fmt.Sprintf("%s (detached HEAD)", workspace)
 		}
 
 		homeDir, _ := os.UserHomeDir()
