@@ -204,7 +204,7 @@ teardown() {
 	# Create a fake fzf that outputs in the display format
 	local wt_path="$TEST_DIR/myrepo/int-remove"
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\nprintf "int-remove [int-remove]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\nprintf "int-remove [int-remove]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	# Confirm removal via stdin
@@ -222,7 +222,7 @@ teardown() {
 	# Create a fake fzf that outputs in the display format with relative path as workspace
 	local wt_path="$TEST_DIR/myrepo/feature/slash-rm"
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\nprintf "feature/slash-rm [feature/slash-rm]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\nprintf "feature/slash-rm [feature/slash-rm]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	# Confirm removal via stdin
@@ -259,7 +259,7 @@ teardown() {
 	# Create a fake fzf that outputs in the display format
 	local wt_path="$TEST_DIR/myrepo/dry-int"
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\nprintf "dry-int [dry-int]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\nprintf "dry-int [dry-int]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	PATH="$TEST_DIR/bin:$PATH" run "$GIT_WT" remove --dry-run

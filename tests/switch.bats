@@ -27,7 +27,7 @@ teardown() {
 	# Create a fake fzf that outputs in the display format
 	local wt_path="$TEST_DIR/myrepo/switch-target"
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\nprintf "switch-target [switch-target]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\nprintf "switch-target [switch-target]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	PATH="$TEST_DIR/bin:$PATH" run "$GIT_WT" switch

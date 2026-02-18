@@ -184,7 +184,7 @@ teardown() {
 	# Create a fake fzf that outputs in the display format
 	local wt_path="$TEST_DIR/myrepo/int-destroy"
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\nprintf "int-destroy [int-destroy]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\nprintf "int-destroy [int-destroy]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	# Single worktree destroy requires typing the branch name to confirm
@@ -202,7 +202,7 @@ teardown() {
 	# Create a fake fzf that outputs in the display format with relative path as workspace
 	local wt_path="$TEST_DIR/myrepo/feature/slash-dest"
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\nprintf "feature/slash-dest [feature/slash-dest]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\nprintf "feature/slash-dest [feature/slash-dest]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	# Single worktree destroy requires typing the branch name to confirm
@@ -239,7 +239,7 @@ teardown() {
 	# Create a fake fzf that outputs in the display format
 	local wt_path="$TEST_DIR/myrepo/dry-dest"
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\nprintf "dry-dest [dry-dest]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\nprintf "dry-dest [dry-dest]\\t%s\\n" "%s"\n' "$wt_path" >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	PATH="$TEST_DIR/bin:$PATH" run "$GIT_WT" destroy --dry-run

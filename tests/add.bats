@@ -47,7 +47,7 @@ teardown() {
 
 	# Create a fake fzf that returns the branch name
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\necho "remote-only"\n' >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\necho "remote-only"\n' >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	# Run interactive mode (no arguments) with fake fzf on PATH
@@ -67,7 +67,7 @@ teardown() {
 
 	# Create a fake fzf that selects "Create new branch"
 	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\necho "➕ Create new branch"\n' >"$TEST_DIR/bin/fzf"
+	printf '#!/usr/bin/env bash\ncat > /dev/null\necho "➕ Create new branch"\n' >"$TEST_DIR/bin/fzf"
 	chmod +x "$TEST_DIR/bin/fzf"
 
 	# Provide branch name and accept default path via stdin
