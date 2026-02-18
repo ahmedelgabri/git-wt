@@ -10,10 +10,6 @@ type Item struct {
 	selected bool
 }
 
-func (i Item) FilterValue() string { return i.Label }
-func (i Item) Title() string       { return i.Label }
-func (i Item) Description() string { return i.Desc }
-
 // Selected returns whether this item is selected (for multi-select mode).
 func (i Item) Selected() bool { return i.selected }
 
@@ -25,11 +21,11 @@ type Result struct {
 
 // Config configures the picker behavior.
 type Config struct {
-	Items       []Item
-	Multi       bool // Enable multi-select (TAB to toggle)
-	Prompt      string
-	Header      string
-	PreviewFunc func(Item) string // Generate preview content for focused item
+	Items      []Item
+	Multi      bool // Enable multi-select (TAB to toggle)
+	Prompt     string
+	Header     string
+	PreviewCmd string // Shell command for fzf --preview ({1} = item Value)
 }
 
 // FormatSelected returns a human-readable string of selected items for display.

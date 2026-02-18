@@ -71,13 +71,11 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool) error
 	}
 
 	result, err := picker.Run(picker.Config{
-		Items:  items,
-		Multi:  true,
-		Prompt: prompt,
-		Header: header,
-		PreviewFunc: func(item picker.Item) string {
-			return generateWorktreePreview(item, mode)
-		},
+		Items:      items,
+		Multi:      true,
+		Prompt:     prompt,
+		Header:     header,
+		PreviewCmd: previewWorktreeCmdStr(mode),
 	})
 	if err != nil {
 		return err
@@ -337,54 +335,4 @@ func entriesToPickerItems(entries []worktree.Entry) []picker.Item {
 		}
 	}
 	return items
-}
-
-func generateWorktreePreview(item picker.Item, mode string) string {
-	var b strings.Builder
-
-	if mode == "destroy" {
-		b.WriteString(ui.Bold(ui.Red("DESTROY MODE")) + "\n\n")
-	}
-
-	b.WriteString(ui.Bold(ui.Accent("Worktree")) + "\n")
-	b.WriteString(fmt.Sprintf("  %s %s\n", ui.Subtle("Path:"), item.Value))
-
-	// Try to get branch from value
-	entries, _ := worktree.List()
-	branch := worktree.BranchFor(entries, item.Value)
-	if branch != "" {
-		b.WriteString(fmt.Sprintf("  %s %s\n", ui.Subtle("Branch:"), branch))
-	}
-
-	if mode == "destroy" {
-		b.WriteString("\n")
-		b.WriteString(ui.Yellow("  - Remove worktree directory") + "\n")
-		b.WriteString(ui.Yellow("  - Delete local branch") + "\n")
-		b.WriteString(ui.Yellow(fmt.Sprintf("  - Delete remote branch (origin/%s)", branch)) + "\n")
-	}
-
-	b.WriteString("\n" + ui.Bold(ui.Accent("Status")) + "\n")
-	status, err := git.QueryIn(item.Value, "status", "--short", "--branch")
-	if err != nil {
-		b.WriteString("  (unable to get status)\n")
-	} else {
-		for _, line := range strings.Split(status, "\n") {
-			b.WriteString("  " + line + "\n")
-		}
-	}
-
-	b.WriteString("\n" + ui.Bold(ui.Accent("Recent Commits")) + "\n")
-	if branch != "" {
-		log, err := git.Query("log", "--oneline", "--graph", "--date=short",
-			"--color=always", "--pretty=format:%C(auto)%cd %h%d %s", branch, "-10", "--")
-		if err != nil {
-			b.WriteString("  (unable to get log)\n")
-		} else {
-			for _, line := range strings.Split(log, "\n") {
-				b.WriteString("  " + line + "\n")
-			}
-		}
-	}
-
-	return b.String()
 }

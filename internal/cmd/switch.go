@@ -30,11 +30,9 @@ Use with cd to change directories: cd $(git wt switch)`,
 		items := entriesToPickerItems(entries)
 
 		result, err := picker.Run(picker.Config{
-			Items:  items,
-			Prompt: "Switch to worktree: ",
-			PreviewFunc: func(item picker.Item) string {
-				return generateWorktreePreview(item, "switch")
-			},
+			Items:      items,
+			Prompt:     "Switch to worktree: ",
+			PreviewCmd: previewWorktreeCmdStr("switch"),
 		})
 		if err != nil {
 			return err

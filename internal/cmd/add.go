@@ -97,17 +97,9 @@ func runAddInteractive() error {
 	}
 
 	result, err := picker.Run(picker.Config{
-		Items:  items,
-		Prompt: "Select branch or create new: ",
-		PreviewFunc: func(item picker.Item) string {
-			if item.Value == "__create_new__" {
-				return "Create a new branch and worktree\n\nYou will be prompted to enter:\n  - Branch name\n  - Worktree path (optional, defaults to branch name)"
-			}
-			out, _ := git.Query("log", "--oneline", "--graph", "--date=short",
-				"--color=always", "--pretty=format:%C(auto)%cd %h%d %s",
-				"origin/"+item.Value, "-10", "--")
-			return fmt.Sprintf("Branch: %s\n\nRecent commits:\n%s", item.Value, out)
-		},
+		Items:      items,
+		Prompt:     "Select branch or create new: ",
+		PreviewCmd: previewBranchCmdStr(),
 	})
 	if err != nil {
 		return err
