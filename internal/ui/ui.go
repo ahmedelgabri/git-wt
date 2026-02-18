@@ -14,13 +14,13 @@ import (
 var noColor = os.Getenv("NO_COLOR") != ""
 
 var (
-	accentColor    = lipgloss.AdaptiveColor{Light: "#0d9488", Dark: "#5eead4"}
-	successColor   = lipgloss.AdaptiveColor{Light: "#16a34a", Dark: "#4ade80"}
-	errorColor     = lipgloss.AdaptiveColor{Light: "#dc2626", Dark: "#f87171"}
-	warnColor      = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#fbbf24"}
-	subtleColor    = lipgloss.AdaptiveColor{Light: "#78716c", Dark: "#a8a29e"}
-	mutedColor     = lipgloss.AdaptiveColor{Light: "#a8a29e", Dark: "#78716c"}
-	highlightColor = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#c4b5fd"}
+	accentColor    = lipgloss.Color("6") // Cyan
+	successColor   = lipgloss.Color("2") // Green
+	errorColor     = lipgloss.Color("1") // Red
+	warnColor      = lipgloss.Color("3") // Yellow
+	subtleColor    = lipgloss.Color("8") // Bright Black
+	mutedColor     = lipgloss.Color("8") // Bright Black
+	highlightColor = lipgloss.Color("5") // Magenta
 )
 
 var (
@@ -36,13 +36,13 @@ var (
 )
 
 // Color accessors for use by other packages (e.g. picker).
-func AccentColor() lipgloss.AdaptiveColor    { return accentColor }
-func SuccessColor() lipgloss.AdaptiveColor   { return successColor }
-func ErrorColor() lipgloss.AdaptiveColor     { return errorColor }
-func WarnColor() lipgloss.AdaptiveColor      { return warnColor }
-func SubtleColor() lipgloss.AdaptiveColor    { return subtleColor }
-func MutedColor() lipgloss.AdaptiveColor     { return mutedColor }
-func HighlightColor() lipgloss.AdaptiveColor { return highlightColor }
+func AccentColor() lipgloss.TerminalColor    { return accentColor }
+func SuccessColor() lipgloss.TerminalColor   { return successColor }
+func ErrorColor() lipgloss.TerminalColor     { return errorColor }
+func WarnColor() lipgloss.TerminalColor      { return warnColor }
+func SubtleColor() lipgloss.TerminalColor    { return subtleColor }
+func MutedColor() lipgloss.TerminalColor     { return mutedColor }
+func HighlightColor() lipgloss.TerminalColor { return highlightColor }
 
 func render(style lipgloss.Style, s string) string {
 	if noColor {
