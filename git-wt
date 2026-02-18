@@ -205,13 +205,14 @@ get_worktree_list() {
 
 format_worktree_for_display() {
 	# Convert "path:branch:head" format to display format for fzf
-	# Input: /path/to/worktree:branch-name:abc1234
+	# Input: /path/to/worktree:branch-name:abc1234 <bare-root>
 	# Output: workspace [branch-name]\t\e[2m~/path/to/worktree\e[0m
 	local entry=$1
+	local bare_root=$2
 	local wt_path="${entry%%:*}"
 	local rest="${entry#*:}"
 	local branch="${rest%%:*}"
-	local workspace="${wt_path##*/}"
+	local workspace="${wt_path#"$bare_root"/}"
 	local display_path="${wt_path/#$HOME/\~}"
 
 	if [[ -n $branch && $branch != "(detached)" ]]; then
@@ -285,11 +286,12 @@ get_default_branch() {
 
 build_worktree_display_list() {
 	# Build newline-separated display list of worktrees for fzf
-	# Output: /path/to/worktree abc1234 [branch-name]
-	local result="" entry display_line
+	# Output: workspace [branch-name]\t~/path/to/worktree
+	local bare_root result="" entry display_line
+	bare_root=$(get_bare_root)
 	while IFS= read -r entry; do
 		if [[ -n $entry ]]; then
-			display_line=$(format_worktree_for_display "$entry")
+			display_line=$(format_worktree_for_display "$entry" "$bare_root")
 			if [[ -n $result ]]; then
 				result="${result}"$'\n'"${display_line}"
 			else
