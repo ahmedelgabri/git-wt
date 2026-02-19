@@ -8,8 +8,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Create Release
+  build:
+    name: Build Binaries
     runs-on: ubuntu-latest
     # Only run if CI passes and commit message doesn't contain [skip release]
     if: "!contains(github.event.head_commit.message, '[skip release]')"
@@ -34,28 +34,102 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Generate changelog for release
-        id: changelog
+      - name: Set up Go
         if: steps.check_tag.outputs.exists == 'false'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build native binary for completions and man pages
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # Get the previous tag, or use initial commit if no tags exist
+          go build -ldflags="-s -w -X github.com/ahmedelgabri/git-wt/internal/cmd.Version=$VERSION" -o git-wt-native ./cmd/git-wt/
+
+          mkdir -p dist/completions dist/man
+          ./git-wt-native completion bash > dist/completions/git-wt.bash
+          ./git-wt-native completion zsh > dist/completions/_git-wt
+          ./git-wt-native completion fish > dist/completions/git-wt.fish
+          ./git-wt-native man dist/man
+          rm git-wt-native
+
+      - name: Cross-compile and package
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          LDFLAGS="-s -w -X github.com/ahmedelgabri/git-wt/internal/cmd.Version=$VERSION"
+
+          for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
+            OS="${target%/*}"
+            ARCH="${target#*/}"
+            DIR="git-wt-${VERSION}-${OS}-${ARCH}"
+
+            mkdir -p "dist/${DIR}"
+            GOOS="$OS" GOARCH="$ARCH" go build -ldflags="$LDFLAGS" -o "dist/${DIR}/git-wt" ./cmd/git-wt/
+            cp -r dist/completions "dist/${DIR}/"
+            cp -r dist/man "dist/${DIR}/"
+
+            tar -czf "dist/${DIR}.tar.gz" -C dist "$DIR"
+          done
+
+      - name: Generate checksums
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd dist
+          sha256sum git-wt-${VERSION}-*.tar.gz > "git-wt-${VERSION}-checksums.txt"
+
+      - name: Upload artifacts
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            dist/git-wt-*.tar.gz
+            dist/git-wt-*-checksums.txt
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_exists: ${{ steps.check_tag.outputs.exists }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: needs.build.outputs.tag_exists == 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Generate changelog
+        id: changelog
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
           echo "Previous reference: $PREV_TAG"
 
-          # Generate changelog from commits since previous tag
           CHANGELOG=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s" --no-merges | head -50)
 
-          # Use heredoc to handle multi-line output
           echo "changelog<<EOF" >>$GITHUB_OUTPUT
           echo "$CHANGELOG" >>$GITHUB_OUTPUT
           echo "EOF" >>$GITHUB_OUTPUT
 
       - name: Create Release
-        if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.build.outputs.version }}
+          name: v${{ needs.build.outputs.version }}
           body: |
             ## Changes
 
@@ -63,32 +137,32 @@ jobs:
 
             ## Installation
 
-            ### Using Nix Flakes
-
-            Add to your flake inputs:
-
-            ```nix
-            {
-              inputs.git-wt.url = "github:${{ github.repository }}";
-            }
-            ```
-
-            Then add to your packages:
-
-            ```nix
-            inputs.git-wt.packages.${system}.default
-            ```
-
-            Or run directly:
-
-            ```bash
-            nix run github:${{ github.repository }}
-            ```
-
             ### Using Homebrew
 
             ```bash
             brew install ahmedelgabri/git-wt/git-wt
             ```
+
+            ### Using Nix Flakes
+
+            ```bash
+            nix run github:${{ github.repository }}
+            ```
+
+            ### Manual Download
+
+            Download the archive for your platform, extract it, and place the binary in your `$PATH`:
+
+            ```bash
+            tar xzf git-wt-${{ needs.build.outputs.version }}-<OS>-<ARCH>.tar.gz
+            cp git-wt-${{ needs.build.outputs.version }}-<OS>-<ARCH>/git-wt ~/.local/bin/
+            ```
+
+            Completions and man pages are included in the archive under `completions/` and `man/`.
+
+            **Checksums:** See `git-wt-${{ needs.build.outputs.version }}-checksums.txt`
           draft: false
           prerelease: false
+          files: |
+            dist/git-wt-*.tar.gz
+            dist/git-wt-*-checksums.txt

@@ -8,6 +8,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version is set at build time via ldflags.
+var Version = "dev"
+
 var rootCmd = &cobra.Command{
 	Use:   "git-wt",
 	Short: "Git worktree management tool",
@@ -29,6 +32,8 @@ also supported as pass-throughs.`,
 }
 
 func init() {
+	rootCmd.Version = Version
+
 	// Disable default completion command - we generate completions separately
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 

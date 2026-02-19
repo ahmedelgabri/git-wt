@@ -51,9 +51,11 @@ nix run github:ahmedelgabri/git-wt
 
 **Manual:**
 
+Download a prebuilt binary from the [releases page](https://github.com/ahmedelgabri/git-wt/releases/latest):
+
 ```bash
-curl -o ~/.local/bin/git-wt https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/git-wt
-chmod +x ~/.local/bin/git-wt
+curl -sL https://github.com/ahmedelgabri/git-wt/releases/latest/download/git-wt-VERSION-OS-ARCH.tar.gz | tar xz
+cp git-wt-VERSION-OS-ARCH/git-wt ~/.local/bin/
 ```
 
 ### Basic Usage
@@ -102,8 +104,7 @@ All native `git worktree` commands (list, lock, unlock, move, prune, repair) are
 
 ## Dependencies
 
-- `git` (2.7+ for worktree support)
-- `fzf` (optional, for interactive commands)
+- `git` (2.48.0+ for relative worktree support)
 
 ## License
 

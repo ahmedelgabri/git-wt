@@ -37,6 +37,12 @@
 
             vendorHash = "sha256-qDEbnnCd47RxEoXH4TXlcMHjAIVTMq/1ypNd7AdT/Bc=";
 
+            ldflags = [
+              "-s"
+              "-w"
+              "-X github.com/ahmedelgabri/git-wt/internal/cmd.Version=${self'.packages.git-wt.version}"
+            ];
+
             nativeBuildInputs = with pkgs; [
               installShellFiles
               makeWrapper
