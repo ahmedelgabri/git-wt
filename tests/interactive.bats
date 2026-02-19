@@ -34,7 +34,7 @@ teardown() {
 
 # --- add ---
 
-@test "interactive add: selects remote branch and creates worktree" {
+@test "interactive add: selects remote branch and creates worktree at flat path" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 	# Create branch only on origin (not locally)
@@ -43,6 +43,9 @@ teardown() {
 	run env GIT_WT_SELECT=develop "$GIT_WT" add
 	[ "$status" -eq 0 ]
 	assert_branch_exists develop
+	assert_worktree_exists "$TEST_DIR/myrepo/develop"
+	# Must not create nested origin/ directory
+	[ ! -d "$TEST_DIR/myrepo/origin" ]
 }
 
 @test "interactive add: creates new branch via prompts" {

@@ -120,6 +120,20 @@ SCRIPT
 	assert_worktree_exists "$TEST_DIR/myrepo/my-new-branch"
 }
 
+@test "add: creates worktree from remote branch at flat path with -b" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	# Create branch only on origin (not locally)
+	(cd "$TEST_DIR/myrepo-origin" && command git branch develop main)
+	command git fetch origin --quiet
+
+	run "$GIT_WT" add -b develop develop origin/develop
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/develop"
+	# Must not create nested origin/ directory
+	[ ! -d "$TEST_DIR/myrepo/origin" ]
+}
+
 @test "add: fails when branch already exists" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo

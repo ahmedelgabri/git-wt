@@ -123,7 +123,7 @@ func runAddInteractive() error {
 	// Create worktree from selected remote branch
 	branch := selected.Value
 	if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func() error {
-		_, err := git.RunWithOutput("worktree", "add", "-b", branch, "origin/"+branch)
+		_, err := git.RunWithOutput("worktree", "add", "-b", branch, branch, "origin/"+branch)
 		return err
 	}); err != nil {
 		return err
