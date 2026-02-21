@@ -34,9 +34,7 @@ func Run(cfg Config) (Result, error) {
 		"--ansi",
 		"--delimiter", "\t",
 		"--with-nth", "2..",
-		"--reverse",
 		"--height", "50%",
-		"--color", "16",
 	}
 
 	if cfg.Multi {
@@ -50,10 +48,10 @@ func Run(cfg Config) (Result, error) {
 	}
 	if cfg.PreviewCmd != "" {
 		args = append(args, "--preview", cfg.PreviewCmd)
-		args = append(args, "--preview-window", "right:50%")
+		args = append(args, "--preview-window", "right:50%:wrap")
 	}
 
-	opts, err := fzf.ParseOptions(false, args)
+	opts, err := fzf.ParseOptions(true, args)
 	if err != nil {
 		return Result{}, err
 	}
