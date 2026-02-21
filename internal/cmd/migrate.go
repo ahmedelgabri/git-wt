@@ -168,7 +168,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	// Clean up invalid local branch refs
 	refs, _ := git.QueryIn(newStructure, "for-each-ref", "--format=%(refname:short)", "refs/heads")
 	if refs != "" {
-		for _, ref := range strings.Split(refs, "\n") {
+		for ref := range strings.SplitSeq(refs, "\n") {
 			ref = strings.TrimSpace(ref)
 			if ref != "" {
 				git.RunInWithOutput(newStructure, "branch", "-D", ref)

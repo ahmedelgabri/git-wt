@@ -87,7 +87,7 @@ func generateWorktreePreview(wtPath string, mode string) string {
 	if err != nil {
 		b.WriteString("  (unable to get status)\n")
 	} else {
-		for _, line := range strings.Split(status, "\n") {
+		for line := range strings.SplitSeq(status, "\n") {
 			b.WriteString("  " + line + "\n")
 		}
 	}
@@ -99,7 +99,7 @@ func generateWorktreePreview(wtPath string, mode string) string {
 		if err != nil {
 			b.WriteString("  (unable to get log)\n")
 		} else {
-			for _, line := range strings.Split(log, "\n") {
+			for line := range strings.SplitSeq(log, "\n") {
 				b.WriteString("  " + line + "\n")
 			}
 		}

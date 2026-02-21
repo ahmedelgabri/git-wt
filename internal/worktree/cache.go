@@ -33,7 +33,7 @@ func ParsePorcelain(output string) []Entry {
 	var entries []Entry
 	var current Entry
 
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
 			current.Path = strings.TrimPrefix(line, "worktree ")

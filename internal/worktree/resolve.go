@@ -124,10 +124,10 @@ func DefaultBranch() string {
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "HEAD branch:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "HEAD branch:"))
+		if after, ok := strings.CutPrefix(line, "HEAD branch:"); ok {
+			return strings.TrimSpace(after)
 		}
 	}
 	return ""

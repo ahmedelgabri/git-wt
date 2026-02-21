@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/spf13/cobra"
@@ -77,10 +78,9 @@ func isKnownCommand(name string) bool {
 		if cmd.Name() == name {
 			return true
 		}
-		for _, alias := range cmd.Aliases {
-			if alias == name {
-				return true
-			}
+
+		if slices.Contains(cmd.Aliases, name) {
+			return true
 		}
 	}
 	// Also check built-in names
