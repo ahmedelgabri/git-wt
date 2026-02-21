@@ -74,12 +74,6 @@ func runAdd(cmd *cobra.Command, args []string) error {
 }
 
 func runAddInteractive() error {
-	// Get remote branches (excluding HEAD)
-	lines, err := git.QueryLines("branch", "-r", "--format=%(refname:short)")
-	if err != nil {
-		return fmt.Errorf("failed to list remote branches: %w", err)
-	}
-
 	// Build set of branches already checked out as worktrees
 	checkedOut := make(map[string]bool)
 	if entries, err := worktree.List(); err == nil {
@@ -96,6 +90,12 @@ func runAddInteractive() error {
 		Label: "➕ Create new branch",
 		Value: "__create_new__",
 	})
+
+	// Get remote branches (excluding HEAD)
+	lines, err := git.QueryLines("branch", "-r", "--format=%(refname:short)")
+	if err != nil {
+		return fmt.Errorf("failed to list remote branches: %w", err)
+	}
 
 	for _, line := range lines {
 		if strings.Contains(line, "HEAD") {
@@ -123,6 +123,7 @@ func runAddInteractive() error {
 	if err != nil {
 		return err
 	}
+
 	if result.Canceled || len(result.Items) == 0 {
 		return nil
 	}
@@ -149,6 +150,7 @@ func runAddInteractive() error {
 	}); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -160,16 +162,7 @@ func createNewBranch() error {
 		return fmt.Errorf("branch name cannot be empty")
 	}
 
-	// Validate branch name using git
-	if _, err := git.Query("check-ref-format", "--branch", branchName); err != nil {
-		ui.Errorf("Invalid branch name '%s'", branchName)
-		return fmt.Errorf("invalid branch name '%s'", branchName)
-	}
-
-	wtPath := ui.PromptInput(fmt.Sprintf("Enter worktree path [default: %s]:", branchName))
-	if wtPath == "" {
-		wtPath = branchName
-	}
+	wtPath := branchName
 
 	return ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func() error {
 		_, err := git.RunWithOutput("worktree", "add", "-b", branchName, wtPath)
