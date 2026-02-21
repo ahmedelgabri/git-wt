@@ -36,12 +36,6 @@ func runClone(cmd *cobra.Command, args []string) error {
 		folderName = args[1]
 	}
 
-	// Check if directory already exists
-	if info, err := os.Stat(folderName); err == nil && info.IsDir() {
-		ui.Errorf("Directory '%s' already exists", folderName)
-		return fmt.Errorf("directory '%s' already exists", folderName)
-	}
-
 	if err := os.MkdirAll(folderName, 0o755); err != nil {
 		ui.Errorf("Failed to create directory '%s'", folderName)
 		return err
@@ -89,7 +83,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 	// Clean up invalid local branch refs
 	refs, _ := git.Query("for-each-ref", "--format=%(refname:short)", "refs/heads")
 	if refs != "" {
-		for _, ref := range strings.Split(refs, "\n") {
+		for ref := range strings.SplitSeq(refs, "\n") {
 			ref = strings.TrimSpace(ref)
 			if ref != "" {
 				git.RunWithOutput("branch", "-D", ref)
@@ -124,9 +118,9 @@ func runClone(cmd *cobra.Command, args []string) error {
 		fmt.Printf("No worktree created. Use %s to create worktrees.\n", ui.Accent("git wt add"))
 	}
 
-	fmt.Println()
-	ui.Success("Repository cloned successfully")
+	ui.Success("\nRepository cloned successfully")
 	fmt.Printf("\n  Repository structure:\n")
+
 	// Compute padding for aligned descriptions
 	treeWidth := len(".bare/")
 	if defaultBranch != "" {
