@@ -95,16 +95,12 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool) error
 	// Show what will be removed
 	fmt.Println()
 	if dryRun {
-		if mode == "destroy" {
-			fmt.Printf("%s Would DESTROY %d worktree(s):\n", ui.Yellow("[DRY RUN]"), len(targets))
-		} else {
-			fmt.Printf("%s Would remove %d worktree(s):\n", ui.Yellow("[DRY RUN]"), len(targets))
-		}
-	} else if mode == "destroy" {
-		fmt.Printf("%s\n\n", ui.Red("WARNING: DESTRUCTIVE OPERATION"))
-		fmt.Printf("About to DESTROY %s worktree(s):\n", ui.Bold(fmt.Sprintf("%d", len(targets))))
+		fmt.Printf("%s Would %s %d worktree(s):\n", ui.Yellow("[DRY RUN]"), mode, len(targets))
 	} else {
-		fmt.Printf("About to remove %s worktree(s):\n", ui.Bold(fmt.Sprintf("%d", len(targets))))
+		if mode == "destroy" {
+			fmt.Printf("%s\n\n", ui.Red("WARNING: DESTRUCTIVE OPERATION"))
+		}
+		fmt.Printf("About to %s %s worktree(s):\n", mode, ui.Bold(fmt.Sprintf("%d", len(targets))))
 	}
 
 	for i, t := range targets {
