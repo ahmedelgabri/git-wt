@@ -61,6 +61,48 @@ teardown() {
 	[ "$branch" = "remote-only" ]
 }
 
+@test "add: interactive mode excludes already checked-out branches" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	# Create two remote branches
+	command git checkout -b feature-a --quiet
+	create_commit "feature-a.txt"
+	command git push --quiet -u origin feature-a
+	command git checkout -b feature-b --quiet
+	create_commit "feature-b.txt"
+	command git push --quiet -u origin feature-b
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+
+	# Delete local branches so they only exist on origin
+	command git branch -D feature-a --quiet
+	command git branch -D feature-b --quiet
+
+	# Check out feature-a as a worktree (simulates it being already in use)
+	command git worktree add -b feature-a feature-a origin/feature-a --quiet
+
+	# Create a fake fzf that dumps its stdin to a file and selects feature-b
+	mkdir -p "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/fzf" <<'SCRIPT'
+#!/usr/bin/env bash
+cat > "$FZF_INPUT_FILE"
+echo "feature-b"
+SCRIPT
+	chmod +x "$TEST_DIR/bin/fzf"
+
+	# Run interactive mode and capture what fzf received
+	FZF_INPUT_FILE="$TEST_DIR/fzf_input.txt" PATH="$TEST_DIR/bin:$PATH" run "$GIT_WT" add
+	[ "$status" -eq 0 ]
+
+	# feature-a should NOT appear in the fzf input (it's already checked out)
+	run grep -x "feature-a" "$TEST_DIR/fzf_input.txt"
+	[ "$status" -ne 0 ]
+
+	# feature-b should appear (it's available)
+	run grep -x "feature-b" "$TEST_DIR/fzf_input.txt"
+	[ "$status" -eq 0 ]
+}
+
 @test "add: interactive mode creates new branch" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo

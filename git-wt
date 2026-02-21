@@ -925,12 +925,28 @@ add)
 	if [[ $# -eq 0 ]]; then
 		check_fzf_dependency
 
-		# Get list of remote branches (excluding HEAD)
+		# Build list of branches already checked out as worktrees so we can exclude them
+		load_worktree_cache
+		CHECKED_OUT_BRANCHES=""
+		for i in "${!WORKTREE_CACHE_BRANCHES[@]}"; do
+			if [[ -n ${WORKTREE_CACHE_BRANCHES[$i]} && ${WORKTREE_CACHE_BRANCHES[$i]} != "(detached)" ]]; then
+				if [[ -n $CHECKED_OUT_BRANCHES ]]; then
+					CHECKED_OUT_BRANCHES+=$'\n'
+				fi
+				CHECKED_OUT_BRANCHES+="${WORKTREE_CACHE_BRANCHES[$i]}"
+			fi
+		done
+
+		# Get list of remote branches (excluding HEAD and already checked-out branches)
 		# Format: Strip 'origin/' prefix for cleaner display
 		SELECTED=$(
 			{
 				echo "➕ Create new branch"
-				$CMD branch -r --format='%(refname:short)' | grep -v HEAD | sed 's/^origin\///'
+				$CMD branch -r --format='%(refname:short)' | grep -v HEAD | sed 's/^origin\///' | if [[ -n $CHECKED_OUT_BRANCHES ]]; then
+					grep -v -x -F "$CHECKED_OUT_BRANCHES"
+				else
+					cat
+				fi
 			} | fzf \
 				--prompt="Select branch or create new: " \
 				--height=40% \
