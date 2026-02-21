@@ -19,8 +19,8 @@ var addCmd = &cobra.Command{
 select from remote branches or create a new branch. All git worktree add
 flags are supported (-b, -B, -d, --lock, --quiet, etc).
 
-Always fetches from origin before creating the worktree. When using -b/-B,
-upstream tracking is set automatically if the branch exists on origin.`,
+Always fetches from the remote before creating the worktree. When using -b/-B,
+upstream tracking is set automatically if the branch exists on the remote.`,
 	Example: `  git wt add                               # Interactive selection
   git wt add feature origin/feature        # From remote branch
   git wt add -b new-feature new-feature    # New branch
@@ -56,24 +56,28 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to change to bare root: %w", err)
 	}
 
+	remote := worktree.DefaultRemote()
+
 	// Fetch latest remote branches
-	if err := ui.Spin("Fetching from origin", func() error {
-		_, err := git.RunWithOutput("fetch", "origin", "--prune")
-		return err
-	}); err != nil {
-		return err
+	if remote != "" {
+		if err := ui.Spin(fmt.Sprintf("Fetching from %s", remote), func() error {
+			_, err := git.RunWithOutput("fetch", remote, "--prune")
+			return err
+		}); err != nil {
+			return err
+		}
 	}
 
 	// If no arguments and no flags set, run interactive mode
 	if len(args) == 0 && !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("force-branch") {
-		return runAddInteractive()
+		return runAddInteractive(remote)
 	}
 
 	// Non-interactive: build git args from parsed flags
-	return runAddDirect(cmd, args)
+	return runAddDirect(cmd, args, remote)
 }
 
-func runAddInteractive() error {
+func runAddInteractive(remote string) error {
 	// Build set of branches already checked out as worktrees
 	checkedOut := make(map[string]bool)
 	if entries, err := worktree.List(); err == nil {
@@ -137,15 +141,15 @@ func runAddInteractive() error {
 	// Create worktree from selected remote branch
 	branch := selected.Value
 	if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func() error {
-		_, err := git.RunWithOutput("worktree", "add", "-b", branch, branch, "origin/"+branch)
+		_, err := git.RunWithOutput("worktree", "add", "-b", branch, branch, remote+"/"+branch)
 		return err
 	}); err != nil {
 		return err
 	}
 
 	// Set upstream tracking
-	if err := ui.Spin(fmt.Sprintf("Setting upstream to %s", ui.Accent("origin/"+branch)), func() error {
-		_, err := git.RunWithOutput("branch", "--set-upstream-to=origin/"+branch, branch)
+	if err := ui.Spin(fmt.Sprintf("Setting upstream to %s", ui.Accent(remote+"/"+branch)), func() error {
+		_, err := git.RunWithOutput("branch", "--set-upstream-to="+remote+"/"+branch, branch)
 		return err
 	}); err != nil {
 		return err
@@ -170,7 +174,7 @@ func createNewBranch() error {
 	})
 }
 
-func runAddDirect(cmd *cobra.Command, args []string) error {
+func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
 	var gitArgs []string
 
 	branch, _ := cmd.Flags().GetString("branch")
@@ -226,17 +230,17 @@ func runAddDirect(cmd *cobra.Command, args []string) error {
 	if trackBranch == "" {
 		trackBranch = forceBranch
 	}
-	if trackBranch != "" {
-		if _, err := git.Query("rev-parse", "--verify", "origin/"+trackBranch); err == nil {
-			if err := ui.Spin(fmt.Sprintf("Setting upstream to %s", ui.Accent("origin/"+trackBranch)), func() error {
-				_, err := git.RunWithOutput("branch", "--set-upstream-to=origin/"+trackBranch, trackBranch)
+	if trackBranch != "" && remote != "" {
+		if _, err := git.Query("rev-parse", "--verify", remote+"/"+trackBranch); err == nil {
+			if err := ui.Spin(fmt.Sprintf("Setting upstream to %s", ui.Accent(remote+"/"+trackBranch)), func() error {
+				_, err := git.RunWithOutput("branch", "--set-upstream-to="+remote+"/"+trackBranch, trackBranch)
 				return err
 			}); err != nil {
 				return err
 			}
 		} else {
 			fmt.Printf("\nBranch %s created locally.\nTo push and set upstream:\n  %s\n",
-				ui.Accent(trackBranch), ui.Muted("git push -u origin "+trackBranch))
+				ui.Accent(trackBranch), ui.Muted("git push -u "+remote+" "+trackBranch))
 		}
 	}
 

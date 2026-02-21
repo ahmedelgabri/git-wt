@@ -47,16 +47,18 @@ func runRemoveOrDestroy(cmd *cobra.Command, args []string, mode string) error {
 		return err
 	}
 
+	remote := worktree.DefaultRemote()
+
 	// Interactive mode
 	if len(args) == 0 {
-		return removeInteractive(entries, mode, dryRun)
+		return removeInteractive(entries, mode, dryRun, remote)
 	}
 
 	// Non-interactive mode
-	return removeNonInteractive(entries, args, mode, dryRun)
+	return removeNonInteractive(entries, args, mode, dryRun, remote)
 }
 
-func removeInteractive(entries []worktree.Entry, mode string, dryRun bool) error {
+func removeInteractive(entries []worktree.Entry, mode string, dryRun bool, remote string) error {
 	if len(entries) == 0 {
 		fmt.Printf("No worktrees to %s\n", mode)
 		return nil
@@ -148,10 +150,10 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool) error
 
 	// Execute removal
 	fmt.Println()
-	return executeRemoval(targets, mode)
+	return executeRemoval(targets, mode, remote)
 }
 
-func removeNonInteractive(entries []worktree.Entry, args []string, mode string, dryRun bool) error {
+func removeNonInteractive(entries []worktree.Entry, args []string, mode string, dryRun bool, remote string) error {
 	// Validate all worktree paths first
 	var targets []removalTarget
 
@@ -174,7 +176,7 @@ func removeNonInteractive(entries []worktree.Entry, args []string, mode string, 
 					fmt.Printf("  %s %s %s %s\n", ui.Bold(filepath.Base(t.path)), ui.Muted("·"), ui.Accent(t.branch), "")
 					fmt.Printf("    %s Remove worktree directory\n", ui.Red("·"))
 					fmt.Printf("    %s Delete local branch: %s\n", ui.Red("·"), ui.Accent(t.branch))
-					fmt.Printf("    %s Delete remote branch: %s\n", ui.Red("·"), ui.Accent("origin/"+t.branch))
+					fmt.Printf("    %s Delete remote branch: %s\n", ui.Red("·"), ui.Accent(remote+"/"+t.branch))
 				} else {
 					fmt.Printf("  %s\n", ui.Bold(filepath.Base(t.path)))
 				}
@@ -215,7 +217,7 @@ func removeNonInteractive(entries []worktree.Entry, args []string, mode string, 
 		}
 	}
 
-	return executeRemoval(targets, mode)
+	return executeRemoval(targets, mode, remote)
 }
 
 type removalTarget struct {
@@ -223,7 +225,7 @@ type removalTarget struct {
 	branch string
 }
 
-func executeRemoval(targets []removalTarget, mode string) error {
+func executeRemoval(targets []removalTarget, mode string, remote string) error {
 	successCount := 0
 	failedCount := 0
 
@@ -233,7 +235,7 @@ func executeRemoval(targets []removalTarget, mode string) error {
 			fmt.Printf("%s %s\n", counter, ui.Bold(filepath.Base(t.path)))
 		}
 
-		if err := removeSingleWorktree(t.path, t.branch, mode); err != nil {
+		if err := removeSingleWorktree(t.path, t.branch, mode, remote); err != nil {
 			failedCount++
 		} else {
 			successCount++
@@ -255,7 +257,7 @@ func executeRemoval(targets []removalTarget, mode string) error {
 	return nil
 }
 
-func removeSingleWorktree(wtPath, branch, mode string) error {
+func removeSingleWorktree(wtPath, branch, mode, remote string) error {
 	name := filepath.Base(wtPath)
 
 	// Remove the worktree
@@ -276,24 +278,24 @@ func removeSingleWorktree(wtPath, branch, mode string) error {
 
 	// Delete remote branch in destroy mode
 	if mode == "destroy" {
-		deleteRemoteBranch(branch)
+		deleteRemoteBranch(branch, remote)
 	}
 
 	return nil
 }
 
-func deleteRemoteBranch(branch string) {
-	remoteName := "origin/" + branch
+func deleteRemoteBranch(branch, remote string) {
+	remoteBranch := remote + "/" + branch
 
 	// Check if remote branch exists
-	if _, err := git.Query("ls-remote", "--exit-code", "--heads", "origin", branch); err != nil {
-		fmt.Printf("%s %s\n", ui.Muted("·"), ui.Muted("No remote branch "+remoteName))
+	if _, err := git.Query("ls-remote", "--exit-code", "--heads", remote, branch); err != nil {
+		fmt.Printf("%s %s\n", ui.Muted("·"), ui.Muted("No remote branch "+remoteBranch))
 		return
 	}
 
 	// Delete remote branch (network operation, needs spinner)
-	ui.Spin(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteName)), func() error {
-		_, err := git.RunWithOutput("push", "origin", "--delete", branch)
+	ui.Spin(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func() error {
+		_, err := git.RunWithOutput("push", remote, "--delete", branch)
 		return err
 	})
 }

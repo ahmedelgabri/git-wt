@@ -70,9 +70,171 @@ func TestDefaultBranchNoRepo(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	branch := DefaultBranch()
+	branch := DefaultBranch("")
 	if branch != "" {
-		t.Errorf("DefaultBranch() in non-git dir = %q, want empty", branch)
+		t.Errorf("DefaultBranch(\"\") in non-git dir = %q, want empty", branch)
+	}
+}
+
+// initTestRepo creates a git repo in dir with an initial commit and returns
+// a cleanup function that restores the working directory.
+func initTestRepo(t *testing.T, dir string) {
+	t.Helper()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "Test User")
+	run("commit", "--allow-empty", "-m", "initial commit")
+}
+
+func TestDefaultRemoteNoRemotes(t *testing.T) {
+	dir := t.TempDir()
+	initTestRepo(t, dir)
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	got := DefaultRemote()
+	if got != "" {
+		t.Errorf("DefaultRemote() with no remotes = %q, want empty", got)
+	}
+}
+
+func TestDefaultRemoteSingleNonOrigin(t *testing.T) {
+	dir := t.TempDir()
+	initTestRepo(t, dir)
+
+	remoteDir := t.TempDir()
+	cmd := exec.Command("git", "init", "--bare", remoteDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v\n%s", err, out)
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	cmd = exec.Command("git", "remote", "add", "upstream", remoteDir)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %v\n%s", err, out)
+	}
+
+	got := DefaultRemote()
+	if got != "upstream" {
+		t.Errorf("DefaultRemote() with single remote 'upstream' = %q, want %q", got, "upstream")
+	}
+}
+
+func TestDefaultRemoteMultipleWithBranchConfig(t *testing.T) {
+	dir := t.TempDir()
+	initTestRepo(t, dir)
+
+	for _, name := range []string{"origin", "upstream"} {
+		remoteDir := t.TempDir()
+		cmd := exec.Command("git", "init", "--bare", remoteDir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git init --bare: %v\n%s", err, out)
+		}
+		cmd = exec.Command("git", "remote", "add", name, remoteDir)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git remote add %s: %v\n%s", name, err, out)
+		}
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	// Configure branch.main.remote = upstream
+	cmd := exec.Command("git", "config", "branch.main.remote", "upstream")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config: %v\n%s", err, out)
+	}
+
+	got := DefaultRemote()
+	if got != "upstream" {
+		t.Errorf("DefaultRemote() with branch config = %q, want %q", got, "upstream")
+	}
+}
+
+func TestDefaultRemoteMultipleOriginFallback(t *testing.T) {
+	dir := t.TempDir()
+	initTestRepo(t, dir)
+
+	for _, name := range []string{"github", "origin"} {
+		remoteDir := t.TempDir()
+		cmd := exec.Command("git", "init", "--bare", remoteDir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git init --bare: %v\n%s", err, out)
+		}
+		cmd = exec.Command("git", "remote", "add", name, remoteDir)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git remote add %s: %v\n%s", name, err, out)
+		}
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	got := DefaultRemote()
+	if got != "origin" {
+		t.Errorf("DefaultRemote() with multiple remotes including origin = %q, want %q", got, "origin")
+	}
+}
+
+func TestDefaultRemoteMultipleNoOrigin(t *testing.T) {
+	dir := t.TempDir()
+	initTestRepo(t, dir)
+
+	for _, name := range []string{"github", "gitlab"} {
+		remoteDir := t.TempDir()
+		cmd := exec.Command("git", "init", "--bare", remoteDir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git init --bare: %v\n%s", err, out)
+		}
+		cmd = exec.Command("git", "remote", "add", name, remoteDir)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git remote add %s: %v\n%s", name, err, out)
+		}
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	got := DefaultRemote()
+	// git remote returns alphabetically, so "github" comes first
+	if got != "github" {
+		t.Errorf("DefaultRemote() with no origin = %q, want %q", got, "github")
 	}
 }
 

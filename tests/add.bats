@@ -144,13 +144,13 @@ teardown() {
 	[[ "$output" == *"Usage"* ]]
 }
 
-@test "add: fails without remote configured" {
+@test "add: succeeds without remote configured" {
 	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" add feature-test
-	[ "$status" -ne 0 ]
-	[[ "$output" == *"origin"* ]]
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature-test"
 }
 
 @test "add: handles branch names with slashes" {
@@ -307,6 +307,34 @@ teardown() {
 	run "$GIT_WT" add -b feature-abs "$TEST_DIR/myrepo/abs-worktree"
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/abs-worktree"
+}
+
+@test "add: works with non-origin remote name" {
+	init_bare_repo_with_custom_remote upstream myrepo
+	cd myrepo
+	# Create a branch only on the remote (not locally)
+	(cd "$TEST_DIR/myrepo-upstream" && command git branch feature-up main)
+	command git fetch upstream --quiet
+
+	run "$GIT_WT" add feature-up upstream/feature-up
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature-up"
+}
+
+@test "add: interactive mode works with non-origin remote" {
+	init_bare_repo_with_custom_remote upstream myrepo
+	cd myrepo
+	# Create a branch only on the remote
+	command git checkout -b remote-feat --quiet
+	create_commit "remote-feat.txt"
+	command git push --quiet -u upstream remote-feat
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D remote-feat --quiet
+
+	GIT_WT_SELECT="remote-feat" run "$GIT_WT" add
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/remote-feat"
+	assert_branch_exists "remote-feat"
 }
 
 @test "add: supports -B flag to reset branch" {

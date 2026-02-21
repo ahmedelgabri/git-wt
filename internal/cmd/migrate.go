@@ -52,15 +52,19 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("detached HEAD state")
 	}
 
-	remoteURL, _ := git.Query("remote", "get-url", "origin")
+	remote := worktree.DefaultRemote()
+	remoteURL := ""
+	if remote != "" {
+		remoteURL, _ = git.Query("remote", "get-url", remote)
+	}
 	if remoteURL != "" {
 		fmt.Printf("Remote URL:     %s\n", ui.Accent(remoteURL))
 	} else {
-		ui.Warn("No remote 'origin' found")
+		ui.Warn("No remote found")
 	}
 
 	// Discover default branch via symbolic-ref (local) or remote query
-	defaultBranch := worktree.DefaultBranch()
+	defaultBranch := worktree.DefaultBranch(remote)
 
 	fmt.Printf("Repository:      %s\n", ui.Bold(repoName))
 	fmt.Printf("Current branch:  %s\n", ui.Accent(currentBranch))

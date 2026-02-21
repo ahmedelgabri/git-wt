@@ -162,6 +162,19 @@ teardown() {
 	assert_branch_not_exists "feature/to-destroy"
 }
 
+@test "destroy: deletes remote branch with non-origin remote" {
+	init_bare_repo_with_custom_remote upstream myrepo
+	cd myrepo
+	create_worktree feature-up feature-up
+	# Push the branch to the custom remote
+	command git push -u upstream feature-up --quiet 2>/dev/null || true
+
+	echo "y" | "$GIT_WT" destroy "$TEST_DIR/myrepo/feature-up"
+
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature-up"
+	assert_branch_not_exists "feature-up"
+}
+
 @test "destroy: works from worktree subdirectory" {
 	init_bare_repo myrepo
 	cd myrepo

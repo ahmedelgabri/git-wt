@@ -93,7 +93,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 
 	var defaultBranch string
 	ui.Spin("Discovering default branch", func() error {
-		defaultBranch = worktree.DefaultBranch()
+		defaultBranch = worktree.DefaultBranch("origin")
 		if defaultBranch == "" {
 			return fmt.Errorf("not found")
 		}

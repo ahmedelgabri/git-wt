@@ -111,16 +111,64 @@ func BareRoot() (string, error) {
 	return strings.TrimSuffix(absDir, string(os.PathSeparator)+".bare"), nil
 }
 
+// DefaultRemote returns the best remote name for the current repository.
+// If exactly one remote exists, it is returned. With multiple remotes, it
+// checks the current branch's configured remote, then falls back to "origin"
+// if present, then the first remote alphabetically. Returns "" if no remotes.
+func DefaultRemote() string {
+	out, err := git.Query("remote")
+	if err != nil || out == "" {
+		return ""
+	}
+
+	var remotes []string
+	for line := range strings.SplitSeq(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			remotes = append(remotes, line)
+		}
+	}
+
+	if len(remotes) == 0 {
+		return ""
+	}
+	if len(remotes) == 1 {
+		return remotes[0]
+	}
+
+	// Check the current branch's configured remote
+	branch, err := git.Query("branch", "--show-current")
+	if err == nil && branch != "" {
+		configured, err := git.Query("config", fmt.Sprintf("branch.%s.remote", branch))
+		if err == nil && configured != "" {
+			return configured
+		}
+	}
+
+	// Fall back to "origin" if it exists
+	for _, r := range remotes {
+		if r == "origin" {
+			return r
+		}
+	}
+
+	return remotes[0]
+}
+
 // DefaultBranch returns the default branch name, preferring local lookup over network.
-func DefaultBranch() string {
+func DefaultBranch(remote string) string {
+	if remote == "" {
+		return ""
+	}
+
 	// Try local symbolic-ref first (instant, no network)
-	ref, err := git.Query("symbolic-ref", "refs/remotes/origin/HEAD")
+	ref, err := git.Query("symbolic-ref", fmt.Sprintf("refs/remotes/%s/HEAD", remote))
 	if err == nil && ref != "" {
-		return strings.TrimPrefix(ref, "refs/remotes/origin/")
+		return strings.TrimPrefix(ref, fmt.Sprintf("refs/remotes/%s/", remote))
 	}
 
 	// Fall back to network call
-	out, err := git.QueryCombined("remote", "show", "origin")
+	out, err := git.QueryCombined("remote", "show", remote)
 	if err != nil {
 		return ""
 	}

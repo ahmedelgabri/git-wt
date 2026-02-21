@@ -115,6 +115,35 @@ init_bare_repo_with_remote() {
 	)
 }
 
+# Initialize a bare repo with a custom-named remote (git-wt style)
+# Usage: init_bare_repo_with_custom_remote <remote-name> [dirname]
+# Creates both the bare repo and a bare remote with the given name
+init_bare_repo_with_custom_remote() {
+	local remote_name="${1}"
+	local dirname="${2:-myrepo}"
+
+	# Create a bare repo to act as the remote
+	mkdir -p "${dirname}-${remote_name}"
+	(
+		cd "${dirname}-${remote_name}" || exit 1
+		command git init --quiet --bare -b main
+	)
+
+	# Create the bare repo and link to the remote
+	mkdir -p "$dirname"
+	(
+		cd "$dirname" || exit 1
+		command git init --quiet --bare .bare -b main
+		echo "gitdir: ./.bare" >.git
+		command git config core.bare false
+		command git config user.email "test@test.com"
+		command git config user.name "Test User"
+		command git remote add "$remote_name" "../${dirname}-${remote_name}"
+		command git commit --quiet --allow-empty -m "initial commit"
+		command git push --quiet -u "$remote_name" HEAD 2>/dev/null || true
+	)
+}
+
 # Create a worktree with a new branch
 # Usage: create_worktree <path> <branch>
 create_worktree() {

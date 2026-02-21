@@ -28,7 +28,8 @@ in its worktree.`,
 			return err
 		}
 
-		defaultBranch := worktree.DefaultBranch()
+		remote := worktree.DefaultRemote()
+		defaultBranch := worktree.DefaultBranch(remote)
 		if defaultBranch == "" {
 			ui.Error("Could not determine default branch from remote")
 			return fmt.Errorf("could not determine default branch")

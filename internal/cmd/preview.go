@@ -45,9 +45,10 @@ var previewBranchCmd = &cobra.Command{
 			fmt.Print("Create a new branch and worktree\n\nYou will be prompted to enter:\n  - Branch name\n  - Worktree path (optional, defaults to branch name)")
 			return nil
 		}
+		remote := worktree.DefaultRemote()
 		out, _ := git.Query("log", "--oneline", "--graph", "--date=short",
 			"--color=always", "--pretty=format:%C(auto)%cd %h%d %s",
-			"origin/"+branch, "-10", "--")
+			remote+"/"+branch, "-10", "--")
 		fmt.Printf("Branch: %s\n\nRecent commits:\n%s", branch, out)
 		return nil
 	},
@@ -75,11 +76,13 @@ func generateWorktreePreview(wtPath string, mode string) string {
 		b.WriteString(fmt.Sprintf("  %s %s\n", ui.Subtle("Branch:"), branch))
 	}
 
+	remote := worktree.DefaultRemote()
+
 	if mode == "destroy" {
 		b.WriteString("\n")
 		b.WriteString(ui.Yellow("  - Remove worktree directory") + "\n")
 		b.WriteString(ui.Yellow("  - Delete local branch") + "\n")
-		b.WriteString(ui.Yellow(fmt.Sprintf("  - Delete remote branch (origin/%s)", branch)) + "\n")
+		b.WriteString(ui.Yellow(fmt.Sprintf("  - Delete remote branch (%s/%s)", remote, branch)) + "\n")
 	}
 
 	b.WriteString("\n" + ui.Bold(ui.Accent("Status")) + "\n")
