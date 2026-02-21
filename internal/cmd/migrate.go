@@ -28,7 +28,6 @@ func init() {
 }
 
 func runMigrate(cmd *cobra.Command, args []string) error {
-	// Check if we're in a git repository
 	if _, err := git.Query("rev-parse", "--git-dir"); err != nil {
 		ui.Error("Not in a git repository")
 		return fmt.Errorf("not in a git repository")
@@ -53,7 +52,6 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("detached HEAD state")
 	}
 
-	// Get remote URL
 	remoteURL, _ := git.Query("remote", "get-url", "origin")
 	if remoteURL != "" {
 		fmt.Printf("Remote URL:     %s\n", ui.Accent(remoteURL))
@@ -61,19 +59,8 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		ui.Warn("No remote 'origin' found")
 	}
 
-	// Discover default branch
-	defaultBranch := ""
-	if remoteURL != "" {
-		defaultBranch = worktree.DefaultBranch()
-	}
-	if defaultBranch == "" {
-		for _, branch := range []string{"main", "master"} {
-			if _, err := git.Query("rev-parse", "--verify", branch); err == nil {
-				defaultBranch = branch
-				break
-			}
-		}
-	}
+	// Discover default branch via symbolic-ref (local) or remote query
+	defaultBranch := worktree.DefaultBranch()
 
 	fmt.Printf("Repository:      %s\n", ui.Bold(repoName))
 	fmt.Printf("Current branch:  %s\n", ui.Accent(currentBranch))
