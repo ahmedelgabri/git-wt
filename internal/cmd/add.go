@@ -80,6 +80,16 @@ func runAddInteractive() error {
 		return fmt.Errorf("failed to list remote branches: %w", err)
 	}
 
+	// Build set of branches already checked out as worktrees
+	checkedOut := make(map[string]bool)
+	if entries, err := worktree.List(); err == nil {
+		for _, e := range entries {
+			if e.Branch != "" && e.Branch != "(detached)" {
+				checkedOut[e.Branch] = true
+			}
+		}
+	}
+
 	var items []picker.Item
 	// Add "Create new branch" option first
 	items = append(items, picker.Item{
@@ -94,6 +104,9 @@ func runAddInteractive() error {
 		// Strip remote name prefix (e.g., "origin/feature" -> "feature")
 		_, branch, _ := strings.Cut(line, "/")
 		if branch == "" {
+			continue
+		}
+		if checkedOut[branch] {
 			continue
 		}
 		items = append(items, picker.Item{
