@@ -213,7 +213,7 @@ func removeNonInteractive(entries []worktree.Entry, args []string, mode string, 
 		msg += " [y/N]:"
 		if !ui.Confirm(msg) {
 			fmt.Println("Cancelled")
-			return fmt.Errorf("cancelled")
+			return nil
 		}
 	}
 
@@ -294,10 +294,12 @@ func deleteRemoteBranch(branch, remote string) {
 	}
 
 	// Delete remote branch (network operation, needs spinner)
-	ui.Spin(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func() error {
+	if err := ui.Spin(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func() error {
 		_, err := git.RunWithOutput("push", remote, "--delete", branch)
 		return err
-	})
+	}); err != nil {
+		ui.Warnf("Failed to delete remote branch %s: %s", remoteBranch, err)
+	}
 }
 
 func entriesToPickerItems(entries []worktree.Entry) []picker.Item {

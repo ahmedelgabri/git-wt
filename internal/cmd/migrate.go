@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/ahmedelgabri/git-wt/internal/fsutil"
@@ -107,21 +108,22 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	// Setup cleanup on signal
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	cleanupDone := make(chan struct{})
 
+	var cleanupOnce sync.Once
 	cleanup := func() {
-		if _, err := os.Stat(newStructure); err == nil {
-			os.RemoveAll(newStructure)
-		}
-		if _, err := os.Stat(tempBackup); err == nil {
-			restoreBackup(tempBackup, repoRoot)
-		}
+		cleanupOnce.Do(func() {
+			if _, err := os.Stat(newStructure); err == nil {
+				os.RemoveAll(newStructure)
+			}
+			if _, err := os.Stat(tempBackup); err == nil {
+				restoreBackup(tempBackup, repoRoot)
+			}
+		})
 	}
 
 	go func() {
 		<-sigCh
 		cleanup()
-		close(cleanupDone)
 		os.Exit(1)
 	}()
 
@@ -189,22 +191,30 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// Migrate stashes
 	if stashCount > 0 {
-		ui.Spin(fmt.Sprintf("Migrating %d stash(es)", stashCount), func() error {
+		if err := ui.Spin(fmt.Sprintf("Migrating %d stash(es)", stashCount), func() error {
 			oldGitDir := filepath.Join(repoRoot, ".git")
 			newBareDir := filepath.Join(newStructure, ".bare")
 
 			stashRef := filepath.Join(oldGitDir, "refs", "stash")
 			if _, err := os.Stat(stashRef); err == nil {
-				copyFileSimple(stashRef, filepath.Join(newBareDir, "refs", "stash"))
+				if err := copyFileSimple(stashRef, filepath.Join(newBareDir, "refs", "stash")); err != nil {
+					return fmt.Errorf("failed to copy stash ref: %w", err)
+				}
 			}
 
 			stashLog := filepath.Join(oldGitDir, "logs", "refs", "stash")
 			if _, err := os.Stat(stashLog); err == nil {
-				os.MkdirAll(filepath.Join(newBareDir, "logs", "refs"), 0o755)
-				copyFileSimple(stashLog, filepath.Join(newBareDir, "logs", "refs", "stash"))
+				if err := os.MkdirAll(filepath.Join(newBareDir, "logs", "refs"), 0o755); err != nil {
+					return err
+				}
+				if err := copyFileSimple(stashLog, filepath.Join(newBareDir, "logs", "refs", "stash")); err != nil {
+					return fmt.Errorf("failed to copy stash log: %w", err)
+				}
 			}
 			return nil
-		})
+		}); err != nil {
+			ui.Warnf("Stash migration failed: %s", err)
+		}
 	}
 
 	// Create worktrees
