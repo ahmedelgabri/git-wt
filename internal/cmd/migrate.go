@@ -283,28 +283,17 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	ui.Success("Migration complete")
-	fmt.Printf("\n  Repository structure:\n")
-	// Compute padding for aligned descriptions
-	treeWidth := len(".bare/")
-	for _, name := range []string{currentBranch + "/", defaultBranch + "/"} {
-		if len(name) > treeWidth {
-			treeWidth = len(name)
-		}
-	}
 
-	fmt.Printf("    %s/\n", ui.Bold(repoRoot))
-	fmt.Printf("    ├── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".bare/")), ui.Dim("(git data)"))
-	fmt.Printf("    ├── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".git")), ui.Dim("(pointer to .bare)"))
-
+	var branches []treeBranch
 	if defaultBranch != "" && defaultBranch == currentBranch {
-		fmt.Printf("    └── %s  %s\n", ui.Accent(fmt.Sprintf("%-*s", treeWidth, currentBranch+"/")), ui.Dim("(worktree)"))
+		branches = append(branches, treeBranch{currentBranch, "worktree"})
 	} else {
 		if defaultBranch != "" {
-			fmt.Printf("    ├── %s  %s\n", ui.Accent(fmt.Sprintf("%-*s", treeWidth, defaultBranch+"/")), ui.Dim("(default branch)"))
+			branches = append(branches, treeBranch{defaultBranch, "default branch"})
 		}
-		fmt.Printf("    └── %s  %s\n", ui.Accent(fmt.Sprintf("%-*s", treeWidth, currentBranch+"/")), ui.Dim("(current branch)"))
+		branches = append(branches, treeBranch{currentBranch, "current branch"})
 	}
-	fmt.Println()
+	printRepoTree(repoRoot, branches)
 
 	if remoteURL != "" {
 		ui.Successf("Remote URL preserved: %s", ui.Accent(remoteURL))

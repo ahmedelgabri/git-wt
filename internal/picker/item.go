@@ -4,14 +4,10 @@ import "fmt"
 
 // Item represents a selectable item in the picker.
 type Item struct {
-	Label    string // Display text
-	Value    string // Underlying value (e.g., worktree path)
-	Desc     string // Optional description shown dimmed
-	selected bool
+	Label string // Display text
+	Value string // Underlying value (e.g., worktree path)
+	Desc  string // Optional description shown dimmed
 }
-
-// Selected returns whether this item is selected (for multi-select mode).
-func (i Item) Selected() bool { return i.selected }
 
 // Result holds the outcome of a picker interaction.
 type Result struct {

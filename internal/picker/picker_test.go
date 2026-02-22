@@ -4,17 +4,6 @@ import (
 	"testing"
 )
 
-func TestItemSelected(t *testing.T) {
-	item := Item{Label: "test"}
-	if item.Selected() {
-		t.Error("new item should not be selected")
-	}
-	item.selected = true
-	if !item.Selected() {
-		t.Error("item should be selected after setting")
-	}
-}
-
 func TestFormatSelected(t *testing.T) {
 	single := []Item{{Label: "main"}}
 	if got := FormatSelected(single); got != "main" {

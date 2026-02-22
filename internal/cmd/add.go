@@ -43,6 +43,7 @@ func init() {
 	f.Bool("no-track", false, "Don't set up upstream tracking")
 	f.Bool("guess-remote", false, "Try to match new branch with remote-tracking branch")
 	f.Bool("orphan", false, "Create worktree with an orphan branch")
+	f.Bool("no-fetch", false, "Skip fetching from remote before creating worktree")
 	rootCmd.AddCommand(addCmd)
 }
 
@@ -58,8 +59,8 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	remote := worktree.DefaultRemote()
 
-	// Fetch latest remote branches
-	if remote != "" {
+	noFetch, _ := cmd.Flags().GetBool("no-fetch")
+	if remote != "" && !noFetch {
 		if err := ui.Spin(fmt.Sprintf("Fetching from %s", remote), func() error {
 			_, err := git.RunWithOutput("fetch", remote, "--prune")
 			return err
@@ -185,32 +186,14 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
 	if forceBranch != "" {
 		gitArgs = append(gitArgs, "-B", forceBranch)
 	}
-	if detach, _ := cmd.Flags().GetBool("detach"); detach {
-		gitArgs = append(gitArgs, "--detach")
-	}
-	if force, _ := cmd.Flags().GetBool("force"); force {
-		gitArgs = append(gitArgs, "--force")
-	}
-	if lock, _ := cmd.Flags().GetBool("lock"); lock {
-		gitArgs = append(gitArgs, "--lock")
-	}
 	if reason, _ := cmd.Flags().GetString("reason"); reason != "" {
 		gitArgs = append(gitArgs, "--reason", reason)
 	}
-	if quiet, _ := cmd.Flags().GetBool("quiet"); quiet {
-		gitArgs = append(gitArgs, "--quiet")
-	}
-	if noCheckout, _ := cmd.Flags().GetBool("no-checkout"); noCheckout {
-		gitArgs = append(gitArgs, "--no-checkout")
-	}
-	if noTrack, _ := cmd.Flags().GetBool("no-track"); noTrack {
-		gitArgs = append(gitArgs, "--no-track")
-	}
-	if guessRemote, _ := cmd.Flags().GetBool("guess-remote"); guessRemote {
-		gitArgs = append(gitArgs, "--guess-remote")
-	}
-	if orphan, _ := cmd.Flags().GetBool("orphan"); orphan {
-		gitArgs = append(gitArgs, "--orphan")
+
+	for _, name := range []string{"detach", "force", "lock", "quiet", "no-checkout", "no-track", "guess-remote", "orphan"} {
+		if v, _ := cmd.Flags().GetBool(name); v {
+			gitArgs = append(gitArgs, "--"+name)
+		}
 	}
 
 	// Append positional args (path, commit-ish)
