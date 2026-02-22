@@ -166,3 +166,59 @@ jobs:
           files: |
             dist/git-wt-*.tar.gz
             dist/git-wt-*-checksums.txt
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: ahmedelgabri/homebrew-git-wt
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Download checksums
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          gh release download "v${VERSION}" \
+            --repo ahmedelgabri/git-wt \
+            --pattern "*checksums.txt" \
+            --dir .
+
+      - name: Update formula
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          sed -i "s/version \"[^\"]*\"/version \"${VERSION}\"/" Formula/git-wt.rb
+
+          DARWIN_AMD64=$(grep "darwin-amd64" "git-wt-${VERSION}-checksums.txt" | awk '{print $1}')
+          DARWIN_ARM64=$(grep "darwin-arm64" "git-wt-${VERSION}-checksums.txt" | awk '{print $1}')
+          LINUX_AMD64=$(grep "linux-amd64" "git-wt-${VERSION}-checksums.txt" | awk '{print $1}')
+          LINUX_ARM64=$(grep "linux-arm64" "git-wt-${VERSION}-checksums.txt" | awk '{print $1}')
+
+          awk -v da="$DARWIN_AMD64" -v darm="$DARWIN_ARM64" \
+              -v la="$LINUX_AMD64" -v larm="$LINUX_ARM64" '
+          /darwin-amd64/ { platform = "da" }
+          /darwin-arm64/ { platform = "darm" }
+          /linux-amd64/ { platform = "la" }
+          /linux-arm64/ { platform = "larm" }
+          /sha256/ && platform {
+            hash = (platform == "da") ? da : (platform == "darm") ? darm : (platform == "la") ? la : larm
+            sub(/"[^"]*"/, "\"" hash "\"")
+            platform = ""
+          }
+          { print }
+          ' Formula/git-wt.rb > tmp && mv tmp Formula/git-wt.rb
+
+      - name: Commit and push
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/git-wt.rb
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "chore: bump git-wt to v${VERSION}"
+          git push
