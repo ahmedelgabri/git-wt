@@ -181,6 +181,7 @@ jobs:
       - name: Download checksums
         env:
           VERSION: ${{ needs.build.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh release download "v${VERSION}" \
             --repo ahmedelgabri/git-wt \
