@@ -43,7 +43,6 @@ func init() {
 	f.Bool("no-track", false, "Don't set up upstream tracking")
 	f.Bool("guess-remote", false, "Try to match new branch with remote-tracking branch")
 	f.Bool("orphan", false, "Create worktree with an orphan branch")
-	f.Bool("no-fetch", false, "Skip fetching from remote before creating worktree")
 	rootCmd.AddCommand(addCmd)
 }
 
@@ -59,8 +58,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	remote := worktree.DefaultRemote()
 
-	noFetch, _ := cmd.Flags().GetBool("no-fetch")
-	if remote != "" && !noFetch {
+	if remote != "" {
 		if err := ui.Spin(fmt.Sprintf("Fetching from %s", remote), func() error {
 			_, err := git.RunWithOutput("fetch", remote, "--prune")
 			return err
