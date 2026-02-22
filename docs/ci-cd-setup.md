@@ -23,11 +23,11 @@ unified code formatting. This provides:
 
 ### Configured Formatters
 
-| Formatter | Files                          |
-| --------- | ------------------------------ |
-| shfmt     | `git-wt`, `completions/*.bash` |
-| prettier  | `*.md`, `*.yml`, `*.yaml`      |
-| alejandra | `*.nix`                        |
+| Formatter | Files                     |
+| --------- | ------------------------- |
+| gofumpt   | `*.go`                    |
+| prettier  | `*.md`, `*.yml`, `*.yaml` |
+| alejandra | `*.nix`                   |
 
 ### Usage
 
@@ -54,12 +54,17 @@ Runs on:
 Jobs:
 
 1. **Lint** (ubuntu-latest)
-   - Runs `shellcheck` on `git-wt` and bash completions
    - Runs `nix fmt -- --fail-on-change` to verify formatting
+   - Runs `go vet ./...` via nix develop
 
-2. **Build** (matrix: ubuntu-latest, macos-latest)
-   - Installs Nix using DeterminateSystems/nix-installer-action
-   - Uses magic-nix-cache for faster builds
+2. **Test** (matrix: ubuntu-latest, macos-latest)
+   - Sets up Go from `go.mod`
+   - Installs bats
+   - Runs `go test ./...` (unit tests)
+   - Runs `bats tests/` (E2E tests)
+
+3. **Build** (matrix: ubuntu-latest, macos-latest)
+   - Installs Nix with cache
    - Runs `nix flake check` (includes treefmt formatting check)
    - Runs `nix build`
    - Verifies the built executable runs (`git-wt --help`)
@@ -70,14 +75,27 @@ Runs on:
 
 - Every push to `main`
 
-Behavior:
+Jobs:
 
-- Extracts version from `flake.nix`
-- Checks if a tag for that version already exists
-- If no tag exists, creates a GitHub release with:
-  - Auto-generated changelog from commits since last tag
-  - Installation instructions for Nix and manual methods
-- To skip release creation, include `[skip release]` in commit message
+1. **Build** (ubuntu-latest)
+   - Extracts version from `flake.nix`
+   - Checks if a tag for that version already exists
+   - Sets up Go from `go.mod`
+   - Builds a native binary to generate shell completions and man pages
+   - Cross-compiles for 4 targets: `darwin/amd64`, `darwin/arm64`,
+     `linux/amd64`, `linux/arm64`
+   - Passes ldflags to inject the version string
+   - Packages each target into `git-wt-VERSION-OS-ARCH.tar.gz` containing
+     the binary, `completions/`, and `man/`
+   - Generates `git-wt-VERSION-checksums.txt` (sha256)
+   - Uploads all archives and checksums as artifacts
+
+2. **Release** (needs build)
+   - Downloads build artifacts
+   - Generates changelog from commits since the previous tag
+   - Creates a GitHub release with all archives and checksums attached
+
+To skip release creation, include `[skip release]` in the commit message.
 
 ## Pre-commit Hooks (lefthook)
 
@@ -96,7 +114,7 @@ nix develop
 
 **pre-commit** (parallel execution):
 
-- `shellcheck` - Lints staged bash files
+- `go vet` - Checks Go code for common issues
 - `treefmt` - Verifies formatting of all files
 
 **pre-push**:
@@ -118,39 +136,25 @@ lefthook run pre-push
 1. Update the version in `flake.nix`:
 
    ```nix
-   version = "0.2.0";  # Update this
+   version = "2.0.0";  # Update this
    ```
 
-2. Update `CHANGELOG.md` with changes under `[Unreleased]`
-
-3. Commit and push to main:
+2. Commit and push to main:
 
    ```bash
-   git add flake.nix CHANGELOG.md
-   git commit -m "chore: bump version to 0.2.0"
+   git add flake.nix
+   git commit -m "chore: bump version to 2.0.0"
    git push
    ```
 
-4. The release workflow will automatically:
+3. The release workflow will automatically:
    - Detect the new version
-   - Create a git tag `v0.2.0`
-   - Create a GitHub release with changelog
+   - Cross-compile binaries for macOS and Linux (amd64 + arm64)
+   - Create a git tag `v2.0.0`
+   - Create a GitHub release with changelog and binary archives
 
 ## Code Style
 
-- **Shell scripts**: Tabs for indentation (shfmt with `indent_size = 0`)
+- **Go**: Formatted with gofumpt
 - **Markdown/YAML**: Formatted with prettier
-- **Nix files**: Formatted with nixfmt
-- **Shellcheck**: Enabled with specific exceptions documented in file headers
-
-### Shellcheck Directives
-
-The main script (`git-wt`) uses these directives:
-
-- `SC2034` - Color variables appear unused in else branch but are used
-- `SC2086` - `$CMD` intentionally word-splits for DEBUG mode ("echo git")
-- `SC2016` - Single quotes intentional for fzf preview strings
-
-The bash completion script uses:
-
-- `SC2207` - Standard completion array pattern
+- **Nix files**: Formatted with alejandra

@@ -1,15 +1,15 @@
 pre-commit:
   parallel: true
   commands:
-    shellcheck:
-      glob: "{git-wt,completions/*.bash}"
-      run: shellcheck {staged_files}
+    govet:
+      glob: "**/*.go"
+      run: just vet
     treefmt:
       env:
         TERM: dumb
-      run: nix fmt -- --fail-on-change
+      run: just fmt-check
 
 pre-push:
   commands:
     nix-build:
-      run: nix build --no-link
+      run: just nix-build

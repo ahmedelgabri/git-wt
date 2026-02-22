@@ -29,38 +29,43 @@
       }: {
         packages = {
           default = self'.packages.git-wt;
-          git-wt = pkgs.stdenvNoCC.mkDerivation {
+          git-wt = pkgs.buildGoModule {
             pname = "git-wt";
-            version = "0.8.1";
+            version = "1.0.0";
 
-            src = ./.;
+            src = lib.cleanSource ./.;
 
-            nativeBuildInputs = with pkgs; [
-              makeWrapper
-              installShellFiles
+            vendorHash = "sha256-qDEbnnCd47RxEoXH4TXlcMHjAIVTMq/1ypNd7AdT/Bc=";
+
+            ldflags = [
+              "-s"
+              "-w"
+              "-X github.com/ahmedelgabri/git-wt/internal/cmd.Version=${self'.packages.git-wt.version}"
             ];
 
-            installPhase = ''
-              runHook preInstall
+            nativeBuildInputs = with pkgs; [
+              installShellFiles
+              makeWrapper
+            ];
 
-              mkdir -p $out/bin
-              cp git-wt $out/bin/git-wt
-              chmod +x $out/bin/git-wt
-              wrapProgram $out/bin/git-wt \
-                --prefix PATH : ${
-                pkgs.lib.makeBinPath [
-                  pkgs.git
-                  pkgs.fzf
-                ]
-              }
-
-              runHook postInstall
-            '';
+            subPackages = ["cmd/git-wt"];
 
             postInstall = ''
-              installShellCompletion --bash ${./completions/git-wt.bash}
-              installShellCompletion --zsh ${./completions/git-wt.zsh}
-              installShellCompletion --fish ${./completions/git-wt.fish}
+              # Generate shell completions before wrapping
+              $out/bin/git-wt completion bash > git-wt.bash
+              $out/bin/git-wt completion zsh > _git-wt
+              $out/bin/git-wt completion fish > git-wt.fish
+              installShellCompletion --bash git-wt.bash
+              installShellCompletion --zsh _git-wt
+              installShellCompletion --fish git-wt.fish
+
+              # Generate and install man pages
+              mkdir -p $TMPDIR/man
+              $out/bin/git-wt man $TMPDIR/man
+              installManPage $TMPDIR/man/*.1
+
+              wrapProgram $out/bin/git-wt \
+                --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.git]}
             '';
 
             meta = {
@@ -77,10 +82,7 @@
           projectRootFile = "flake.nix";
 
           programs = {
-            shfmt = {
-              enable = true;
-              indent_size = 0; # 0 = tabs
-            };
+            gofumpt.enable = true;
             prettier = {
               enable = true;
               includes = [
@@ -93,22 +95,22 @@
             };
             alejandra.enable = true;
           };
-
-          settings.formatter.shfmt.includes = [
-            "git-wt"
-            "completions/*.bash"
-          ];
         };
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             git
-            fzf
             nixd
-            shellcheck
             lefthook
             prettier
             bats
+            go
+            gopls
+            gofumpt
+            go-tools # staticcheck, etc...
+            gomodifytags
+            gotools # goimports
+            just
           ];
 
           inputsFrom = [config.treefmt.build.devShell];

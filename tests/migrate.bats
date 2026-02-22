@@ -72,17 +72,18 @@ teardown() {
 }
 
 @test "migrate: creates separate worktrees for default and current branch" {
-	init_repo myrepo
+	init_repo_with_remote myrepo
 	cd myrepo
 	create_commit "file.txt"
+	command git push --quiet origin main 2>/dev/null
 	command git checkout -b feature --quiet
 	create_commit "feature.txt"
 
 	echo "y" | "$GIT_WT" migrate
 
-	# Should have worktrees for both main/master and feature
+	# Should have worktrees for both main and feature
 	[ -d "$TEST_DIR/myrepo/feature" ]
-	[ -d "$TEST_DIR/myrepo/main" ] || [ -d "$TEST_DIR/myrepo/master" ]
+	[ -d "$TEST_DIR/myrepo/main" ]
 }
 
 @test "migrate: fails outside git repo" {

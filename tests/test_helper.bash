@@ -1,8 +1,18 @@
 # Test helper for git-wt bats tests
 # Provides setup/teardown functions and utilities for testing
 
-# Path to the git-wt script under test
-GIT_WT="${BATS_TEST_DIRNAME}/../git-wt"
+# Path to the git-wt binary under test
+# Use GIT_WT env var if set, otherwise build from source
+if [[ -z ${GIT_WT:-} ]]; then
+	GIT_WT="${BATS_TEST_DIRNAME}/../git-wt"
+	# Build from Go source if the binary doesn't exist or is stale
+	if [[ ! -x $GIT_WT ]] || [[ -f "${BATS_TEST_DIRNAME}/../cmd/git-wt/main.go" && "${BATS_TEST_DIRNAME}/../cmd/git-wt/main.go" -nt $GIT_WT ]]; then
+		(cd "${BATS_TEST_DIRNAME}/.." && go build -o git-wt ./cmd/git-wt/) || {
+			echo "Failed to build git-wt binary" >&2
+			exit 1
+		}
+	fi
+fi
 
 # Create a temporary directory for test repos
 setup_test_env() {
@@ -102,6 +112,35 @@ init_bare_repo_with_remote() {
 		command git remote add origin "../${dirname}-origin"
 		command git commit --quiet --allow-empty -m "initial commit"
 		command git push --quiet -u origin HEAD 2>/dev/null || true
+	)
+}
+
+# Initialize a bare repo with a custom-named remote (git-wt style)
+# Usage: init_bare_repo_with_custom_remote <remote-name> [dirname]
+# Creates both the bare repo and a bare remote with the given name
+init_bare_repo_with_custom_remote() {
+	local remote_name="${1}"
+	local dirname="${2:-myrepo}"
+
+	# Create a bare repo to act as the remote
+	mkdir -p "${dirname}-${remote_name}"
+	(
+		cd "${dirname}-${remote_name}" || exit 1
+		command git init --quiet --bare -b main
+	)
+
+	# Create the bare repo and link to the remote
+	mkdir -p "$dirname"
+	(
+		cd "$dirname" || exit 1
+		command git init --quiet --bare .bare -b main
+		echo "gitdir: ./.bare" >.git
+		command git config core.bare false
+		command git config user.email "test@test.com"
+		command git config user.name "Test User"
+		command git remote add "$remote_name" "../${dirname}-${remote_name}"
+		command git commit --quiet --allow-empty -m "initial commit"
+		command git push --quiet -u "$remote_name" HEAD 2>/dev/null || true
 	)
 }
 

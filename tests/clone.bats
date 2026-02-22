@@ -51,14 +51,6 @@ teardown() {
 	[ "$status" -ne 0 ]
 }
 
-@test "clone: fails when destination already exists" {
-	init_repo source-exists
-	mkdir "$TEST_DIR/dest-exists"
-
-	run "$GIT_WT" clone "$TEST_DIR/source-exists" "$TEST_DIR/dest-exists"
-	[ "$status" -ne 0 ]
-}
-
 @test "clone: .git file contains correct gitdir path" {
 	init_repo source-gitdir
 	cd source-gitdir

@@ -40,7 +40,6 @@ different directories. This is useful for:
 ## Dependencies
 
 - `git` (2.48.0+ for relative worktree support)
-- `fzf` (optional, for interactive commands)
 
 ## Installation
 
@@ -79,36 +78,35 @@ Shell completions are automatically available when installed via Nix.
 
 ### Manual Installation
 
+Download the latest release archive for your platform from the
+[releases page](https://github.com/ahmedelgabri/git-wt/releases/latest):
+
 ```bash
-curl -o ~/.local/bin/git-wt https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/git-wt
-chmod +x ~/.local/bin/git-wt
+# Example for macOS ARM (Apple Silicon)
+curl -sL https://github.com/ahmedelgabri/git-wt/releases/latest/download/git-wt-VERSION-darwin-arm64.tar.gz | tar xz
+cp git-wt-VERSION-darwin-arm64/git-wt ~/.local/bin/
 ```
+
+Replace `VERSION` with the actual version number (e.g. `1.0.0`) and choose the
+right OS/architecture: `darwin-amd64`, `darwin-arm64`, `linux-amd64`, or
+`linux-arm64`.
 
 ### Shell Completions
 
 When installed via Homebrew or Nix, completions are automatically available.
 
-For manual installation:
-
-**Bash**
-
-```bash
-curl -o ~/.local/share/bash-completion/completions/git-wt \
-	https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.bash
-```
-
-**Zsh**
+For manual installation, the release archives include a `completions/` directory
+with scripts for bash, zsh, and fish:
 
 ```bash
-curl -o ~/.local/share/zsh/site-functions/_git-wt \
-	https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.zsh
-```
+# Bash
+cp completions/git-wt.bash ~/.local/share/bash-completion/completions/git-wt
 
-**Fish**
+# Zsh
+cp completions/_git-wt ~/.local/share/zsh/site-functions/_git-wt
 
-```bash
-curl -o ~/.config/fish/completions/git-wt.fish \
-	https://raw.githubusercontent.com/ahmedelgabri/git-wt/main/completions/git-wt.fish
+# Fish
+cp completions/git-wt.fish ~/.config/fish/completions/git-wt.fish
 ```
 
 ## Usage

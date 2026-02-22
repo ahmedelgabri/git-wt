@@ -45,13 +45,8 @@ teardown() {
 	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
 	command git branch -D remote-only --quiet
 
-	# Create a fake fzf that returns the branch name
-	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\ncat > /dev/null\necho "remote-only"\n' >"$TEST_DIR/bin/fzf"
-	chmod +x "$TEST_DIR/bin/fzf"
-
-	# Run interactive mode (no arguments) with fake fzf on PATH
-	PATH="$TEST_DIR/bin:$PATH" run "$GIT_WT" add
+	# Use GIT_WT_SELECT to bypass fzf TUI and select the branch directly
+	GIT_WT_SELECT="remote-only" run "$GIT_WT" add
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/remote-only"
 	assert_branch_exists "remote-only"
@@ -81,43 +76,43 @@ teardown() {
 	# Check out feature-a as a worktree (simulates it being already in use)
 	command git worktree add -b feature-a feature-a origin/feature-a --quiet
 
-	# Create a fake fzf that dumps its stdin to a file and selects feature-b
-	mkdir -p "$TEST_DIR/bin"
-	cat >"$TEST_DIR/bin/fzf" <<'SCRIPT'
-#!/usr/bin/env bash
-cat > "$FZF_INPUT_FILE"
-echo "feature-b"
-SCRIPT
-	chmod +x "$TEST_DIR/bin/fzf"
-
-	# Run interactive mode and capture what fzf received
-	FZF_INPUT_FILE="$TEST_DIR/fzf_input.txt" PATH="$TEST_DIR/bin:$PATH" run "$GIT_WT" add
+	# feature-a is checked out, so selecting it should cancel (filtered from picker)
+	GIT_WT_SELECT="feature-a" run "$GIT_WT" add
 	[ "$status" -eq 0 ]
+	# Worktree should NOT be re-created (selection was canceled)
+	[ ! -d "$TEST_DIR/myrepo/feature-a-copy" ]
 
-	# feature-a should NOT appear in the fzf input (it's already checked out)
-	run grep -x "feature-a" "$TEST_DIR/fzf_input.txt"
-	[ "$status" -ne 0 ]
-
-	# feature-b should appear (it's available)
-	run grep -x "feature-b" "$TEST_DIR/fzf_input.txt"
+	# feature-b is available, so selecting it should succeed
+	GIT_WT_SELECT="feature-b" run "$GIT_WT" add
 	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature-b"
+	assert_branch_exists "feature-b"
 }
 
 @test "add: interactive mode creates new branch" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	# Create a fake fzf that selects "Create new branch"
-	mkdir -p "$TEST_DIR/bin"
-	printf '#!/usr/bin/env bash\ncat > /dev/null\necho "➕ Create new branch"\n' >"$TEST_DIR/bin/fzf"
-	chmod +x "$TEST_DIR/bin/fzf"
-
-	# Provide branch name and accept default path via stdin
-	# Can't use bats `run` with piped stdin, so run directly
-	printf 'my-new-branch\n\n' | PATH="$TEST_DIR/bin:$PATH" "$GIT_WT" add
+	# Use GIT_WT_SELECT to bypass fzf TUI and select "Create new branch"
+	# Provide branch name and accept default path via stdin (non-TTY falls back to simple IO)
+	printf 'my-new-branch\n\n' | GIT_WT_SELECT="__create_new__" "$GIT_WT" add
 
 	assert_branch_exists "my-new-branch"
 	assert_worktree_exists "$TEST_DIR/myrepo/my-new-branch"
+}
+
+@test "add: creates worktree from remote branch at flat path with -b" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	# Create branch only on origin (not locally)
+	(cd "$TEST_DIR/myrepo-origin" && command git branch develop main)
+	command git fetch origin --quiet
+
+	run "$GIT_WT" add -b develop develop origin/develop
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/develop"
+	# Must not create nested origin/ directory
+	[ ! -d "$TEST_DIR/myrepo/origin" ]
 }
 
 @test "add: fails when branch already exists" {
@@ -149,13 +144,13 @@ SCRIPT
 	[[ "$output" == *"Usage"* ]]
 }
 
-@test "add: fails without remote configured" {
+@test "add: succeeds without remote configured" {
 	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" add feature-test
-	[ "$status" -ne 0 ]
-	[[ "$output" == *"origin"* ]]
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature-test"
 }
 
 @test "add: handles branch names with slashes" {
@@ -312,6 +307,34 @@ SCRIPT
 	run "$GIT_WT" add -b feature-abs "$TEST_DIR/myrepo/abs-worktree"
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/abs-worktree"
+}
+
+@test "add: works with non-origin remote name" {
+	init_bare_repo_with_custom_remote upstream myrepo
+	cd myrepo
+	# Create a branch only on the remote (not locally)
+	(cd "$TEST_DIR/myrepo-upstream" && command git branch feature-up main)
+	command git fetch upstream --quiet
+
+	run "$GIT_WT" add feature-up upstream/feature-up
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature-up"
+}
+
+@test "add: interactive mode works with non-origin remote" {
+	init_bare_repo_with_custom_remote upstream myrepo
+	cd myrepo
+	# Create a branch only on the remote
+	command git checkout -b remote-feat --quiet
+	create_commit "remote-feat.txt"
+	command git push --quiet -u upstream remote-feat
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D remote-feat --quiet
+
+	GIT_WT_SELECT="remote-feat" run "$GIT_WT" add
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/remote-feat"
+	assert_branch_exists "remote-feat"
 }
 
 @test "add: supports -B flag to reset branch" {

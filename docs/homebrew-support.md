@@ -21,9 +21,9 @@ brew upgrade git-wt
 
 The formula:
 
-1. Clones the repository from the main branch
-2. Installs `git-wt` script to `$(brew --prefix)/bin/`
-3. Installs shell completions to:
+1. Downloads a prebuilt binary from the GitHub release for your platform
+2. Installs `git-wt` to `$(brew --prefix)/bin/`
+3. Installs shell completions (bundled in the release archive) to:
    - Bash: `$(brew --prefix)/etc/bash_completion.d/git-wt`
    - Zsh: `$(brew --prefix)/share/zsh/site-functions/_git-wt`
    - Fish: `$(brew --prefix)/share/fish/vendor_completions.d/git-wt.fish`
@@ -31,7 +31,6 @@ The formula:
 ## Dependencies
 
 - `git` - typically already installed on systems using Homebrew
-- `fzf` - required for interactive worktree selection
 
 ## Tap Repository
 
