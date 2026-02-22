@@ -110,6 +110,7 @@
             go-tools # staticcheck, etc...
             gomodifytags
             gotools # goimports
+            just
           ];
 
           inputsFrom = [config.treefmt.build.devShell];

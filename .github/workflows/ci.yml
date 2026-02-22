@@ -23,10 +23,10 @@ jobs:
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - name: Check formatting
-        run: nix fmt -- --fail-on-change
+        run: nix develop --command just fmt-check
 
       - name: Go vet
-        run: nix develop --command go vet ./...
+        run: nix develop --command just vet
 
   test:
     name: Test
@@ -42,6 +42,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup just
+        uses: extractions/setup-just@v2
+
       - name: Install bats
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
@@ -51,10 +54,10 @@ jobs:
           fi
 
       - name: Run unit tests
-        run: go test ./...
+        run: just test
 
       - name: Run E2E tests
-        run: bats tests/
+        run: just test-e2e
 
   build:
     name: Build (Nix)
