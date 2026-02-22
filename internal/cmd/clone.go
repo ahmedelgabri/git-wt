@@ -63,13 +63,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	// Configure the bare repo
-	if _, err := git.RunWithOutput("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
-		return err
-	}
-	if _, err := git.RunWithOutput("config", "core.logallrefupdates", "true"); err != nil {
-		return err
-	}
-	if _, err := git.RunWithOutput("config", "worktree.useRelativePaths", "true"); err != nil {
+	if err := configureBareRepo("."); err != nil {
 		return err
 	}
 
@@ -80,19 +74,11 @@ func runClone(cmd *cobra.Command, args []string) error {
 		ui.Warn("Failed to fetch all branches")
 	}
 
-	// Clean up invalid local branch refs
-	refs, _ := git.Query("for-each-ref", "--format=%(refname:short)", "refs/heads")
-	if refs != "" {
-		for ref := range strings.SplitSeq(refs, "\n") {
-			ref = strings.TrimSpace(ref)
-			if ref != "" {
-				git.RunWithOutput("branch", "-D", ref)
-			}
-		}
-	}
+	cleanupLocalBranchRefs(".")
 
 	var defaultBranch string
-	ui.Spin("Discovering default branch", func() error {
+	// Error ignored: the fallback prompt below handles the empty-branch case
+	_ = ui.Spin("Discovering default branch", func() error {
 		defaultBranch = worktree.DefaultBranch("origin")
 		if defaultBranch == "" {
 			return fmt.Errorf("not found")

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/term"
 )
 
-var noColor = os.Getenv("NO_COLOR") != ""
+func noColor() bool { return os.Getenv("NO_COLOR") != "" }
 
 var (
 	accentColor    = lipgloss.Color("6") // Cyan
@@ -19,7 +19,6 @@ var (
 	errorColor     = lipgloss.Color("1") // Red
 	warnColor      = lipgloss.Color("3") // Yellow
 	subtleColor    = lipgloss.Color("8") // Bright Black
-	mutedColor     = lipgloss.Color("8") // Bright Black
 	highlightColor = lipgloss.Color("5") // Magenta
 )
 
@@ -29,7 +28,6 @@ var (
 	errorStyle     = lipgloss.NewStyle().Foreground(errorColor)
 	warnStyle      = lipgloss.NewStyle().Foreground(warnColor)
 	subtleStyle    = lipgloss.NewStyle().Foreground(subtleColor)
-	mutedStyle     = lipgloss.NewStyle().Foreground(mutedColor)
 	highlightStyle = lipgloss.NewStyle().Foreground(highlightColor)
 	boldStyle      = lipgloss.NewStyle().Bold(true)
 	dimStyle       = lipgloss.NewStyle().Faint(true)
@@ -41,11 +39,11 @@ func SuccessColor() lipgloss.TerminalColor   { return successColor }
 func ErrorColor() lipgloss.TerminalColor     { return errorColor }
 func WarnColor() lipgloss.TerminalColor      { return warnColor }
 func SubtleColor() lipgloss.TerminalColor    { return subtleColor }
-func MutedColor() lipgloss.TerminalColor     { return mutedColor }
+func MutedColor() lipgloss.TerminalColor     { return subtleColor }
 func HighlightColor() lipgloss.TerminalColor { return highlightColor }
 
 func render(style lipgloss.Style, s string) string {
-	if noColor {
+	if noColor() {
 		return s
 	}
 	return style.Render(s)
@@ -56,18 +54,18 @@ func Red(s string) string       { return render(errorStyle, s) }
 func Yellow(s string) string    { return render(warnStyle, s) }
 func Accent(s string) string    { return render(accentStyle, s) }
 func Subtle(s string) string    { return render(subtleStyle, s) }
-func Muted(s string) string     { return render(mutedStyle, s) }
+func Muted(s string) string     { return render(subtleStyle, s) }
 func Highlight(s string) string { return render(highlightStyle, s) }
 
 func Bold(s string) string {
-	if noColor {
+	if noColor() {
 		return s
 	}
 	return boldStyle.Render(s)
 }
 
 func Dim(s string) string {
-	if noColor {
+	if noColor() {
 		return s
 	}
 	return dimStyle.Render(s)

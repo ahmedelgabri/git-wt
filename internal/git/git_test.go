@@ -1,7 +1,6 @@
 package git
 
 import (
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -29,9 +28,7 @@ func TestQueryLines(t *testing.T) {
 }
 
 func TestDebugMode(t *testing.T) {
-	old := Debug
-	Debug = true
-	defer func() { Debug = old }()
+	t.Setenv("DEBUG", "1")
 
 	// In debug mode, Run should not actually execute git commands
 	err := Run("status")
@@ -41,23 +38,11 @@ func TestDebugMode(t *testing.T) {
 }
 
 func TestDebugEnvVar(t *testing.T) {
-	oldEnv := os.Getenv("DEBUG")
-	oldDebug := Debug
+	t.Setenv("DEBUG", "1")
 
-	os.Setenv("DEBUG", "1")
-	// Re-evaluate (in real code this happens at init time)
-	Debug = os.Getenv("DEBUG") != ""
-
-	if !Debug {
-		t.Error("Debug should be true when DEBUG env is set")
+	if !debug() {
+		t.Error("debug() should be true when DEBUG env is set")
 	}
-
-	if oldEnv == "" {
-		os.Unsetenv("DEBUG")
-	} else {
-		os.Setenv("DEBUG", oldEnv)
-	}
-	Debug = oldDebug
 }
 
 func initGitRepo(t *testing.T) string {
@@ -71,9 +56,7 @@ func initGitRepo(t *testing.T) string {
 }
 
 func TestRunNonDebug(t *testing.T) {
-	old := Debug
-	Debug = false
-	defer func() { Debug = old }()
+	t.Setenv("DEBUG", "")
 
 	if err := Run("--version"); err != nil {
 		t.Errorf("Run(--version) error: %v", err)
@@ -81,9 +64,7 @@ func TestRunNonDebug(t *testing.T) {
 }
 
 func TestRunInDebug(t *testing.T) {
-	old := Debug
-	Debug = true
-	defer func() { Debug = old }()
+	t.Setenv("DEBUG", "1")
 
 	dir := t.TempDir()
 	if err := RunIn(dir, "status"); err != nil {
@@ -92,9 +73,7 @@ func TestRunInDebug(t *testing.T) {
 }
 
 func TestRunInNonDebug(t *testing.T) {
-	old := Debug
-	Debug = false
-	defer func() { Debug = old }()
+	t.Setenv("DEBUG", "")
 
 	repo := initGitRepo(t)
 	if err := RunIn(repo, "status"); err != nil {
@@ -103,9 +82,7 @@ func TestRunInNonDebug(t *testing.T) {
 }
 
 func TestRunWithOutputDebug(t *testing.T) {
-	old := Debug
-	Debug = true
-	defer func() { Debug = old }()
+	t.Setenv("DEBUG", "1")
 
 	out, err := RunWithOutput("status")
 	if err != nil {
@@ -117,9 +94,7 @@ func TestRunWithOutputDebug(t *testing.T) {
 }
 
 func TestRunWithOutputNonDebug(t *testing.T) {
-	old := Debug
-	Debug = false
-	defer func() { Debug = old }()
+	t.Setenv("DEBUG", "")
 
 	out, err := RunWithOutput("--version")
 	if err != nil {
@@ -131,9 +106,7 @@ func TestRunWithOutputNonDebug(t *testing.T) {
 }
 
 func TestRunInWithOutputDebug(t *testing.T) {
-	old := Debug
-	Debug = true
-	defer func() { Debug = old }()
+	t.Setenv("DEBUG", "1")
 
 	out, err := RunInWithOutput(t.TempDir(), "status")
 	if err != nil {
@@ -145,9 +118,7 @@ func TestRunInWithOutputDebug(t *testing.T) {
 }
 
 func TestRunInWithOutputNonDebug(t *testing.T) {
-	old := Debug
-	Debug = false
-	defer func() { Debug = old }()
+	t.Setenv("DEBUG", "")
 
 	repo := initGitRepo(t)
 	out, err := RunInWithOutput(repo, "status")
@@ -205,14 +176,10 @@ func TestQueryLinesError(t *testing.T) {
 	}
 }
 
-// Verify that os.Getenv("DEBUG") is not accidentally set in the test env.
 func TestDebugDefaultOff(t *testing.T) {
-	if val := os.Getenv("DEBUG"); val != "" {
-		t.Skipf("DEBUG env is set to %q, skipping", val)
-	}
-	// Re-evaluate as the module init would
-	d := os.Getenv("DEBUG") != ""
-	if d {
-		t.Error("Debug should be false when DEBUG env is unset")
+	t.Setenv("DEBUG", "")
+
+	if debug() {
+		t.Error("debug() should be false when DEBUG env is empty")
 	}
 }

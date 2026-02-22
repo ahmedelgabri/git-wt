@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-// Debug indicates whether mutation commands should be echoed instead of executed.
-var Debug = os.Getenv("DEBUG") != ""
+// debug returns whether mutation commands should be echoed instead of executed.
+func debug() bool { return os.Getenv("DEBUG") != "" }
 
 // Run executes a git mutation command. In DEBUG mode, it prints the command
 // instead of executing it.
 func Run(args ...string) error {
-	if Debug {
+	if debug() {
 		fmt.Println("git " + strings.Join(args, " "))
 		return nil
 	}
@@ -26,8 +26,8 @@ func Run(args ...string) error {
 
 // RunIn executes a git mutation command in the specified directory.
 func RunIn(dir string, args ...string) error {
-	if Debug {
-		fmt.Printf("git -C %s %s\n", dir, strings.Join(args, " "))
+	if debug() {
+		fmt.Printf("[in %s] git %s\n", dir, strings.Join(args, " "))
 		return nil
 	}
 	cmd := exec.Command("git", args...)
@@ -40,7 +40,7 @@ func RunIn(dir string, args ...string) error {
 
 // RunWithOutput executes a git mutation command and returns its combined output.
 func RunWithOutput(args ...string) (string, error) {
-	if Debug {
+	if debug() {
 		s := "git " + strings.Join(args, " ")
 		fmt.Println(s)
 		return "", nil
@@ -53,9 +53,8 @@ func RunWithOutput(args ...string) (string, error) {
 // RunInWithOutput executes a git mutation command in the specified directory
 // and returns its combined output.
 func RunInWithOutput(dir string, args ...string) (string, error) {
-	if Debug {
-		s := fmt.Sprintf("git -C %s %s", dir, strings.Join(args, " "))
-		fmt.Println(s)
+	if debug() {
+		fmt.Printf("[in %s] git %s\n", dir, strings.Join(args, " "))
 		return "", nil
 	}
 	cmd := exec.Command("git", args...)

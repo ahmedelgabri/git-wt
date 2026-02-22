@@ -3,6 +3,7 @@ package picker
 import (
 	"os"
 	"strings"
+	"sync"
 
 	fzf "github.com/junegunn/fzf/src"
 )
@@ -68,16 +69,18 @@ func Run(cfg Config) (Result, error) {
 	// Collect selected items from fzf
 	outputChan := make(chan string, len(cfg.Items))
 	var selected []string
-	go func() {
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		for s := range outputChan {
 			selected = append(selected, s)
 		}
-	}()
+	})
 
 	opts.Input = inputChan
 	opts.Output = outputChan
 
 	code, err := fzf.Run(opts)
+	wg.Wait()
 	if err != nil && code != fzf.ExitInterrupt {
 		return Result{}, err
 	}

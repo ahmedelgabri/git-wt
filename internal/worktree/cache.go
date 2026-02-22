@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -24,7 +25,7 @@ func List() ([]Entry, error) {
 }
 
 // ParsePorcelain parses the output of git worktree list --porcelain into
-// a slice of Entry, excluding entries whose path contains ".bare".
+// a slice of Entry, excluding the .bare entry.
 func ParsePorcelain(output string) []Entry {
 	if output == "" {
 		return nil
@@ -48,7 +49,7 @@ func ParsePorcelain(output string) []Entry {
 		case line == "detached":
 			current.Branch = "(detached)"
 		case line == "":
-			if current.Path != "" && !strings.Contains(current.Path, ".bare") {
+			if current.Path != "" && filepath.Base(current.Path) != ".bare" {
 				entries = append(entries, current)
 			}
 			current = Entry{}
@@ -56,7 +57,7 @@ func ParsePorcelain(output string) []Entry {
 	}
 
 	// Handle last entry (no trailing blank line)
-	if current.Path != "" && !strings.Contains(current.Path, ".bare") {
+	if current.Path != "" && filepath.Base(current.Path) != ".bare" {
 		entries = append(entries, current)
 	}
 

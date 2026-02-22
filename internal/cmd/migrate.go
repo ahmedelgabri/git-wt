@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -154,10 +153,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Configure bare repo
-	if _, err := git.RunInWithOutput(newStructure, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
-		return err
-	}
-	if _, err := git.RunInWithOutput(newStructure, "config", "core.logallrefupdates", "true"); err != nil {
+	if err := configureBareRepo(newStructure); err != nil {
 		return err
 	}
 
@@ -171,16 +167,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Clean up invalid local branch refs
-	refs, _ := git.QueryIn(newStructure, "for-each-ref", "--format=%(refname:short)", "refs/heads")
-	if refs != "" {
-		for ref := range strings.SplitSeq(refs, "\n") {
-			ref = strings.TrimSpace(ref)
-			if ref != "" {
-				git.RunInWithOutput(newStructure, "branch", "-D", ref)
-			}
-		}
-	}
+	cleanupLocalBranchRefs(newStructure)
 
 	// Restore remote URL (clone set it to the local path)
 	if remoteURL != "" {
@@ -252,7 +239,9 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		oldIndex := filepath.Join(repoRoot, ".git", "index")
 		if _, err := os.Stat(oldIndex); err == nil {
 			newIndex := filepath.Join(newStructure, ".bare", "worktrees", currentBranch, "index")
-			copyFileSimple(oldIndex, newIndex)
+			if err := copyFileSimple(oldIndex, newIndex); err != nil {
+				return fmt.Errorf("failed to restore git index: %w", err)
+			}
 		}
 		return nil
 	}); err != nil {
@@ -327,11 +316,15 @@ func checkGitDiff(repoRoot string) error {
 }
 
 func copyFileSimple(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0o644)
+	return os.WriteFile(dst, data, info.Mode().Perm())
 }
 
 func moveContents(src, dst string) error {

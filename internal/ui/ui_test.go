@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -14,18 +13,7 @@ import (
 )
 
 func TestNoColorOutput(t *testing.T) {
-	// Save and set NO_COLOR
-	old := os.Getenv("NO_COLOR")
-	os.Setenv("NO_COLOR", "1")
-	noColor = true
-	defer func() {
-		if old == "" {
-			os.Unsetenv("NO_COLOR")
-		} else {
-			os.Setenv("NO_COLOR", old)
-		}
-		noColor = old != ""
-	}()
+	t.Setenv("NO_COLOR", "1")
 
 	if got := Green("hello"); got != "hello" {
 		t.Errorf("Green() with NO_COLOR = %q, want %q", got, "hello")
@@ -58,15 +46,7 @@ func TestNoColorOutput(t *testing.T) {
 
 func TestColorFunctionsReturnInput(t *testing.T) {
 	// Regardless of color mode, the functions should always contain the input text
-	old := os.Getenv("NO_COLOR")
-	os.Unsetenv("NO_COLOR")
-	noColor = false
-	defer func() {
-		if old != "" {
-			os.Setenv("NO_COLOR", old)
-		}
-		noColor = old != ""
-	}()
+	t.Setenv("NO_COLOR", "")
 
 	for _, fn := range []struct {
 		name string
@@ -333,9 +313,7 @@ func TestSpinFallbackError(t *testing.T) {
 }
 
 func TestSuccessPrefix(t *testing.T) {
-	old := noColor
-	noColor = true
-	defer func() { noColor = old }()
+	t.Setenv("NO_COLOR", "1")
 
 	got := SuccessPrefix("  ", "done")
 	if !strings.Contains(got, "●") {
@@ -350,9 +328,7 @@ func TestSuccessPrefix(t *testing.T) {
 }
 
 func TestFailPrefix(t *testing.T) {
-	old := noColor
-	noColor = true
-	defer func() { noColor = old }()
+	t.Setenv("NO_COLOR", "1")
 
 	got := FailPrefix("  ", "failed")
 	if !strings.Contains(got, "●") {
