@@ -2,8 +2,10 @@ package picker
 
 import (
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 
 	fzf "github.com/junegunn/fzf/src"
 )
@@ -80,7 +82,17 @@ func Run(cfg Config) (Result, error) {
 	opts.Output = outputChan
 
 	code, err := fzf.Run(opts)
+
+	// fzf registers signal.Notify for SIGINT/SIGTERM but never calls
+	// signal.Stop, so after fzf exits those signals are silently swallowed.
+	// Restore default handling so Ctrl-C works again.
+	signal.Reset(os.Interrupt, syscall.SIGTERM)
+
+	// fzf does not close the Output channel, so the goroutine draining it
+	// would block forever on the range loop. Close it now that fzf is done.
+	close(outputChan)
 	wg.Wait()
+
 	if err != nil && code != fzf.ExitInterrupt {
 		return Result{}, err
 	}
