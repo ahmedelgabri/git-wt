@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,9 +53,8 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	// Clone with cleanup on failure
-	if err := ui.Spin("Cloning repository", func() error {
-		_, err := git.RunWithOutput("clone", "--bare", repoURL, ".bare")
-		return err
+	if err := ui.SpinWithOutput("Cloning repository", func(w io.Writer) error {
+		return git.RunTo(w, "clone", "--bare", repoURL, ".bare")
 	}); err != nil {
 		ui.Error("Failed to clone repository")
 		os.Chdir("..")
@@ -72,9 +72,8 @@ func runClone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := ui.Spin("Fetching all branches", func() error {
-		_, err := git.RunWithOutput("fetch", "--all")
-		return err
+	if err := ui.SpinWithOutput("Fetching all branches", func(w io.Writer) error {
+		return git.RunTo(w, "fetch", "--all")
 	}); err != nil {
 		ui.Warn("Failed to fetch all branches")
 	}
@@ -99,9 +98,8 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	if defaultBranch != "" {
-		if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)), func() error {
-			_, err := git.RunWithOutput("worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch)
-			return err
+		if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)), func(w io.Writer) error {
+			return git.RunTo(w, "worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch)
 		}); err != nil {
 			ui.Warn("Failed to create worktree for default branch")
 		}

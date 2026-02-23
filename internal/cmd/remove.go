@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,9 +262,8 @@ func removeSingleWorktree(wtPath, branch, mode, remote string) error {
 	name := filepath.Base(wtPath)
 
 	// Remove the worktree
-	if err := ui.Spin(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func() error {
-		_, err := git.RunWithOutput("worktree", "remove", "-f", wtPath)
-		return err
+	if err := ui.SpinWithOutput(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(w io.Writer) error {
+		return git.RunTo(w, "worktree", "remove", "-f", wtPath)
 	}); err != nil {
 		return err
 	}
@@ -294,9 +294,8 @@ func deleteRemoteBranch(branch, remote string) {
 	}
 
 	// Delete remote branch (network operation, needs spinner)
-	if err := ui.Spin(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func() error {
-		_, err := git.RunWithOutput("push", remote, "--delete", branch)
-		return err
+	if err := ui.SpinWithOutput(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(w io.Writer) error {
+		return git.RunTo(w, "push", remote, "--delete", branch)
 	}); err != nil {
 		ui.Warnf("Failed to delete remote branch %s: %s", remoteBranch, err)
 	}

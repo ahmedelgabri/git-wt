@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -61,6 +62,32 @@ func RunInWithOutput(dir string, args ...string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+// RunTo executes a git mutation command, streaming stdout and stderr to w.
+func RunTo(w io.Writer, args ...string) error {
+	if debug() {
+		fmt.Fprintln(w, "git "+strings.Join(args, " "))
+		return nil
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Stdout = w
+	cmd.Stderr = w
+	return cmd.Run()
+}
+
+// RunInTo executes a git mutation command in the specified directory,
+// streaming stdout and stderr to w.
+func RunInTo(dir string, w io.Writer, args ...string) error {
+	if debug() {
+		fmt.Fprintf(w, "[in %s] git %s\n", dir, strings.Join(args, " "))
+		return nil
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Stdout = w
+	cmd.Stderr = w
+	return cmd.Run()
 }
 
 // Query executes a read-only git command (always runs, even in DEBUG mode).

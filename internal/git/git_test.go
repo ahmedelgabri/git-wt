@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"os/exec"
 	"strings"
 	"testing"
@@ -181,5 +182,59 @@ func TestDebugDefaultOff(t *testing.T) {
 
 	if debug() {
 		t.Error("debug() should be false when DEBUG env is empty")
+	}
+}
+
+func TestRunToDebug(t *testing.T) {
+	t.Setenv("DEBUG", "1")
+
+	var buf bytes.Buffer
+	if err := RunTo(&buf, "status"); err != nil {
+		t.Errorf("RunTo() in debug mode error: %v", err)
+	}
+	if got := buf.String(); !strings.Contains(got, "git status") {
+		t.Errorf("RunTo() debug output = %q, want to contain 'git status'", got)
+	}
+}
+
+func TestRunToNonDebug(t *testing.T) {
+	t.Setenv("DEBUG", "")
+
+	var buf bytes.Buffer
+	if err := RunTo(&buf, "--version"); err != nil {
+		t.Errorf("RunTo(--version) error: %v", err)
+	}
+	if got := buf.String(); !strings.Contains(got, "git version") {
+		t.Errorf("RunTo(--version) = %q, want to contain 'git version'", got)
+	}
+}
+
+func TestRunInToDebug(t *testing.T) {
+	t.Setenv("DEBUG", "1")
+
+	dir := t.TempDir()
+	var buf bytes.Buffer
+	if err := RunInTo(dir, &buf, "status"); err != nil {
+		t.Errorf("RunInTo() in debug mode error: %v", err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "git status") {
+		t.Errorf("RunInTo() debug output = %q, want to contain 'git status'", got)
+	}
+	if !strings.Contains(got, dir) {
+		t.Errorf("RunInTo() debug output = %q, want to contain dir %q", got, dir)
+	}
+}
+
+func TestRunInToNonDebug(t *testing.T) {
+	t.Setenv("DEBUG", "")
+
+	repo := initGitRepo(t)
+	var buf bytes.Buffer
+	if err := RunInTo(repo, &buf, "status"); err != nil {
+		t.Errorf("RunInTo(%s, status) error: %v", repo, err)
+	}
+	if buf.Len() == 0 {
+		t.Error("RunInTo() returned empty output")
 	}
 }

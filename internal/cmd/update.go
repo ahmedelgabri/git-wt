@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -21,9 +22,8 @@ in its worktree.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := ui.Spin("Fetching from all remotes", func() error {
-			_, err := git.RunWithOutput("fetch", "--all", "--prune", "--prune-tags")
-			return err
+		if err := ui.SpinWithOutput("Fetching from all remotes", func(w io.Writer) error {
+			return git.RunTo(w, "fetch", "--all", "--prune", "--prune-tags")
 		}); err != nil {
 			return err
 		}

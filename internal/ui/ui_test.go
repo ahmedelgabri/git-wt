@@ -2,15 +2,42 @@ package ui
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// runModel runs a bubbletea model through a real tea.Program with a timeout.
+// This exercises the full lifecycle (Init -> Update loop -> Quit) without
+// needing a TTY. If the model hangs, the context deadline fires and the
+// test fails instead of blocking forever.
+func runModel(t *testing.T, m tea.Model, timeout time.Duration) tea.Model {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	p := tea.NewProgram(m,
+		tea.WithInput(nil),
+		tea.WithOutput(io.Discard),
+		tea.WithContext(ctx),
+	)
+	result, err := p.Run()
+	if err != nil {
+		if ctx.Err() != nil {
+			t.Fatalf("model hung: did not complete within %s", timeout)
+		}
+		t.Fatalf("tea.Program error: %v", err)
+	}
+	return result
+}
 
 func TestNoColorOutput(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
@@ -471,5 +498,63 @@ func TestSpinnerModelViewRunning(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, "Loading") {
 		t.Errorf("running view should contain message, got %q", view)
+	}
+}
+
+// -- tea.Program lifecycle tests --
+// These run the full bubbletea program (Init -> Update -> Quit) to catch
+// bugs like missing Cmds in Init() that only manifest at runtime.
+
+func TestSpinnerProgramSuccess(t *testing.T) {
+	m := newSpinnerModel("Loading", func() error {
+		return nil
+	})
+	result := runModel(t, m, 5*time.Second)
+	r := result.(spinnerModel)
+	if r.err != nil {
+		t.Errorf("spinner err = %v, want nil", r.err)
+	}
+	if !r.done {
+		t.Error("spinner should be done")
+	}
+}
+
+func TestSpinnerProgramError(t *testing.T) {
+	testErr := errors.New("task failed")
+	m := newSpinnerModel("Loading", func() error {
+		return testErr
+	})
+	result := runModel(t, m, 5*time.Second)
+	r := result.(spinnerModel)
+	if r.err == nil {
+		t.Error("spinner err should not be nil")
+	}
+	if !r.done {
+		t.Error("spinner should be done")
+	}
+}
+
+func TestSpinWithOutput(t *testing.T) {
+	called := false
+	err := SpinWithOutput("test operation", func(w io.Writer) error {
+		called = true
+		fmt.Fprintln(w, "some output")
+		return nil
+	})
+	if err != nil {
+		t.Errorf("SpinWithOutput() = %v, want nil", err)
+	}
+	if !called {
+		t.Error("SpinWithOutput callback should have been called")
+	}
+}
+
+func TestSpinWithOutputError(t *testing.T) {
+	testErr := errors.New("task failed")
+	err := SpinWithOutput("test operation", func(w io.Writer) error {
+		return testErr
+	})
+	if !errors.Is(err, testErr) {
+		t.Errorf("SpinWithOutput() = %v, want %v", err, testErr)
 	}
 }

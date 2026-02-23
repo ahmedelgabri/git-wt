@@ -3,6 +3,7 @@ package ui
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -209,4 +210,18 @@ func Spin(msg string, fn func() error) error {
 		return err
 	}
 	return result.(spinnerModel).err
+}
+
+// SpinWithOutput prints a status message, runs fn with an io.Writer
+// connected to stderr so subprocess output is visible, then prints
+// the result. Stderr is used so that stdout remains clean for
+// structured output and BATS test assertions.
+func SpinWithOutput(msg string, fn func(w io.Writer) error) error {
+	fmt.Printf("%s %s\n", Accent("●"), msg)
+	if err := fn(os.Stderr); err != nil {
+		fmt.Printf("%s %s\n", Red("●"), msg)
+		return err
+	}
+	fmt.Printf("%s %s\n", Green("●"), msg)
+	return nil
 }

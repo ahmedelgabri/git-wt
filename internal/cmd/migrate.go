@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -140,9 +141,8 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Clone existing repo as bare into .bare
-	if err := ui.Spin("Converting to bare repository", func() error {
-		_, err := git.RunWithOutput("clone", "--bare", repoRoot, filepath.Join(newStructure, ".bare"))
-		return err
+	if err := ui.SpinWithOutput("Converting to bare repository", func(w io.Writer) error {
+		return git.RunTo(w, "clone", "--bare", repoRoot, filepath.Join(newStructure, ".bare"))
 	}); err != nil {
 		return err
 	}
@@ -159,9 +159,8 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// Fetch from remote if available
 	if remoteURL, _ := git.QueryIn(newStructure, "remote", "get-url", "origin"); remoteURL != "" {
-		if err := ui.Spin("Fetching all branches from remote", func() error {
-			_, err := git.RunInWithOutput(newStructure, "fetch", "--all")
-			return err
+		if err := ui.SpinWithOutput("Fetching all branches from remote", func(w io.Writer) error {
+			return git.RunInTo(newStructure, w, "fetch", "--all")
 		}); err != nil {
 			ui.Warn("Could not fetch from remote (remote may be unreachable) - continuing with local data")
 		}
@@ -206,24 +205,21 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// Create worktrees
 	if defaultBranch != "" && defaultBranch == currentBranch {
-		if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(currentBranch)), func() error {
-			_, err := git.RunInWithOutput(newStructure, "worktree", "add", currentBranch, currentBranch)
-			return err
+		if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(currentBranch)), func(w io.Writer) error {
+			return git.RunInTo(newStructure, w, "worktree", "add", currentBranch, currentBranch)
 		}); err != nil {
 			return err
 		}
 	} else {
 		if defaultBranch != "" {
-			if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)), func() error {
-				_, err := git.RunInWithOutput(newStructure, "worktree", "add", defaultBranch, defaultBranch)
-				return err
+			if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)), func(w io.Writer) error {
+				return git.RunInTo(newStructure, w, "worktree", "add", defaultBranch, defaultBranch)
 			}); err != nil {
 				return err
 			}
 		}
-		if err := ui.Spin(fmt.Sprintf("Creating worktree for %s", ui.Accent(currentBranch)), func() error {
-			_, err := git.RunInWithOutput(newStructure, "worktree", "add", currentBranch, currentBranch)
-			return err
+		if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(currentBranch)), func(w io.Writer) error {
+			return git.RunInTo(newStructure, w, "worktree", "add", currentBranch, currentBranch)
 		}); err != nil {
 			return err
 		}
