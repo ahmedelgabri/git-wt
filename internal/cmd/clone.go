@@ -36,6 +36,11 @@ func runClone(cmd *cobra.Command, args []string) error {
 		folderName = args[1]
 	}
 
+	if _, err := os.Stat(folderName); err == nil {
+		ui.Errorf("Directory '%s' already exists", folderName)
+		return fmt.Errorf("directory '%s' already exists", folderName)
+	}
+
 	if err := os.MkdirAll(folderName, 0o755); err != nil {
 		ui.Errorf("Failed to create directory '%s'", folderName)
 		return err

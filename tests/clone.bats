@@ -51,6 +51,23 @@ teardown() {
 	[ "$status" -ne 0 ]
 }
 
+@test "clone: fails when target directory already exists" {
+	mkdir -p "$TEST_DIR/existing-dir"
+	echo "important" >"$TEST_DIR/existing-dir/data.txt"
+
+	init_repo source-repo
+	cd source-repo
+	create_commit "file.txt"
+	cd "$TEST_DIR"
+
+	run "$GIT_WT" clone "$TEST_DIR/source-repo" existing-dir
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"already exists"* ]]
+	# Existing contents must not be touched
+	[ -f "$TEST_DIR/existing-dir/data.txt" ]
+	[[ "$(cat "$TEST_DIR/existing-dir/data.txt")" == "important" ]]
+}
+
 @test "clone: .git file contains correct gitdir path" {
 	init_repo source-gitdir
 	cd source-gitdir
