@@ -100,6 +100,30 @@ func TestCopyDirSymlinks(t *testing.T) {
 	}
 }
 
+func TestCopyDirSymlinksOverwrite(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	os.WriteFile(filepath.Join(src, "target.txt"), []byte("target"), 0o644)
+	os.Symlink("target.txt", filepath.Join(src, "link.txt"))
+
+	// Pre-populate destination with an existing symlink (simulates git worktree add)
+	os.WriteFile(filepath.Join(dst, "target.txt"), []byte("old"), 0o644)
+	os.Symlink("target.txt", filepath.Join(dst, "link.txt"))
+
+	if err := CopyDir(src, dst, nil); err != nil {
+		t.Fatalf("CopyDir error: %v", err)
+	}
+
+	link, err := os.Readlink(filepath.Join(dst, "link.txt"))
+	if err != nil {
+		t.Fatalf("readlink: %v", err)
+	}
+	if link != "target.txt" {
+		t.Errorf("symlink target = %q, want %q", link, "target.txt")
+	}
+}
+
 func TestCopyDirExcludesFile(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()

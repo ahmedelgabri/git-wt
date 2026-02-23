@@ -49,6 +49,7 @@ func CopyDir(src, dst string, excludes []string) error {
 			if err != nil {
 				return err
 			}
+			os.Remove(target)
 			return os.Symlink(link, target)
 		}
 

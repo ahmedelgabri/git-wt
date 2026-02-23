@@ -171,6 +171,27 @@ teardown() {
 	[[ "$remote_url" == "/tmp/nonexistent-repo-$$" ]]
 }
 
+@test "migrate: preserves symlinks in working directory" {
+	init_repo myrepo
+	cd myrepo
+	echo "real content" > target.txt
+	ln -s target.txt link.txt
+	command git add target.txt link.txt
+	command git commit --quiet -m "add symlink"
+
+	echo "y" | "$GIT_WT" migrate
+
+	local wt_dir
+	if [ -d "$TEST_DIR/myrepo/main" ]; then
+		wt_dir="$TEST_DIR/myrepo/main"
+	else
+		wt_dir="$TEST_DIR/myrepo/master"
+	fi
+	[ -L "$wt_dir/link.txt" ]
+	[[ $(readlink "$wt_dir/link.txt") == "target.txt" ]]
+	[[ $(cat "$wt_dir/link.txt") == "real content" ]]
+}
+
 @test "migrate: --help shows usage" {
 	# migrate doesn't have --help, so test that running without args in non-repo fails
 	run "$GIT_WT" migrate --help 2>&1
