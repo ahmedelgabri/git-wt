@@ -121,7 +121,7 @@ This creates:
 
 ```
 repo/
-├── .bare/          # Git data (bare repository)
+├── .bare/         # Git data (bare repository)
 ├── .git           # Points to .bare
 └── main/          # Worktree for default branch
 ```
