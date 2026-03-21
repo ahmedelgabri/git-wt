@@ -4,17 +4,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
+	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
+type listEntry struct {
+	Path     string
+	Branch   string
+	Head     string
+	Detached bool
+	Locked   bool
+	Prunable bool
+	Bare     bool
+}
+
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all worktrees",
-	Long: `List all worktrees. This is a pass-through to 'git worktree list', so all
-git worktree list flags are supported (e.g. --porcelain).
+	Long: `List all worktrees. With no flags it renders a richer table view.
+
+All native 'git worktree list' flags are still supported (e.g. --porcelain),
+and will be passed through directly.
 
 Use --json for structured output.`,
 	FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
@@ -35,12 +50,157 @@ Use --json for structured output.`,
 			return enc.Encode(entries)
 		}
 
-		fullArgs := append([]string{"worktree", "list"}, args...)
-		return git.QueryRun(fullArgs...)
+		if len(os.Args) > 2 {
+			fullArgs := append([]string{"worktree", "list"}, os.Args[2:]...)
+			return git.QueryRun(fullArgs...)
+		}
+
+		return renderStyledWorktreeList()
 	},
 }
 
 func init() {
 	listCmd.Flags().Bool("json", false, "Output worktrees as JSON")
 	rootCmd.AddCommand(listCmd)
+}
+
+func renderStyledWorktreeList() error {
+	raw, err := git.Query("worktree", "list", "--porcelain")
+	if err != nil {
+		return err
+	}
+
+	entries := parseListEntries(raw)
+	if len(entries) == 0 {
+		fmt.Println(ui.Subtle("No worktrees available"))
+		return nil
+	}
+
+	currentRoot, _ := currentWorktreeRoot()
+	rows := make([][]string, 0, len(entries))
+	worktreeCount := 0
+	hasBare := false
+	for _, entry := range entries {
+		if entry.Bare {
+			hasBare = true
+		} else {
+			worktreeCount++
+		}
+		rows = append(rows, []string{
+			listWorkspaceName(entry),
+			listBranchLabel(entry),
+			listHeadLabel(entry),
+			listFlags(entry, currentRoot),
+			displayPath(entry.Path),
+		})
+	}
+
+	body := ui.RenderTable([]ui.TableColumn{
+		{Title: "WORKTREE", MinWidth: 12, MaxWidth: 24},
+		{Title: "BRANCH", MinWidth: 12, MaxWidth: 24},
+		{Title: "HEAD", MinWidth: 8, MaxWidth: 10},
+		{Title: "FLAGS", MinWidth: 8, MaxWidth: 20},
+		{Title: "PATH", MinWidth: 20, MaxWidth: 56},
+	}, rows)
+
+	summaryParts := []string{fmt.Sprintf("%d worktree(s)", worktreeCount)}
+	if hasBare {
+		summaryParts = append(summaryParts, "bare repo root")
+	}
+	fmt.Println(ui.Section("Worktree list", body, ui.Subtle(strings.Join(summaryParts, " • "))))
+	return nil
+}
+
+func parseListEntries(output string) []listEntry {
+	if output == "" {
+		return nil
+	}
+
+	var entries []listEntry
+	var current listEntry
+	for line := range strings.SplitSeq(output, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			current.Path = strings.TrimPrefix(line, "worktree ")
+		case strings.HasPrefix(line, "HEAD "):
+			sha := strings.TrimPrefix(line, "HEAD ")
+			if len(sha) > 7 {
+				sha = sha[:7]
+			}
+			current.Head = sha
+		case strings.HasPrefix(line, "branch "):
+			current.Branch = strings.TrimPrefix(line, "branch refs/heads/")
+			current.Detached = false
+		case line == "detached":
+			current.Branch = ""
+			current.Detached = true
+		case line == "bare":
+			current.Bare = true
+		case strings.HasPrefix(line, "locked"):
+			current.Locked = true
+		case strings.HasPrefix(line, "prunable"):
+			current.Prunable = true
+		case line == "":
+			if current.Path != "" {
+				current.Bare = current.Bare || filepath.Base(current.Path) == ".bare"
+				entries = append(entries, current)
+			}
+			current = listEntry{}
+		}
+	}
+	if current.Path != "" {
+		current.Bare = current.Bare || filepath.Base(current.Path) == ".bare"
+		entries = append(entries, current)
+	}
+	return entries
+}
+
+func listWorkspaceName(entry listEntry) string {
+	if entry.Bare {
+		return ".bare"
+	}
+	return workspaceName(entry.Path)
+}
+
+func listBranchLabel(entry listEntry) string {
+	switch {
+	case entry.Bare:
+		return ui.Subtle("bare repo")
+	case entry.Detached:
+		return "detached HEAD"
+	case entry.Branch == "":
+		return ui.Subtle("no branch")
+	default:
+		return entry.Branch
+	}
+}
+
+func listHeadLabel(entry listEntry) string {
+	if entry.Head == "" {
+		return ui.Subtle("—")
+	}
+	return entry.Head
+}
+
+func listFlags(entry listEntry, currentRoot string) string {
+	flags := make([]string, 0, 4)
+	if entry.Bare {
+		flags = append(flags, ui.Accent("bare"))
+	}
+	if samePath(entry.Path, currentRoot) {
+		flags = append(flags, ui.Accent("current"))
+	}
+	if entry.Detached {
+		flags = append(flags, ui.Yellow("detached"))
+	}
+	if entry.Locked {
+		flags = append(flags, ui.Yellow("locked"))
+	}
+	if entry.Prunable {
+		flags = append(flags, ui.Yellow("prunable"))
+	}
+	if len(flags) == 0 {
+		return ui.Subtle("—")
+	}
+	return strings.Join(flags, ", ")
 }

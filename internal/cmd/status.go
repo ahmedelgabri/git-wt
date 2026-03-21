@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
+	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -23,6 +23,7 @@ type worktreeStatusSummary struct {
 	Ahead      int
 	Behind     int
 	LastCommit string
+	Flags      string
 }
 
 var statusCmd = &cobra.Command{
@@ -36,13 +37,14 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 		if len(entries) == 0 {
-			fmt.Println("No worktrees available")
+			fmt.Println(ui.Subtle("No worktrees available"))
 			return nil
 		}
 
+		currentRoot, _ := currentWorktreeRoot()
 		summaries := make([]worktreeStatusSummary, 0, len(entries))
 		for _, entry := range entries {
-			summary, err := summarizeWorktreeStatus(entry)
+			summary, err := summarizeWorktreeStatus(entry, currentRoot)
 			if err != nil {
 				return err
 			}
@@ -57,7 +59,7 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 }
 
-func summarizeWorktreeStatus(entry worktree.Entry) (worktreeStatusSummary, error) {
+func summarizeWorktreeStatus(entry worktree.Entry, currentRoot string) (worktreeStatusSummary, error) {
 	statusOut, err := git.QueryIn(entry.Path, "status", "--porcelain=v2", "--branch")
 	if err != nil {
 		return worktreeStatusSummary{}, err
@@ -77,6 +79,17 @@ func summarizeWorktreeStatus(entry worktree.Entry) (worktreeStatusSummary, error
 		branch = "no branch"
 	}
 
+	flags := make([]string, 0, 2)
+	if samePath(entry.Path, currentRoot) {
+		flags = append(flags, ui.Accent("current"))
+	}
+	if entry.Locked {
+		flags = append(flags, ui.Yellow("locked"))
+	}
+	if len(flags) == 0 {
+		flags = append(flags, ui.Subtle("—"))
+	}
+
 	return worktreeStatusSummary{
 		Workspace:  workspaceName(entry.Path),
 		Path:       displayPath(entry.Path),
@@ -86,6 +99,7 @@ func summarizeWorktreeStatus(entry worktree.Entry) (worktreeStatusSummary, error
 		Ahead:      ahead,
 		Behind:     behind,
 		LastCommit: lastCommit,
+		Flags:      strings.Join(flags, ", "),
 	}, nil
 }
 
@@ -112,31 +126,60 @@ func parseBranchStatus(output string) (upstream string, ahead, behind int, dirty
 }
 
 func printWorktreeStatuses(summaries []worktreeStatusSummary) error {
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "WORKTREE\tBRANCH\tSTATE\tSYNC\tLAST COMMIT\tPATH"); err != nil {
-		return err
-	}
+	rows := make([][]string, 0, len(summaries))
+	dirtyCount := 0
 	for _, summary := range summaries {
-		state := "clean"
 		if summary.Dirty {
-			state = "dirty"
+			dirtyCount++
 		}
-		sync := "local"
-		if summary.Upstream != "" {
-			sync = fmt.Sprintf("+%d/-%d", summary.Ahead, summary.Behind)
-		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		rows = append(rows, []string{
 			summary.Workspace,
 			summary.Branch,
-			state,
-			sync,
+			formatWorktreeState(summary.Dirty),
+			formatSyncState(summary.Upstream, summary.Ahead, summary.Behind),
 			summary.LastCommit,
+			summary.Flags,
 			summary.Path,
-		); err != nil {
-			return err
-		}
+		})
 	}
-	return tw.Flush()
+
+	body := ui.RenderTable([]ui.TableColumn{
+		{Title: "WORKTREE", MinWidth: 12, MaxWidth: 24},
+		{Title: "BRANCH", MinWidth: 12, MaxWidth: 26},
+		{Title: "STATE", MinWidth: 10, MaxWidth: 12},
+		{Title: "SYNC", MinWidth: 10, MaxWidth: 18},
+		{Title: "LAST COMMIT", MinWidth: 11, MaxWidth: 14},
+		{Title: "FLAGS", MinWidth: 8, MaxWidth: 18},
+		{Title: "PATH", MinWidth: 20, MaxWidth: 48},
+	}, rows)
+
+	cleanCount := len(summaries) - dirtyCount
+	summaryLine := ui.Subtle(fmt.Sprintf("%d worktree(s) • %d clean • %d dirty", len(summaries), cleanCount, dirtyCount))
+	fmt.Println(ui.Section("Worktree status", body, summaryLine))
+	return nil
+}
+
+func formatWorktreeState(dirty bool) string {
+	if dirty {
+		return ui.Yellow("● dirty")
+	}
+	return ui.Green("● clean")
+}
+
+func formatSyncState(upstream string, ahead, behind int) string {
+	if upstream == "" {
+		return ui.Subtle("local")
+	}
+	switch {
+	case ahead == 0 && behind == 0:
+		return ui.Green("✓ up to date")
+	case ahead > 0 && behind > 0:
+		return ui.Yellow(fmt.Sprintf("↑%d ↓%d", ahead, behind))
+	case ahead > 0:
+		return ui.Accent(fmt.Sprintf("↑%d", ahead))
+	default:
+		return ui.Yellow(fmt.Sprintf("↓%d", behind))
+	}
 }
 
 func workspaceName(path string) string {

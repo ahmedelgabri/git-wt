@@ -34,14 +34,16 @@ teardown() {
 
 	run "$GIT_WT" doctor
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Repository             $repo_root"* ]]
-	[[ "$output" == *"OK    .bare directory"* ]]
+	[[ "$output" == *"Repository"* ]]
+	[[ "$output" == *"$repo_root"* ]]
+	[[ "$output" == *".bare directory"* ]]
 
 	cd main
 	run "$GIT_WT" doctor
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Repository             $repo_root"* ]]
-	[[ "$output" == *"OK    .bare directory"* ]]
+	[[ "$output" == *"Repository"* ]]
+	[[ "$output" == *"$repo_root"* ]]
+	[[ "$output" == *".bare directory"* ]]
 }
 
 @test "doctor: reports migration readiness for standard repos" {

@@ -71,7 +71,8 @@ teardown() {
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"repo with spaces"* ]]
+	[[ "$output" == *"Worktree list"* ]]
+	[[ "$output" == *".bare"* ]]
 }
 
 @test "edge: worktree cache is populated correctly" {
@@ -83,11 +84,10 @@ teardown() {
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-
-	# Count worktrees in output (should be 4: main + 3 created)
-	local count
-	count=$(echo "$output" | wc -l | tr -d ' ')
-	[ "$count" -eq 4 ]
+	[[ "$output" == *"wt-one"* ]]
+	[[ "$output" == *"wt-two"* ]]
+	[[ "$output" == *"wt-three"* ]]
+	[[ "$output" == *"3 worktree(s)"* ]]
 }
 
 @test "edge: detached HEAD worktree handling" {

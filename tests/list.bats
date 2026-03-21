@@ -16,8 +16,9 @@ teardown() {
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"myrepo"* ]]
-	[[ "$output" == *"[main]"* ]] || [[ "$output" == *"[master]"* ]]
+	[[ "$output" == *"WORKTREE"* ]]
+	[[ "$output" == *".bare"* ]]
+	[[ "$output" == *"bare repo"* ]]
 }
 
 @test "list: shows multiple worktrees" {
@@ -28,7 +29,7 @@ teardown() {
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"myrepo"* ]]
+	[[ "$output" == *".bare"* ]]
 	[[ "$output" == *"feature-a"* ]]
 	[[ "$output" == *"feature-b"* ]]
 }
@@ -112,4 +113,15 @@ teardown() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *'"Path"'* ]]
 	[[ "$output" == *'"feature-json"'* ]]
+}
+
+@test "list: passes through native git flags" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature-porcelain feature-porcelain
+
+	run "$GIT_WT" list --porcelain
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"worktree "* ]]
+	[[ "$output" == *"branch refs/heads/feature-porcelain"* ]]
 }

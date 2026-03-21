@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
+	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -37,9 +38,7 @@ var doctorCmd = &cobra.Command{
 		}
 
 		checks, hasErrors := runDoctorChecks(repoRoot)
-		for _, check := range checks {
-			fmt.Printf("%-5s %-22s %s\n", check.Level, check.Name, check.Detail)
-		}
+		fmt.Println(renderDoctorChecks(checks))
 		if hasErrors {
 			return fmt.Errorf("doctor found issues")
 		}
@@ -80,6 +79,45 @@ func normalizeDoctorPath(path string) (string, error) {
 		return "", err
 	}
 	return filepath.EvalSymlinks(path)
+}
+
+func renderDoctorChecks(checks []doctorCheck) string {
+	rows := make([][]string, 0, len(checks))
+	okCount, warnCount, errorCount := 0, 0, 0
+	for _, check := range checks {
+		switch check.Level {
+		case doctorOK:
+			okCount++
+		case doctorWarn:
+			warnCount++
+		case doctorError:
+			errorCount++
+		}
+		rows = append(rows, []string{
+			renderDoctorLevel(check.Level),
+			check.Name,
+			check.Detail,
+		})
+	}
+
+	body := ui.RenderTable([]ui.TableColumn{
+		{Title: "STATUS", MinWidth: 8, MaxWidth: 10},
+		{Title: "CHECK", MinWidth: 20, MaxWidth: 26},
+		{Title: "DETAIL", MinWidth: 24, MaxWidth: 80},
+	}, rows)
+	summary := ui.Subtle(fmt.Sprintf("%d ok • %d warning(s) • %d error(s)", okCount, warnCount, errorCount))
+	return ui.Section("Repository health", body, summary)
+}
+
+func renderDoctorLevel(level doctorLevel) string {
+	switch level {
+	case doctorOK:
+		return ui.Green("OK")
+	case doctorWarn:
+		return ui.Yellow("WARN")
+	default:
+		return ui.Red("ERROR")
+	}
 }
 
 func runDoctorChecks(repoRoot string) ([]doctorCheck, bool) {

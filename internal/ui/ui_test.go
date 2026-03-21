@@ -572,3 +572,26 @@ func TestSpinWithOutputError(t *testing.T) {
 		t.Errorf("SpinWithOutput() = %v, want %v", err, testErr)
 	}
 }
+
+func TestSectionContainsTitleAndBody(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := Section("Status", "hello", "world")
+	if !strings.Contains(got, "Status") {
+		t.Fatalf("Section() missing title: %q", got)
+	}
+	if !strings.Contains(got, "hello") || !strings.Contains(got, "world") {
+		t.Fatalf("Section() missing body: %q", got)
+	}
+}
+
+func TestRenderTableContainsHeadersAndRows(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := RenderTable([]TableColumn{{Title: "COL1"}, {Title: "COL2"}}, [][]string{{"a", "b"}, {"c", "d"}})
+	for _, want := range []string{"COL1", "COL2", "a", "b", "c", "d"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("RenderTable() missing %q in %q", want, got)
+		}
+	}
+}

@@ -51,15 +51,11 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if len(candidates) == 0 {
-		fmt.Println("No cleanable worktrees found")
+		fmt.Println(ui.Subtle("No cleanable worktrees found"))
 		return nil
 	}
 
-	fmt.Println("Cleanup candidates:")
-	for i, candidate := range candidates {
-		fmt.Printf("  [%d] %s · %s · %s\n", i+1, filepath.Base(candidate.Target.path), candidate.Target.branchLabel(), candidate.Reason)
-	}
-	fmt.Println()
+	fmt.Println(renderCleanCandidates(candidates))
 
 	if dryRun {
 		fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
@@ -72,6 +68,43 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	return executeClean(candidates)
+}
+
+func renderCleanCandidates(candidates []cleanCandidate) string {
+	rows := make([][]string, 0, len(candidates))
+	removeCount, pruneCount := 0, 0
+	for _, candidate := range candidates {
+		switch candidate.Action {
+		case cleanActionRemove:
+			removeCount++
+		case cleanActionPrune:
+			pruneCount++
+		}
+		rows = append(rows, []string{
+			renderCleanAction(candidate.Action),
+			filepath.Base(candidate.Target.path),
+			candidate.Target.branchLabel(),
+			candidate.Reason,
+		})
+	}
+
+	body := ui.RenderTable([]ui.TableColumn{
+		{Title: "ACTION", MinWidth: 8, MaxWidth: 10},
+		{Title: "WORKTREE", MinWidth: 12, MaxWidth: 24},
+		{Title: "BRANCH", MinWidth: 12, MaxWidth: 24},
+		{Title: "REASON", MinWidth: 24, MaxWidth: 72},
+	}, rows)
+	summary := ui.Subtle(fmt.Sprintf("%d candidate(s) • %d remove • %d prune", len(candidates), removeCount, pruneCount))
+	return ui.Section("Cleanup candidates", body, summary)
+}
+
+func renderCleanAction(action cleanAction) string {
+	switch action {
+	case cleanActionPrune:
+		return ui.Yellow("prune")
+	default:
+		return ui.Red("remove")
+	}
 }
 
 func findCleanCandidates(entries []worktree.Entry) ([]cleanCandidate, error) {
