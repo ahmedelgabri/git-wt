@@ -34,6 +34,9 @@ different directories. This is useful for:
 - **Repository migration** - convert existing repos to worktree structure
 - **Automatic upstream tracking** when creating worktrees from remote branches
 - **Multi-select support** for batch operations (remove, destroy)
+- **Health diagnostics** with `git wt doctor`
+- **Status dashboard** with `git wt status`
+- **JSON output** with `git wt list --json`
 - **Dry-run mode** for destructive operations
 - **Preserves uncommitted changes** during migration (staged, unstaged, stashes)
 
@@ -208,6 +211,43 @@ git wt list
 | `destroy [worktree]` | Remove worktree and delete local + remote branches         |
 | `update` / `u`       | Fetch all and update default branch                        |
 | `switch`             | Interactive worktree selection                             |
+
+All native `git worktree` commands (list, lock, unlock, move, prune, repair) are
+also supported as pass-through.
+
+## Development
+
+```bash
+# Enter development shell
+nix develop
+
+# Format code
+nix fmt
+
+# Run checks
+nix flake check
+```
+
+## License
+
+MIT
+nt
+
+```bash
+# Enter development shell
+nix develop
+
+# Format code
+nix fmt
+
+# Run checks
+nix flake check
+```
+
+## License
+
+MIT
+on |
 
 All native `git worktree` commands (list, lock, unlock, move, prune, repair) are
 also supported as pass-through.

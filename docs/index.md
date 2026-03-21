@@ -97,6 +97,9 @@ repo/
 | `add [options] ...`  | Create new worktree (supports all git worktree flags)      |
 | `remove [worktree]`  | Remove worktree and local branch                           |
 | `destroy [worktree]` | Remove worktree and delete local + remote branches         |
+| `clean`              | Clean merged, gone, or stale worktrees safely              |
+| `doctor`             | Run repository diagnostics                                 |
+| `status`             | Show a compact status dashboard for all worktrees          |
 | `update`             | Fetch all and update default branch                        |
 | `switch`             | Interactive worktree selection                             |
 
