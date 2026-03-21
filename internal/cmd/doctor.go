@@ -31,11 +31,7 @@ var doctorCmd = &cobra.Command{
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		repoRoot, err := git.Query("rev-parse", "--show-toplevel")
-		if err != nil {
-			return err
-		}
-		repoRoot, err = filepath.EvalSymlinks(repoRoot)
+		repoRoot, err := doctorRepoRoot()
 		if err != nil {
 			return err
 		}
@@ -53,6 +49,37 @@ var doctorCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(doctorCmd)
+}
+
+func doctorRepoRoot() (string, error) {
+	commonDir, err := git.Query("rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+
+	commonDir, err = normalizeDoctorPath(commonDir)
+	if err != nil {
+		return "", err
+	}
+
+	switch filepath.Base(commonDir) {
+	case ".bare", ".git":
+		return filepath.Dir(commonDir), nil
+	default:
+		repoRoot, err := git.Query("rev-parse", "--show-toplevel")
+		if err == nil {
+			return normalizeDoctorPath(repoRoot)
+		}
+		return commonDir, nil
+	}
+}
+
+func normalizeDoctorPath(path string) (string, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(path)
 }
 
 func runDoctorChecks(repoRoot string) ([]doctorCheck, bool) {

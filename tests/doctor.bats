@@ -22,6 +22,28 @@ teardown() {
 	[[ "$output" == *"Default remote"* ]]
 }
 
+@test "doctor: works from bare repo root and linked worktree" {
+	init_repo_with_remote source
+	cd "$TEST_DIR"
+
+	run "$GIT_WT" clone "$TEST_DIR/source-origin" cloned
+	[ "$status" -eq 0 ]
+
+	cd cloned
+	repo_root=$(pwd -P)
+
+	run "$GIT_WT" doctor
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Repository             $repo_root"* ]]
+	[[ "$output" == *"OK    .bare directory"* ]]
+
+	cd main
+	run "$GIT_WT" doctor
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Repository             $repo_root"* ]]
+	[[ "$output" == *"OK    .bare directory"* ]]
+}
+
 @test "doctor: reports migration readiness for standard repos" {
 	init_repo myrepo
 	cd myrepo
