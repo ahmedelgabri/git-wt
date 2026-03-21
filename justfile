@@ -25,6 +25,14 @@ test-all: test test-e2e
 vet:
     go vet ./...
 
+# Run staticcheck
+staticcheck:
+    staticcheck ./...
+
+# Run govulncheck
+govulncheck:
+    govulncheck ./...
+
 # Format all files
 fmt:
     nix fmt
@@ -33,8 +41,8 @@ fmt:
 fmt-check:
     nix fmt -- --fail-on-change
 
-# Run all checks (vet + tests + race + E2E + format)
-check: vet test-race test-e2e fmt-check
+# Run all checks (lint + tests + race + E2E + format)
+check: vet staticcheck govulncheck test-race test-e2e fmt-check
 
 # Build with Nix
 nix-build:

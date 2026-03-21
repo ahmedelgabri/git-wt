@@ -6,7 +6,7 @@
 if [[ -z ${GIT_WT:-} ]]; then
 	GIT_WT="${BATS_TEST_DIRNAME}/../git-wt"
 	# Build from Go source if the binary doesn't exist or is stale
-	if [[ ! -x $GIT_WT ]] || [[ -f "${BATS_TEST_DIRNAME}/../cmd/git-wt/main.go" && "${BATS_TEST_DIRNAME}/../cmd/git-wt/main.go" -nt $GIT_WT ]]; then
+	if [[ ! -x $GIT_WT ]] || find "${BATS_TEST_DIRNAME}/.." \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' \) -newer "$GIT_WT" -print -quit | grep -q .; then
 		(cd "${BATS_TEST_DIRNAME}/.." && go build -o git-wt ./cmd/git-wt/) || {
 			echo "Failed to build git-wt binary" >&2
 			exit 1

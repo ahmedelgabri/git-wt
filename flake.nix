@@ -108,6 +108,7 @@
             gopls
             gofumpt
             go-tools # staticcheck, etc...
+            govulncheck
             gomodifytags
             gotools # goimports
             just

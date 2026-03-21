@@ -28,6 +28,12 @@ jobs:
       - name: Go vet
         run: nix develop --command just vet
 
+      - name: Staticcheck
+        run: nix develop --command just staticcheck
+
+      - name: Govulncheck
+        run: nix develop --command just govulncheck
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
@@ -55,6 +61,10 @@ jobs:
 
       - name: Run unit tests
         run: just test
+
+      - name: Run race tests
+        if: matrix.os == 'ubuntu-latest'
+        run: just test-race
 
       - name: Run E2E tests
         run: just test-e2e
