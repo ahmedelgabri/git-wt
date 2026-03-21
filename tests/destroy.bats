@@ -162,6 +162,35 @@ teardown() {
 	assert_branch_not_exists "feature/to-destroy"
 }
 
+@test "destroy: rejects ambiguous basename matches" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/login feature/login
+	create_worktree bugfix/login bugfix/login
+
+	run bash -c 'echo "y" | '"$GIT_WT"' destroy login'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"ambiguous"* ]]
+	[[ "$output" == *"feature/login"* ]]
+	[[ "$output" == *"bugfix/login"* ]]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature/login"
+	assert_worktree_exists "$TEST_DIR/myrepo/bugfix/login"
+}
+
+@test "destroy: detached worktree skips branch deletion" {
+	init_bare_repo myrepo
+	cd myrepo
+	local sha wt
+	sha=$(command git rev-parse HEAD)
+	wt='detached-$(echo shell)'
+	command git worktree add --detach "$wt" "$sha" --quiet
+
+	echo "y" | "$GIT_WT" destroy "$wt"
+
+	assert_worktree_not_exists "$TEST_DIR/myrepo/$wt"
+	assert_branch_exists main
+}
+
 @test "destroy: deletes remote branch with non-origin remote" {
 	init_bare_repo_with_custom_remote upstream myrepo
 	cd myrepo

@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,26 +10,28 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/git"
 )
 
+type ambiguousWorktreeError struct {
+	input      string
+	candidates []string
+}
+
+func (e *ambiguousWorktreeError) Error() string {
+	return fmt.Sprintf("'%s' is ambiguous. Matches multiple worktrees:\n  %s",
+		e.input, strings.Join(e.candidates, "\n  "))
+}
+
 // Resolve takes a user-provided worktree identifier (full path, workspace name,
 // or relative path) and resolves it to the full worktree path from the cache.
 func Resolve(entries []Entry, input string) (string, error) {
-	// Exact match against cached paths
+	// Exact match against cached paths.
 	for _, e := range entries {
 		if e.Path == input {
 			return e.Path, nil
 		}
 	}
 
-	// Workspace name match (compare basename of cached paths)
-	for _, e := range entries {
-		if filepath.Base(e.Path) == input {
-			return e.Path, nil
-		}
-	}
-
-	// Relative-to-bare-root match (handles slash-containing paths like feature/my-thing)
-	bareRoot, err := BareRoot()
-	if err == nil {
+	// Relative-to-bare-root match (handles slash-containing paths like feature/my-thing).
+	if bareRoot, err := BareRoot(); err == nil {
 		candidate := filepath.Join(bareRoot, input)
 		for _, e := range entries {
 			if e.Path == candidate {
@@ -37,7 +40,7 @@ func Resolve(entries []Entry, input string) (string, error) {
 		}
 	}
 
-	// Realpath match (resolve relative/symlinked paths)
+	// Realpath match (resolve relative/symlinked paths).
 	resolved, err := filepath.EvalSymlinks(input)
 	if err == nil {
 		resolved, err = filepath.Abs(resolved)
@@ -47,6 +50,23 @@ func Resolve(entries []Entry, input string) (string, error) {
 					return resolved, nil
 				}
 			}
+		}
+	}
+
+	// Workspace name match (compare basename of cached paths) only if unique.
+	var basenameMatches []Entry
+	for _, e := range entries {
+		if filepath.Base(e.Path) == input {
+			basenameMatches = append(basenameMatches, e)
+		}
+	}
+	if len(basenameMatches) == 1 {
+		return basenameMatches[0].Path, nil
+	}
+	if len(basenameMatches) > 1 {
+		return "", &ambiguousWorktreeError{
+			input:      input,
+			candidates: displayNames(basenameMatches),
 		}
 	}
 
@@ -61,31 +81,49 @@ func Validate(entries []Entry, input string) error {
 		return nil
 	}
 
-	bareRoot, _ := BareRoot()
-	names := make([]string, len(entries))
-	for i, e := range entries {
-		if bareRoot != "" {
-			names[i] = strings.TrimPrefix(e.Path, bareRoot+string(os.PathSeparator))
-		} else {
-			names[i] = filepath.Base(e.Path)
-		}
+	var ambiguous *ambiguousWorktreeError
+	if errors.As(err, &ambiguous) {
+		return err
 	}
+
 	return fmt.Errorf("'%s' is not a valid worktree. Available worktrees:\n  %s",
-		input, strings.Join(names, "\n  "))
+		input, strings.Join(displayNames(entries), "\n  "))
 }
 
-// BranchFor returns the branch name for the given worktree path.
-func BranchFor(entries []Entry, path string) string {
+// FindByPath returns the worktree entry for the given path or identifier.
+func FindByPath(entries []Entry, path string) *Entry {
 	resolved, _ := Resolve(entries, path)
 	if resolved == "" {
 		resolved = path
 	}
-	for _, e := range entries {
-		if e.Path == resolved {
-			return e.Branch
+	for i := range entries {
+		if entries[i].Path == resolved {
+			return &entries[i]
 		}
 	}
-	return ""
+	return nil
+}
+
+// BranchFor returns the branch name for the given worktree path.
+func BranchFor(entries []Entry, path string) string {
+	entry := FindByPath(entries, path)
+	if entry == nil {
+		return ""
+	}
+	return entry.Branch
+}
+
+func displayNames(entries []Entry) []string {
+	bareRoot, _ := BareRoot()
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		if bareRoot != "" {
+			out[i] = strings.TrimPrefix(e.Path, bareRoot+string(os.PathSeparator))
+			continue
+		}
+		out[i] = e.Path
+	}
+	return out
 }
 
 // BareRoot returns the root directory of the bare repo structure (parent of .bare/).

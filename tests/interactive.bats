@@ -40,7 +40,7 @@ teardown() {
 	# Create branch only on origin (not locally)
 	(cd "$TEST_DIR/myrepo-origin" && command git branch develop main)
 
-	run env GIT_WT_SELECT=develop "$GIT_WT" add
+	run env GIT_WT_SELECT=origin/develop "$GIT_WT" add
 	[ "$status" -eq 0 ]
 	assert_branch_exists develop
 	assert_worktree_exists "$TEST_DIR/myrepo/develop"

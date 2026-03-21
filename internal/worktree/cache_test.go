@@ -1,8 +1,6 @@
 package worktree
 
-import (
-	"testing"
-)
+import "testing"
 
 const samplePorcelain = `worktree /home/user/project/.bare
 HEAD abc1234567890abcdef1234567890abcdef123456
@@ -31,14 +29,15 @@ func TestParsePorcelain(t *testing.T) {
 	}
 
 	tests := []struct {
-		idx    int
-		path   string
-		branch string
-		head   string
+		idx      int
+		path     string
+		branch   string
+		head     string
+		detached bool
 	}{
-		{0, "/home/user/project/main", "main", "abc1234"},
-		{1, "/home/user/project/feature-a", "feature-a", "def4567"},
-		{2, "/home/user/project/detached-wt", "(detached)", "9998887"},
+		{0, "/home/user/project/main", "main", "abc1234", false},
+		{1, "/home/user/project/feature-a", "feature-a", "def4567", false},
+		{2, "/home/user/project/detached-wt", "", "9998887", true},
 	}
 
 	for _, tt := range tests {
@@ -51,6 +50,9 @@ func TestParsePorcelain(t *testing.T) {
 		}
 		if e.Head != tt.head {
 			t.Errorf("entry[%d].Head = %q, want %q", tt.idx, e.Head, tt.head)
+		}
+		if e.Detached != tt.detached {
+			t.Errorf("entry[%d].Detached = %v, want %v", tt.idx, e.Detached, tt.detached)
 		}
 	}
 }
@@ -118,6 +120,26 @@ func TestResolve(t *testing.T) {
 	_, err = Resolve(entries, "nonexistent")
 	if err == nil {
 		t.Error("Resolve should return error for nonexistent worktree")
+	}
+}
+
+func TestFindByPath(t *testing.T) {
+	entries := ParsePorcelain(samplePorcelain)
+
+	entry := FindByPath(entries, "main")
+	if entry == nil {
+		t.Fatal("FindByPath(main) returned nil")
+	}
+	if entry.Branch != "main" {
+		t.Errorf("Branch = %q, want %q", entry.Branch, "main")
+	}
+
+	entry = FindByPath(entries, "/home/user/project/detached-wt")
+	if entry == nil {
+		t.Fatal("FindByPath(detached) returned nil")
+	}
+	if !entry.Detached {
+		t.Error("detached entry should have Detached=true")
 	}
 }
 

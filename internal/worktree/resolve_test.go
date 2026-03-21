@@ -36,20 +36,56 @@ func TestValidateFailure(t *testing.T) {
 	}
 }
 
+func TestResolveAmbiguousBasename(t *testing.T) {
+	entries := []Entry{
+		{Path: "/home/user/project/feature/login", Branch: "feature/login"},
+		{Path: "/home/user/project/bugfix/login", Branch: "bugfix/login"},
+	}
+
+	_, err := Resolve(entries, "login")
+	if err == nil {
+		t.Fatal("Resolve(login) should return an ambiguity error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "ambiguous") {
+		t.Fatalf("expected ambiguity error, got %q", msg)
+	}
+	if !strings.Contains(msg, "feature/login") || !strings.Contains(msg, "bugfix/login") {
+		t.Fatalf("ambiguity error should list both candidates, got %q", msg)
+	}
+}
+
+func TestValidatePreservesAmbiguousError(t *testing.T) {
+	entries := []Entry{
+		{Path: "/home/user/project/feature/login", Branch: "feature/login"},
+		{Path: "/home/user/project/bugfix/login", Branch: "bugfix/login"},
+	}
+
+	err := Validate(entries, "login")
+	if err == nil {
+		t.Fatal("Validate(login) should return an ambiguity error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "ambiguous") {
+		t.Fatalf("expected ambiguity error, got %q", msg)
+	}
+	if strings.Contains(msg, "Available worktrees") {
+		t.Fatalf("ambiguity error should not be rewritten, got %q", msg)
+	}
+}
+
 func TestResolveAbsolutePathMatch(t *testing.T) {
 	dir := t.TempDir()
 	wtPath := filepath.Join(dir, "feature")
 	os.MkdirAll(wtPath, 0o755)
 
-	// Resolve symlinks so the entry path matches what EvalSymlinks returns
+	// Resolve symlinks so the entry path matches what EvalSymlinks returns.
 	resolved, err := filepath.EvalSymlinks(wtPath)
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
 
-	entries := []Entry{
-		{Path: resolved, Branch: "feature"},
-	}
+	entries := []Entry{{Path: resolved, Branch: "feature"}}
 
 	got, err := Resolve(entries, wtPath)
 	if err != nil {
@@ -164,7 +200,7 @@ func TestDefaultRemoteMultipleWithBranchConfig(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	// Configure branch.main.remote = upstream
+	// Configure branch.main.remote = upstream.
 	cmd := exec.Command("git", "config", "branch.main.remote", "upstream")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -232,7 +268,7 @@ func TestDefaultRemoteMultipleNoOrigin(t *testing.T) {
 	os.Chdir(dir)
 
 	got := DefaultRemote()
-	// git remote returns alphabetically, so "github" comes first
+	// git remote returns alphabetically, so "github" comes first.
 	if got != "github" {
 		t.Errorf("DefaultRemote() with no origin = %q, want %q", got, "github")
 	}
@@ -241,14 +277,14 @@ func TestDefaultRemoteMultipleNoOrigin(t *testing.T) {
 func TestBareRootInBareStructure(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create .bare as a real git bare repo so rev-parse works
+	// Create .bare as a real git bare repo so rev-parse works.
 	bareDir := filepath.Join(dir, ".bare")
 	cmd := exec.Command("git", "init", "--bare", bareDir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init --bare: %v\n%s", err, out)
 	}
 
-	// Create .git file pointing to .bare
+	// Create .git file pointing to .bare.
 	os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: ./.bare\n"), 0o644)
 
 	orig, err := os.Getwd()
@@ -263,7 +299,7 @@ func TestBareRootInBareStructure(t *testing.T) {
 		t.Fatalf("BareRoot() error: %v", err)
 	}
 
-	// Resolve symlinks for comparison (macOS /tmp -> /private/tmp)
+	// Resolve symlinks for comparison (macOS /tmp -> /private/tmp).
 	wantDir, _ := filepath.EvalSymlinks(dir)
 	if root != wantDir {
 		t.Errorf("BareRoot() = %q, want %q", root, wantDir)

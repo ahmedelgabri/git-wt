@@ -50,12 +50,12 @@ func runRemoveOrDestroy(cmd *cobra.Command, args []string, mode string) error {
 
 	remote := worktree.DefaultRemote()
 
-	// Interactive mode
+	// Interactive mode.
 	if len(args) == 0 {
 		return removeInteractive(entries, mode, dryRun, remote)
 	}
 
-	// Non-interactive mode
+	// Non-interactive mode.
 	return removeNonInteractive(entries, args, mode, dryRun, remote)
 }
 
@@ -70,7 +70,7 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool, remot
 	header := "TAB: select/deselect | ENTER: confirm | ESC: cancel\nLocal branches will also be deleted (remote branches preserved)"
 	if mode == "destroy" {
 		prompt = "Select worktree(s) to DESTROY (TAB to select multiple): "
-		header = "WARNING: This will delete LOCAL and REMOTE branches\nTAB: select/deselect | ENTER: confirm | ESC: cancel"
+		header = "WARNING: This will delete LOCAL and REMOTE branches when applicable\nTAB: select/deselect | ENTER: confirm | ESC: cancel"
 	}
 
 	result, err := picker.Run(picker.Config{
@@ -87,15 +87,13 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool, remot
 		return nil
 	}
 
-	// Resolve selected items to paths and branches
+	// Resolve selected items to targets.
 	var targets []removalTarget
 	for _, item := range result.Items {
-		t := removalTarget{path: item.Value}
-		t.branch = worktree.BranchFor(entries, item.Value)
-		targets = append(targets, t)
+		targets = append(targets, newRemovalTarget(entries, item.Value))
 	}
 
-	// Show what will be removed
+	// Show what will be removed.
 	fmt.Println()
 	if dryRun {
 		fmt.Printf("%s Would %s %d worktree(s):\n", ui.Yellow("[DRY RUN]"), mode, len(targets))
@@ -107,15 +105,11 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool, remot
 	}
 
 	for i, t := range targets {
-		branchInfo := ui.Muted("no branch")
-		if t.branch != "" {
-			branchInfo = ui.Accent(t.branch)
-		}
-		fmt.Printf("  %s %s %s %s\n", ui.Dim(fmt.Sprintf("[%d]", i+1)), ui.Bold(filepath.Base(t.path)), ui.Muted("·"), branchInfo)
+		fmt.Printf("  %s %s %s %s\n", ui.Dim(fmt.Sprintf("[%d]", i+1)), ui.Bold(filepath.Base(t.path)), ui.Muted("·"), ui.Accent(t.branchLabel()))
 	}
 
 	if mode == "destroy" {
-		fmt.Printf("\nThis will:\n  %s Remove worktree directories\n  %s Delete local branches\n  %s Delete remote branches\n\n",
+		fmt.Printf("\nThis will:\n  %s Remove worktree directories\n  %s Delete local branches when applicable\n  %s Delete remote branches when applicable\n\n",
 			ui.Red("·"), ui.Red("·"), ui.Red("·"))
 	} else {
 		fmt.Println()
@@ -127,12 +121,13 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool, remot
 		return nil
 	}
 
-	// Confirmation
+	// Confirmation.
 	if mode == "destroy" {
 		fmt.Println(ui.Red("This action CANNOT be undone."))
 		fmt.Println()
 		if len(targets) == 1 {
-			if !ui.PromptDangerous(fmt.Sprintf("Type %s to confirm:", ui.Bold(targets[0].branch)), targets[0].branch) {
+			expect := targets[0].confirmToken()
+			if !ui.PromptDangerous(fmt.Sprintf("Type %s to confirm:", ui.Bold(expect)), expect) {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -149,37 +144,39 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool, remot
 		}
 	}
 
-	// Execute removal
+	// Execute removal.
 	fmt.Println()
 	return executeRemoval(targets, mode, remote)
 }
 
 func removeNonInteractive(entries []worktree.Entry, args []string, mode string, dryRun bool, remote string) error {
-	// Validate all worktree paths first
+	// Validate all worktree paths first.
 	var targets []removalTarget
 
 	for _, arg := range args {
 		if err := worktree.Validate(entries, arg); err != nil {
-			ui.Error(err.Error())
-			return fmt.Errorf("invalid worktree")
+			return err
 		}
 		resolved, _ := worktree.Resolve(entries, arg)
-		branch := worktree.BranchFor(entries, resolved)
-		targets = append(targets, removalTarget{path: resolved, branch: branch})
+		targets = append(targets, newRemovalTarget(entries, resolved))
 	}
 
-	// Dry run
+	// Dry run.
 	if dryRun {
 		if mode == "destroy" {
 			fmt.Printf("%s Would DESTROY %d worktree(s):\n", ui.Yellow("[DRY RUN]"), len(targets))
 			for _, t := range targets {
-				if t.branch != "" {
-					fmt.Printf("  %s %s %s %s\n", ui.Bold(filepath.Base(t.path)), ui.Muted("·"), ui.Accent(t.branch), "")
-					fmt.Printf("    %s Remove worktree directory\n", ui.Red("·"))
+				fmt.Printf("  %s %s %s\n", ui.Bold(filepath.Base(t.path)), ui.Muted("·"), ui.Accent(t.branchLabel()))
+				fmt.Printf("    %s Remove worktree directory\n", ui.Red("·"))
+				if t.hasBranch() {
 					fmt.Printf("    %s Delete local branch: %s\n", ui.Red("·"), ui.Accent(t.branch))
-					fmt.Printf("    %s Delete remote branch: %s\n", ui.Red("·"), ui.Accent(remote+"/"+t.branch))
+					if remote != "" {
+						fmt.Printf("    %s Delete remote branch: %s\n", ui.Red("·"), ui.Accent(remote+"/"+t.branch))
+					} else {
+						fmt.Printf("    %s No remote configured; skip remote branch deletion\n", ui.Yellow("·"))
+					}
 				} else {
-					fmt.Printf("  %s\n", ui.Bold(filepath.Base(t.path)))
+					fmt.Printf("    %s Detached HEAD: no branch deletion\n", ui.Yellow("·"))
 				}
 			}
 			fmt.Println()
@@ -187,11 +184,7 @@ func removeNonInteractive(entries []worktree.Entry, args []string, mode string, 
 		} else {
 			fmt.Printf("%s Would remove %d worktree(s):\n", ui.Yellow("[DRY RUN]"), len(targets))
 			for _, t := range targets {
-				branchInfo := ""
-				if t.branch != "" {
-					branchInfo = fmt.Sprintf(" %s %s", ui.Muted("·"), ui.Accent(t.branch))
-				}
-				fmt.Printf("  %s%s\n", ui.Bold(filepath.Base(t.path)), branchInfo)
+				fmt.Printf("  %s %s %s\n", ui.Bold(filepath.Base(t.path)), ui.Muted("·"), ui.Accent(t.branchLabel()))
 			}
 			fmt.Println()
 			fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
@@ -199,12 +192,11 @@ func removeNonInteractive(entries []worktree.Entry, args []string, mode string, 
 		return nil
 	}
 
-	// Confirmation for destroy mode
+	// Confirmation for destroy mode.
 	if mode == "destroy" {
-		firstBranch := targets[0].branch
 		extraMsg := ""
-		if firstBranch != "" {
-			extraMsg = fmt.Sprintf(" and delete its remote branch [%s]", firstBranch)
+		if targets[0].hasBranch() {
+			extraMsg = fmt.Sprintf(" and delete its remote branch [%s]", targets[0].branch)
 		}
 		msg := fmt.Sprintf("Are you sure you want to destroy '%s' workspace%s?",
 			filepath.Base(targets[0].path), extraMsg)
@@ -222,8 +214,40 @@ func removeNonInteractive(entries []worktree.Entry, args []string, mode string, 
 }
 
 type removalTarget struct {
-	path   string
-	branch string
+	path     string
+	branch   string
+	detached bool
+}
+
+func newRemovalTarget(entries []worktree.Entry, path string) removalTarget {
+	t := removalTarget{path: path}
+	if entry := worktree.FindByPath(entries, path); entry != nil {
+		t.branch = entry.Branch
+		t.detached = entry.Detached
+	}
+	return t
+}
+
+func (t removalTarget) hasBranch() bool {
+	return t.branch != "" && !t.detached
+}
+
+func (t removalTarget) branchLabel() string {
+	switch {
+	case t.detached:
+		return "detached HEAD"
+	case t.branch != "":
+		return t.branch
+	default:
+		return "no branch"
+	}
+}
+
+func (t removalTarget) confirmToken() string {
+	if t.hasBranch() {
+		return t.branch
+	}
+	return "destroy"
 }
 
 func executeRemoval(targets []removalTarget, mode string, remote string) error {
@@ -236,7 +260,7 @@ func executeRemoval(targets []removalTarget, mode string, remote string) error {
 			fmt.Printf("%s %s\n", counter, ui.Bold(filepath.Base(t.path)))
 		}
 
-		if err := removeSingleWorktree(t.path, t.branch, mode, remote); err != nil {
+		if err := removeSingleWorktree(t, mode, remote); err != nil {
 			failedCount++
 		} else {
 			successCount++
@@ -258,42 +282,53 @@ func executeRemoval(targets []removalTarget, mode string, remote string) error {
 	return nil
 }
 
-func removeSingleWorktree(wtPath, branch, mode, remote string) error {
-	name := filepath.Base(wtPath)
+func removeSingleWorktree(target removalTarget, mode string, remote string) error {
+	name := filepath.Base(target.path)
 
-	// Remove the worktree
+	// Remove the worktree.
 	if err := ui.SpinWithOutput(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(w io.Writer) error {
-		return git.RunTo(w, "worktree", "remove", "-f", wtPath)
+		return git.RunTo(w, "worktree", "remove", "-f", target.path)
 	}); err != nil {
 		return err
 	}
 
-	if branch == "" {
+	if !target.hasBranch() {
 		return nil
 	}
 
-	// Delete local branch (fast, no spinner needed)
-	git.RunWithOutput("branch", "-D", branch)
-	ui.Successf("Deleted local branch %s", ui.Accent(branch))
+	// Delete local branch (fast, no spinner needed).
+	out, err := git.RunWithOutput("branch", "-D", target.branch)
+	if err != nil {
+		if out != "" {
+			return fmt.Errorf("%s", strings.TrimSpace(out))
+		}
+		return err
+	}
+	ui.Successf("Deleted local branch %s", ui.Accent(target.branch))
 
-	// Delete remote branch in destroy mode
+	// Delete remote branch in destroy mode.
 	if mode == "destroy" {
-		deleteRemoteBranch(branch, remote)
+		deleteRemoteBranch(target.branch, remote)
 	}
 
 	return nil
 }
 
 func deleteRemoteBranch(branch, remote string) {
+	if remote == "" {
+		fmt.Printf("%s %s\n", ui.Muted("·"), ui.Muted("No remote configured"))
+		return
+	}
+
 	remoteBranch := remote + "/" + branch
 
-	// Check if remote branch exists
+	// Check if remote branch exists.
 	if _, err := git.Query("ls-remote", "--exit-code", "--heads", remote, branch); err != nil {
 		fmt.Printf("%s %s\n", ui.Muted("·"), ui.Muted("No remote branch "+remoteBranch))
 		return
 	}
 
-	// Delete remote branch (network operation, needs spinner)
+	// Delete remote branch (network operation, needs spinner).
 	if err := ui.SpinWithOutput(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(w io.Writer) error {
 		return git.RunTo(w, "push", remote, "--delete", branch)
 	}); err != nil {
@@ -312,10 +347,11 @@ func entriesToPickerItems(entries []worktree.Entry) []picker.Item {
 		}
 
 		label := workspace
-		if e.Branch != "" && e.Branch != "(detached)" {
-			label = fmt.Sprintf("%s [%s]", workspace, e.Branch)
-		} else if e.Branch == "(detached)" {
+		switch {
+		case e.Detached:
 			label = fmt.Sprintf("%s (detached HEAD)", workspace)
+		case e.Branch != "":
+			label = fmt.Sprintf("%s [%s]", workspace, e.Branch)
 		}
 
 		homeDir, _ := os.UserHomeDir()

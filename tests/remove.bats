@@ -182,6 +182,36 @@ teardown() {
 	assert_branch_not_exists "feature/nested"
 }
 
+@test "remove: rejects ambiguous basename matches" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/login feature/login
+	create_worktree bugfix/login bugfix/login
+
+	run "$GIT_WT" remove login
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"ambiguous"* ]]
+	[[ "$output" == *"feature/login"* ]]
+	[[ "$output" == *"bugfix/login"* ]]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature/login"
+	assert_worktree_exists "$TEST_DIR/myrepo/bugfix/login"
+}
+
+@test "remove: detached worktree skips branch deletion" {
+	init_bare_repo myrepo
+	cd myrepo
+	local sha wt
+	sha=$(command git rev-parse HEAD)
+	wt='detached-$(echo shell)'
+	command git worktree add --detach "$wt" "$sha" --quiet
+
+	run "$GIT_WT" remove "$wt"
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"Deleted local branch"* ]]
+	assert_worktree_not_exists "$TEST_DIR/myrepo/$wt"
+	assert_branch_exists main
+}
+
 @test "remove: works from worktree subdirectory" {
 	init_bare_repo myrepo
 	cd myrepo

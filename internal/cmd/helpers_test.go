@@ -143,7 +143,7 @@ func TestIsKnownCommand(t *testing.T) {
 func TestEntriesToPickerItems(t *testing.T) {
 	entries := []worktree.Entry{
 		{Path: "/tmp/project/main", Branch: "main", Head: "abc1234"},
-		{Path: "/tmp/project/detached-wt", Branch: "(detached)", Head: "def5678"},
+		{Path: "/tmp/project/detached-wt", Detached: true, Head: "def5678"},
 		{Path: "/tmp/project/no-branch", Branch: "", Head: "111aaaa"},
 	}
 
@@ -181,20 +181,33 @@ func TestEntriesToPickerItems(t *testing.T) {
 
 func TestPreviewWorktreeCmdStr(t *testing.T) {
 	got := previewWorktreeCmdStr("remove")
-	if !strings.Contains(got, "_preview worktree {1} remove") {
-		t.Errorf("previewWorktreeCmdStr(remove) = %q, want to contain '_preview worktree {1} remove'", got)
+	if !strings.Contains(got, "sh -c") || !strings.Contains(got, `_preview worktree "$2" "$3"`) {
+		t.Errorf("previewWorktreeCmdStr(remove) = %q, want sh -c positional args", got)
+	}
+	if !strings.Contains(got, "{1}") {
+		t.Errorf("previewWorktreeCmdStr(remove) = %q, want to contain {1}", got)
 	}
 
 	got = previewWorktreeCmdStr("destroy")
-	if !strings.Contains(got, "_preview worktree {1} destroy") {
-		t.Errorf("previewWorktreeCmdStr(destroy) = %q, want to contain '_preview worktree {1} destroy'", got)
+	if !strings.Contains(got, shellQuote("destroy")) {
+		t.Errorf("previewWorktreeCmdStr(destroy) = %q, want quoted destroy mode", got)
 	}
 }
 
 func TestPreviewBranchCmdStr(t *testing.T) {
 	got := previewBranchCmdStr()
-	if !strings.Contains(got, "_preview branch {1}") {
-		t.Errorf("previewBranchCmdStr() = %q, want to contain '_preview branch {1}'", got)
+	if !strings.Contains(got, "sh -c") || !strings.Contains(got, `_preview branch "$2"`) {
+		t.Errorf("previewBranchCmdStr() = %q, want sh -c positional args", got)
+	}
+	if !strings.Contains(got, "{1}") {
+		t.Errorf("previewBranchCmdStr() = %q, want to contain {1}", got)
+	}
+}
+
+func TestSplitRemoteBranchRef(t *testing.T) {
+	remote, branch := splitRemoteBranchRef("origin/feature/nested")
+	if remote != "origin" || branch != "feature/nested" {
+		t.Fatalf("splitRemoteBranchRef() = (%q, %q), want (%q, %q)", remote, branch, "origin", "feature/nested")
 	}
 }
 
@@ -371,7 +384,60 @@ func TestGenerateWorktreePreviewDestroyMode(t *testing.T) {
 	if !strings.Contains(out, "DESTROY MODE") {
 		t.Errorf("destroy mode should contain 'DESTROY MODE', got %q", out)
 	}
-	if !strings.Contains(out, "Delete remote branch") {
-		t.Errorf("destroy mode should contain 'Delete remote branch', got %q", out)
+	if !strings.Contains(out, "Delete remote branch") && !strings.Contains(out, "No remote configured") {
+		t.Errorf("destroy mode should describe remote branch handling, got %q", out)
+	}
+}
+
+func TestGenerateWorktreePreviewDestroyModeDetached(t *testing.T) {
+	repo := initGitRepo(t)
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(repo)
+
+	shaCmd := exec.Command("git", "rev-parse", "HEAD")
+	shaCmd.Dir = repo
+	shaBytes, err := shaCmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v", err)
+	}
+	sha := strings.TrimSpace(string(shaBytes))
+
+	wtPath := filepath.Join(repo, "detached;$(preview)")
+	c := exec.Command("git", "worktree", "add", "--detach", wtPath, sha)
+	c.Dir = repo
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add --detach: %v\n%s", err, out)
+	}
+
+	out := generateWorktreePreview(wtPath, "destroy")
+	if !strings.Contains(out, "detached HEAD") {
+		t.Errorf("detached preview should mention detached HEAD, got %q", out)
+	}
+	if strings.Contains(out, "Delete remote branch") {
+		t.Errorf("detached preview should not include remote branch deletion, got %q", out)
+	}
+}
+
+func TestShellQuoteHandlesShellMetacharacters(t *testing.T) {
+	values := []string{
+		`feature;$(echo shell)`,
+		`feat;$(echo preview)`,
+		`quote's-and-$dollars`,
+	}
+
+	for _, value := range values {
+		cmd := exec.Command("sh", "-c", "printf '%s' "+shellQuote(value))
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("shellQuote(%q): %v", value, err)
+		}
+		if string(out) != value {
+			t.Fatalf("shellQuote(%q) roundtrip = %q, want %q", value, out, value)
+		}
 	}
 }
