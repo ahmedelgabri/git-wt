@@ -1,0 +1,42 @@
+#!/usr/bin/env bats
+
+load test_helper
+
+setup() {
+	setup_test_env
+}
+
+teardown() {
+	teardown_test_env
+}
+
+@test "status: shows worktrees with clean and dirty states" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	create_worktree feature-status feature-status
+	echo "dirty" > "$TEST_DIR/myrepo/feature-status/dirty.txt"
+
+	run "$GIT_WT" status
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"WORKTREE"* ]]
+	[[ "$output" == *"feature-status"* ]]
+	[[ "$output" == *"dirty"* ]]
+}
+
+@test "status: shows detached head worktrees" {
+	init_bare_repo myrepo
+	cd myrepo
+	local sha
+	sha=$(command git rev-parse HEAD)
+	command git worktree add --detach detached-status "$sha" --quiet
+
+	run "$GIT_WT" status
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"detached HEAD"* ]]
+	[[ "$output" == *"detached-status"* ]]
+}
+
+@test "status: fails outside git repo" {
+	run "$GIT_WT" status
+	[ "$status" -ne 0 ]
+}

@@ -102,3 +102,14 @@ teardown() {
 	[[ "$output" == *"feature-debug"* ]]
 	[[ "$output" != *"git worktree list"* ]]
 }
+
+@test "list: supports --json output" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature-json feature-json
+
+	run "$GIT_WT" list --json
+	[ "$status" -eq 0 ]
+	[[ "$output" == *'"Path"'* ]]
+	[[ "$output" == *'"feature-json"'* ]]
+}
