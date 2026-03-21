@@ -101,6 +101,16 @@ teardown() {
 	assert_worktree_exists "$TEST_DIR/myrepo/my-new-branch"
 }
 
+@test "add: interactive mode supports custom path for new branch" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	printf 'my-custom-branch\ncustom-path\n' | GIT_WT_SELECT="__create_new__" "$GIT_WT" add
+
+	assert_branch_exists "my-custom-branch"
+	assert_worktree_exists "$TEST_DIR/myrepo/custom-path"
+}
+
 @test "add: creates worktree from remote branch at flat path with -b" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
@@ -359,6 +369,21 @@ teardown() {
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/upstream-only"
 	assert_branch_exists "upstream-only"
+}
+
+@test "add: interactive mode supports custom path for remote branch" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	command git checkout -b remote-custom --quiet
+	create_commit "remote-custom.txt"
+	command git push --quiet -u origin remote-custom
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D remote-custom --quiet
+
+	printf 'custom-remote-path\n' | env GIT_WT_SELECT="origin/remote-custom" "$GIT_WT" add
+
+	assert_branch_exists "remote-custom"
+	assert_worktree_exists "$TEST_DIR/myrepo/custom-remote-path"
 }
 
 @test "add: interactive mode handles shell metacharacters in remote branch names" {

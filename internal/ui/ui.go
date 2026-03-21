@@ -115,13 +115,16 @@ func FailPrefix(prefix, msg string) string {
 }
 
 // stdinReader can be overridden in tests to provide canned input.
-var stdinReader func() *bufio.Reader
+var (
+	stdinReader       func() *bufio.Reader
+	sharedStdinReader = bufio.NewReader(os.Stdin)
+)
 
 func getReader() *bufio.Reader {
 	if stdinReader != nil {
 		return stdinReader()
 	}
-	return bufio.NewReader(os.Stdin)
+	return sharedStdinReader
 }
 
 // useSimpleIO returns true when bubbletea should not be used (test mocks or

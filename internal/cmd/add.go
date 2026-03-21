@@ -156,9 +156,11 @@ func runAddInteractive() error {
 		return fmt.Errorf("invalid remote branch ref: %s", selected.Value)
 	}
 
+	wtPath := promptWorktreePath(branch)
+
 	// Create worktree from selected remote branch.
 	if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(w io.Writer) error {
-		return git.RunTo(w, "worktree", "add", "-b", branch, branch, selected.Value)
+		return git.RunTo(w, "worktree", "add", "-b", branch, wtPath, selected.Value)
 	}); err != nil {
 		return err
 	}
@@ -181,11 +183,19 @@ func createNewBranch() error {
 		return fmt.Errorf("branch name cannot be empty")
 	}
 
-	wtPath := branchName
+	wtPath := promptWorktreePath(branchName)
 
 	return ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func(w io.Writer) error {
 		return git.RunTo(w, "worktree", "add", "-b", branchName, wtPath)
 	})
+}
+
+func promptWorktreePath(defaultPath string) string {
+	wtPath := ui.PromptInput(fmt.Sprintf("Enter worktree path (optional, default: %s):", defaultPath))
+	if wtPath == "" {
+		return defaultPath
+	}
+	return wtPath
 }
 
 func runAddDirect(cmd *cobra.Command, args []string, remote string) error {

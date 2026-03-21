@@ -59,6 +59,21 @@ teardown() {
 	assert_worktree_exists "$TEST_DIR/myrepo/new-feature"
 }
 
+@test "interactive add: supports custom path for remote selection" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	command git checkout -b remote-path --quiet
+	create_commit "remote-path.txt"
+	command git push --quiet -u origin remote-path
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D remote-path --quiet
+
+	printf 'custom-path\n' | env GIT_WT_SELECT="origin/remote-path" "$GIT_WT" add
+
+	assert_branch_exists remote-path
+	assert_worktree_exists "$TEST_DIR/myrepo/custom-path"
+}
+
 # --- remove ---
 
 @test "interactive remove: selects and removes worktree" {

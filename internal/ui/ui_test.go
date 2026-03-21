@@ -155,6 +155,20 @@ func TestPromptInputTrimmed(t *testing.T) {
 	}
 }
 
+func TestPromptInputSequentialReads(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("first\nsecond\n"))
+	old := stdinReader
+	stdinReader = func() *bufio.Reader { return reader }
+	defer func() { stdinReader = old }()
+
+	if got := PromptInput("First:"); got != "first" {
+		t.Fatalf("first PromptInput() = %q, want %q", got, "first")
+	}
+	if got := PromptInput("Second:"); got != "second" {
+		t.Fatalf("second PromptInput() = %q, want %q", got, "second")
+	}
+}
+
 func TestPromptDangerousMatch(t *testing.T) {
 	cleanup := mockStdin("destroy\n")
 	defer cleanup()
