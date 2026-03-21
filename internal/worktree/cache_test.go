@@ -14,10 +14,12 @@ branch refs/heads/main
 worktree /home/user/project/feature-a
 HEAD def4567890abcdef1234567890abcdef12345678
 branch refs/heads/feature-a
+locked manually locked
 
 worktree /home/user/project/detached-wt
 HEAD 999888777666555444333222111000aaabbbccc
 detached
+prunable gitdir file points to non-existent location
 
 `
 
@@ -29,15 +31,19 @@ func TestParsePorcelain(t *testing.T) {
 	}
 
 	tests := []struct {
-		idx      int
-		path     string
-		branch   string
-		head     string
-		detached bool
+		idx            int
+		path           string
+		branch         string
+		head           string
+		detached       bool
+		locked         bool
+		lockedReason   string
+		prunable       bool
+		prunableReason string
 	}{
-		{0, "/home/user/project/main", "main", "abc1234", false},
-		{1, "/home/user/project/feature-a", "feature-a", "def4567", false},
-		{2, "/home/user/project/detached-wt", "", "9998887", true},
+		{0, "/home/user/project/main", "main", "abc1234", false, false, "", false, ""},
+		{1, "/home/user/project/feature-a", "feature-a", "def4567", false, true, "manually locked", false, ""},
+		{2, "/home/user/project/detached-wt", "", "9998887", true, false, "", true, "gitdir file points to non-existent location"},
 	}
 
 	for _, tt := range tests {
@@ -53,6 +59,18 @@ func TestParsePorcelain(t *testing.T) {
 		}
 		if e.Detached != tt.detached {
 			t.Errorf("entry[%d].Detached = %v, want %v", tt.idx, e.Detached, tt.detached)
+		}
+		if e.Locked != tt.locked {
+			t.Errorf("entry[%d].Locked = %v, want %v", tt.idx, e.Locked, tt.locked)
+		}
+		if e.LockedReason != tt.lockedReason {
+			t.Errorf("entry[%d].LockedReason = %q, want %q", tt.idx, e.LockedReason, tt.lockedReason)
+		}
+		if e.Prunable != tt.prunable {
+			t.Errorf("entry[%d].Prunable = %v, want %v", tt.idx, e.Prunable, tt.prunable)
+		}
+		if e.PrunableReason != tt.prunableReason {
+			t.Errorf("entry[%d].PrunableReason = %q, want %q", tt.idx, e.PrunableReason, tt.prunableReason)
 		}
 	}
 }

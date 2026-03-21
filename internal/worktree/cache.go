@@ -9,10 +9,14 @@ import (
 
 // Entry represents a single worktree from git worktree list --porcelain.
 type Entry struct {
-	Path     string
-	Branch   string
-	Head     string // short SHA (7 chars)
-	Detached bool
+	Path           string
+	Branch         string
+	Head           string // short SHA (7 chars)
+	Detached       bool
+	Locked         bool
+	LockedReason   string
+	Prunable       bool
+	PrunableReason string
 }
 
 // List returns all worktrees (excluding the .bare entry) by parsing
@@ -51,6 +55,12 @@ func ParsePorcelain(output string) []Entry {
 		case line == "detached":
 			current.Branch = ""
 			current.Detached = true
+		case strings.HasPrefix(line, "locked"):
+			current.Locked = true
+			current.LockedReason = strings.TrimSpace(strings.TrimPrefix(line, "locked"))
+		case strings.HasPrefix(line, "prunable"):
+			current.Prunable = true
+			current.PrunableReason = strings.TrimSpace(strings.TrimPrefix(line, "prunable"))
 		case line == "":
 			if current.Path != "" && filepath.Base(current.Path) != ".bare" {
 				entries = append(entries, current)
