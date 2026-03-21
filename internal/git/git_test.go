@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"os/exec"
 	"strings"
 	"testing"
@@ -20,6 +21,26 @@ func TestQueryVersion(t *testing.T) {
 func TestQueryRun(t *testing.T) {
 	if err := QueryRun("--version"); err != nil {
 		t.Fatalf("QueryRun(--version) error: %v", err)
+	}
+}
+
+func TestExecGitWithContext(t *testing.T) {
+	out, err := execGit(ExecOptions{Capture: true, Context: context.Background()}, "--version")
+	if err != nil {
+		t.Fatalf("execGit(--version) error: %v", err)
+	}
+	if !strings.Contains(out, "git version") {
+		t.Errorf("execGit(--version) = %q, want to contain 'git version'", out)
+	}
+}
+
+func TestExecGitWithEnv(t *testing.T) {
+	out, err := execGit(ExecOptions{Capture: true, Env: []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.name", "GIT_CONFIG_VALUE_0=Env Test"}}, "config", "user.name")
+	if err != nil {
+		t.Fatalf("execGit(config user.name) error: %v", err)
+	}
+	if out != "Env Test" {
+		t.Errorf("execGit(config user.name) = %q, want %q", out, "Env Test")
 	}
 }
 
