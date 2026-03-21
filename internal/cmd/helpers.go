@@ -21,17 +21,31 @@ func configureBareRepo(dir string) error {
 	return nil
 }
 
-// cleanupLocalBranchRefs removes all local branch refs that a bare clone creates
-// as copies of remote branches.
+// cleanupLocalBranchRefs removes local branch refs that a bare clone creates as
+// copies of remote branches, while preserving branches that exist only locally.
 func cleanupLocalBranchRefs(dir string) {
 	refs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)", "refs/heads")
 	if refs == "" {
 		return
 	}
+
+	remoteRefs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
+	remoteBranches := make(map[string]bool)
+	for remoteRef := range strings.SplitSeq(remoteRefs, "\n") {
+		remoteRef = strings.TrimSpace(remoteRef)
+		if remoteRef == "" || strings.HasSuffix(remoteRef, "/HEAD") {
+			continue
+		}
+		if _, branch, ok := strings.Cut(remoteRef, "/"); ok && branch != "" {
+			remoteBranches[branch] = true
+		}
+	}
+
 	for ref := range strings.SplitSeq(refs, "\n") {
 		ref = strings.TrimSpace(ref)
-		if ref != "" {
-			git.RunInWithOutput(dir, "branch", "-D", ref)
+		if ref == "" || !remoteBranches[ref] {
+			continue
 		}
+		git.RunInWithOutput(dir, "branch", "-D", ref)
 	}
 }

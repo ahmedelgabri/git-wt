@@ -58,6 +58,32 @@ func TestMoveContentsNonExistentSrc(t *testing.T) {
 	}
 }
 
+func TestFinalizeMigrationRollbackOnValidationFailure(t *testing.T) {
+	repoRoot := t.TempDir()
+	newStructure := t.TempDir()
+	tempBackup := filepath.Join(t.TempDir(), "backup")
+
+	os.WriteFile(filepath.Join(repoRoot, "original.txt"), []byte("original"), 0o644)
+	os.MkdirAll(filepath.Join(newStructure, ".bare"), 0o755)
+	os.WriteFile(filepath.Join(newStructure, ".git"), []byte("gitdir: ./.bare\n"), 0o644)
+
+	err := finalizeMigration(repoRoot, newStructure, tempBackup, []string{".git", ".bare", "main"})
+	if err == nil {
+		t.Fatal("finalizeMigration should fail validation when required entries are missing")
+	}
+
+	data, readErr := os.ReadFile(filepath.Join(repoRoot, "original.txt"))
+	if readErr != nil {
+		t.Fatalf("original repo contents should be restored: %v", readErr)
+	}
+	if string(data) != "original" {
+		t.Fatalf("original repo contents = %q, want %q", data, "original")
+	}
+	if _, statErr := os.Stat(filepath.Join(repoRoot, ".git")); !os.IsNotExist(statErr) {
+		t.Fatalf("repoRoot should not retain promoted .git after rollback")
+	}
+}
+
 func TestCopyFileSimple(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "src.txt")
 	dst := filepath.Join(t.TempDir(), "dst.txt")
