@@ -91,3 +91,14 @@ teardown() {
 	[[ "$output" == *"main"* ]]
 	[[ "$output" == *"feature-list"* ]]
 }
+
+@test "list: still lists worktrees in DEBUG mode" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature-debug feature-debug
+
+	run env DEBUG=1 "$GIT_WT" list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"feature-debug"* ]]
+	[[ "$output" != *"git worktree list"* ]]
+}

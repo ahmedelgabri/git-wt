@@ -17,6 +17,12 @@ func TestQueryVersion(t *testing.T) {
 	}
 }
 
+func TestQueryRun(t *testing.T) {
+	if err := QueryRun("--version"); err != nil {
+		t.Fatalf("QueryRun(--version) error: %v", err)
+	}
+}
+
 func TestQueryLines(t *testing.T) {
 	// Query something that returns multiple lines
 	lines, err := QueryLines("help", "-a")

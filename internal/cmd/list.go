@@ -15,7 +15,7 @@ git worktree list flags are supported (e.g. --porcelain).`,
 	SilenceErrors:      true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fullArgs := append([]string{"worktree", "list"}, args...)
-		return git.Run(fullArgs...)
+		return git.QueryRun(fullArgs...)
 	},
 }
 

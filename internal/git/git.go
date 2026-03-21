@@ -97,6 +97,15 @@ func Query(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+// QueryRun executes a read-only git command, streaming stdout/stderr directly.
+func QueryRun(args ...string) error {
+	cmd := exec.Command("git", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
 // QueryIn executes a read-only git command in the specified directory.
 func QueryIn(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
