@@ -26,6 +26,7 @@ var migrateCmd = &cobra.Command{
 }
 
 func init() {
+	migrateCmd.Flags().Bool("dry-run", false, "Show migration plan without making changes")
 	rootCmd.AddCommand(migrateCmd)
 }
 
@@ -94,6 +95,12 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	}
 
 	printMigratePlan(plan)
+
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	if dryRun {
+		fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
+		return nil
+	}
 
 	// Confirm.
 	if !ui.Confirm("This will restructure the repository. Continue? [y/N]:") {

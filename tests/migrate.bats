@@ -118,6 +118,18 @@ teardown() {
 	[ ! -d "$TEST_DIR/myrepo/.bare" ]
 }
 
+@test "migrate: supports --dry-run" {
+	init_repo myrepo
+	cd myrepo
+	create_commit "file.txt"
+
+	run "$GIT_WT" migrate --dry-run
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"DRY RUN"* ]]
+	[ -d "$TEST_DIR/myrepo/.git" ]
+	[ ! -d "$TEST_DIR/myrepo/.bare" ]
+}
+
 @test "migrate: preserves remote URL" {
 	init_repo_with_remote myrepo
 	cd myrepo
