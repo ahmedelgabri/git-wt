@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -77,6 +78,20 @@ func renderStyledWorktreeList() error {
 	}
 
 	currentRoot, _ := currentWorktreeRoot()
+	slices.SortFunc(entries, func(a, b listEntry) int {
+		switch {
+		case a.Bare && !b.Bare:
+			return -1
+		case !a.Bare && b.Bare:
+			return 1
+		case samePath(a.Path, currentRoot) && !samePath(b.Path, currentRoot):
+			return -1
+		case !samePath(a.Path, currentRoot) && samePath(b.Path, currentRoot):
+			return 1
+		default:
+			return strings.Compare(a.Path, b.Path)
+		}
+	})
 	rows := make([][]string, 0, len(entries))
 	worktreeCount := 0
 	hasBare := false
@@ -87,11 +102,11 @@ func renderStyledWorktreeList() error {
 			worktreeCount++
 		}
 		rows = append(rows, []string{
-			listWorkspaceName(entry),
+			listWorkspaceName(entry, currentRoot),
 			listBranchLabel(entry),
 			listHeadLabel(entry),
 			listFlags(entry, currentRoot),
-			displayPath(entry.Path),
+			displayWorktreePath(entry.Path),
 		})
 	}
 
@@ -103,11 +118,11 @@ func renderStyledWorktreeList() error {
 		{Title: "PATH", MinWidth: 20, MaxWidth: 56},
 	}, rows)
 
-	summaryParts := []string{fmt.Sprintf("%d worktree(s)", worktreeCount)}
+	summaryParts := []string{ui.Subtle(fmt.Sprintf("%d linked worktree(s)", worktreeCount))}
 	if hasBare {
-		summaryParts = append(summaryParts, "bare repo root")
+		summaryParts = append(summaryParts, ui.Accent("bare root present"))
 	}
-	fmt.Println(ui.Section("Worktree list", body, ui.Subtle(strings.Join(summaryParts, " • "))))
+	fmt.Println(ui.Section("Worktree list", body, strings.Join(summaryParts, " • ")))
 	return nil
 }
 
@@ -155,17 +170,22 @@ func parseListEntries(output string) []listEntry {
 	return entries
 }
 
-func listWorkspaceName(entry listEntry) string {
-	if entry.Bare {
-		return ".bare"
+func listWorkspaceName(entry listEntry, currentRoot string) string {
+	name := workspaceName(entry.Path)
+	switch {
+	case entry.Bare:
+		return ui.Subtle(".bare")
+	case samePath(entry.Path, currentRoot):
+		return ui.Accent(name)
+	default:
+		return name
 	}
-	return workspaceName(entry.Path)
 }
 
 func listBranchLabel(entry listEntry) string {
 	switch {
 	case entry.Bare:
-		return ui.Subtle("bare repo")
+		return ui.Subtle("git database")
 	case entry.Detached:
 		return "detached HEAD"
 	case entry.Branch == "":
@@ -179,7 +199,7 @@ func listHeadLabel(entry listEntry) string {
 	if entry.Head == "" {
 		return ui.Subtle("—")
 	}
-	return entry.Head
+	return ui.Subtle(entry.Head)
 }
 
 func listFlags(entry listEntry, currentRoot string) string {

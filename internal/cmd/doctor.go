@@ -105,18 +105,22 @@ func renderDoctorChecks(checks []doctorCheck) string {
 		{Title: "CHECK", MinWidth: 20, MaxWidth: 26},
 		{Title: "DETAIL", MinWidth: 24, MaxWidth: 80},
 	}, rows)
-	summary := ui.Subtle(fmt.Sprintf("%d ok • %d warning(s) • %d error(s)", okCount, warnCount, errorCount))
+	summary := strings.Join([]string{
+		ui.Green(fmt.Sprintf("%d ok", okCount)),
+		ui.Yellow(fmt.Sprintf("%d warning(s)", warnCount)),
+		ui.Red(fmt.Sprintf("%d error(s)", errorCount)),
+	}, " • ")
 	return ui.Section("Repository health", body, summary)
 }
 
 func renderDoctorLevel(level doctorLevel) string {
 	switch level {
 	case doctorOK:
-		return ui.Green("OK")
+		return ui.Green("✓ OK")
 	case doctorWarn:
-		return ui.Yellow("WARN")
+		return ui.Yellow("! WARN")
 	default:
-		return ui.Red("ERROR")
+		return ui.Red("✗ ERROR")
 	}
 }
 

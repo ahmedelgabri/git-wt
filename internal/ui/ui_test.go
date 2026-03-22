@@ -586,6 +586,15 @@ func TestSectionContainsTitleAndBody(t *testing.T) {
 	}
 }
 
+func TestPathFormatsRelativePaths(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := Path("./main")
+	if got != "./main" {
+		t.Fatalf("Path() = %q, want %q", got, "./main")
+	}
+}
+
 func TestRenderTableContainsHeadersAndRows(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -50,6 +51,15 @@ func runClean(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	slices.SortFunc(candidates, func(a, b cleanCandidate) int {
+		if a.Action != b.Action {
+			if a.Action == cleanActionRemove {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Target.path, b.Target.path)
+	})
 	if len(candidates) == 0 {
 		fmt.Println(ui.Subtle("No cleanable worktrees found"))
 		return nil
@@ -94,7 +104,11 @@ func renderCleanCandidates(candidates []cleanCandidate) string {
 		{Title: "BRANCH", MinWidth: 12, MaxWidth: 24},
 		{Title: "REASON", MinWidth: 24, MaxWidth: 72},
 	}, rows)
-	summary := ui.Subtle(fmt.Sprintf("%d candidate(s) • %d remove • %d prune", len(candidates), removeCount, pruneCount))
+	summary := strings.Join([]string{
+		ui.Subtle(fmt.Sprintf("%d candidate(s)", len(candidates))),
+		ui.Red(fmt.Sprintf("%d remove", removeCount)),
+		ui.Yellow(fmt.Sprintf("%d prune", pruneCount)),
+	}, " • ")
 	return ui.Section("Cleanup candidates", body, summary)
 }
 

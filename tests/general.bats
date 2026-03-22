@@ -87,7 +87,7 @@ teardown() {
 	[[ "$output" == *"wt-one"* ]]
 	[[ "$output" == *"wt-two"* ]]
 	[[ "$output" == *"wt-three"* ]]
-	[[ "$output" == *"3 worktree(s)"* ]]
+	[[ "$output" == *"3 linked worktree(s)"* ]]
 }
 
 @test "edge: detached HEAD worktree handling" {

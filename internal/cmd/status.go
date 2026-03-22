@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +26,7 @@ type worktreeStatusSummary struct {
 	Behind     int
 	LastCommit string
 	Flags      string
+	Current    bool
 }
 
 var statusCmd = &cobra.Command{
@@ -51,6 +54,7 @@ var statusCmd = &cobra.Command{
 			summaries = append(summaries, summary)
 		}
 
+		slices.SortFunc(summaries, compareStatusSummaries)
 		return printWorktreeStatuses(summaries)
 	},
 }
@@ -79,8 +83,9 @@ func summarizeWorktreeStatus(entry worktree.Entry, currentRoot string) (worktree
 		branch = "no branch"
 	}
 
+	current := samePath(entry.Path, currentRoot)
 	flags := make([]string, 0, 2)
-	if samePath(entry.Path, currentRoot) {
+	if current {
 		flags = append(flags, ui.Accent("current"))
 	}
 	if entry.Locked {
@@ -90,9 +95,14 @@ func summarizeWorktreeStatus(entry worktree.Entry, currentRoot string) (worktree
 		flags = append(flags, ui.Subtle("—"))
 	}
 
+	workspace := workspaceName(entry.Path)
+	if current {
+		workspace = ui.Accent(workspace)
+	}
+
 	return worktreeStatusSummary{
-		Workspace:  workspaceName(entry.Path),
-		Path:       displayPath(entry.Path),
+		Workspace:  workspace,
+		Path:       displayWorktreePath(entry.Path),
 		Branch:     branch,
 		Dirty:      dirty,
 		Upstream:   upstream,
@@ -100,6 +110,7 @@ func summarizeWorktreeStatus(entry worktree.Entry, currentRoot string) (worktree
 		Behind:     behind,
 		LastCommit: lastCommit,
 		Flags:      strings.Join(flags, ", "),
+		Current:    current,
 	}, nil
 }
 
@@ -154,7 +165,11 @@ func printWorktreeStatuses(summaries []worktreeStatusSummary) error {
 	}, rows)
 
 	cleanCount := len(summaries) - dirtyCount
-	summaryLine := ui.Subtle(fmt.Sprintf("%d worktree(s) • %d clean • %d dirty", len(summaries), cleanCount, dirtyCount))
+	summaryLine := strings.Join([]string{
+		ui.Subtle(fmt.Sprintf("%d worktree(s)", len(summaries))),
+		ui.Green(fmt.Sprintf("%d clean", cleanCount)),
+		ui.Yellow(fmt.Sprintf("%d dirty", dirtyCount)),
+	}, " • ")
 	fmt.Println(ui.Section("Worktree status", body, summaryLine))
 	return nil
 }
@@ -168,18 +183,49 @@ func formatWorktreeState(dirty bool) string {
 
 func formatSyncState(upstream string, ahead, behind int) string {
 	if upstream == "" {
-		return ui.Subtle("local")
+		return ui.Subtle("local only")
 	}
 	switch {
 	case ahead == 0 && behind == 0:
-		return ui.Green("✓ up to date")
+		return ui.Green("✓ synced")
 	case ahead > 0 && behind > 0:
 		return ui.Yellow(fmt.Sprintf("↑%d ↓%d", ahead, behind))
 	case ahead > 0:
-		return ui.Accent(fmt.Sprintf("↑%d", ahead))
+		return ui.Accent(fmt.Sprintf("↑%d ahead", ahead))
 	default:
-		return ui.Yellow(fmt.Sprintf("↓%d", behind))
+		return ui.Yellow(fmt.Sprintf("↓%d behind", behind))
 	}
+}
+
+func compareStatusSummaries(a, b worktreeStatusSummary) int {
+	switch {
+	case a.Current && !b.Current:
+		return -1
+	case !a.Current && b.Current:
+		return 1
+	case a.Dirty && !b.Dirty:
+		return -1
+	case !a.Dirty && b.Dirty:
+		return 1
+	default:
+		return strings.Compare(ansiLess(a.Workspace), ansiLess(b.Workspace))
+	}
+}
+
+func displayWorktreePath(path string) string {
+	if bareRoot, err := worktree.BareRoot(); err == nil && bareRoot != "" {
+		if rel, err := filepath.Rel(bareRoot, path); err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
+			if rel == "." {
+				return ui.Path(".")
+			}
+			return ui.Path("./" + rel)
+		}
+	}
+	return ui.Path(displayPath(path))
+}
+
+func ansiLess(s string) string {
+	return ansi.Strip(s)
 }
 
 func workspaceName(path string) string {

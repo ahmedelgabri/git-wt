@@ -18,7 +18,7 @@ teardown() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"WORKTREE"* ]]
 	[[ "$output" == *".bare"* ]]
-	[[ "$output" == *"bare repo"* ]]
+	[[ "$output" == *"git database"* ]]
 }
 
 @test "list: shows multiple worktrees" {
