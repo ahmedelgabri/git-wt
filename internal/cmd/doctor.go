@@ -116,7 +116,7 @@ func renderDoctorChecks(checks []doctorCheck) string {
 func renderDoctorLevel(level doctorLevel) string {
 	switch level {
 	case doctorOK:
-		return ui.Green("✓ OK")
+		return ui.Green("✓")
 	case doctorWarn:
 		return ui.Yellow("! WARN")
 	default:

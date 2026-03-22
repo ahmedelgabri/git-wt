@@ -17,7 +17,6 @@ teardown() {
 
 	run "$GIT_WT" doctor
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"OK"* ]]
 	[[ "$output" == *"bare worktree layout"* ]]
 	[[ "$output" == *"Default remote"* ]]
 }
