@@ -30,8 +30,13 @@ type worktreeStatusSummary struct {
 }
 
 var statusCmd = &cobra.Command{
-	Use:           "status",
-	Short:         "Show a compact status dashboard for all worktrees",
+	Use:   "status",
+	Short: "Show a compact status dashboard for all worktrees",
+	Long: `Show a repository-wide dashboard for linked worktrees.
+
+The dashboard includes branch name, clean/dirty state, upstream sync status,
+last commit age, and a repo-relative path for each worktree.`,
+	Example:       `  git wt status`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

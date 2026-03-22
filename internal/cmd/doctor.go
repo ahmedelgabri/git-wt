@@ -27,8 +27,14 @@ type doctorCheck struct {
 }
 
 var doctorCmd = &cobra.Command{
-	Use:           "doctor",
-	Short:         "Run diagnostics on the current repository layout",
+	Use:   "doctor",
+	Short: "Run diagnostics on the current repository layout",
+	Long: `Run repository diagnostics for both standard and bare worktree layouts.
+
+Doctor checks repository layout, the .bare directory, linked worktree paths,
+default remote and branch detection, and migration readiness for standard
+repositories.`,
+	Example:       `  git wt doctor`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

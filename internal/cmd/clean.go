@@ -28,8 +28,16 @@ type cleanCandidate struct {
 }
 
 var cleanCmd = &cobra.Command{
-	Use:           "clean",
-	Short:         "Clean safe worktree cleanup candidates",
+	Use:   "clean",
+	Short: "Clean safe worktree cleanup candidates",
+	Long: `Clean worktrees that are safe cleanup candidates.
+
+This command removes linked worktrees whose branches are fully merged into the
+repository default branch, removes worktrees whose upstream is gone, and prunes
+stale worktree metadata. Dirty, locked, detached, current, and default-branch
+worktrees are skipped automatically.`,
+	Example: `  git wt clean --dry-run
+  git wt clean`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE:          runClean,
