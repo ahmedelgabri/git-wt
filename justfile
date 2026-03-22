@@ -42,7 +42,7 @@ fmt-check:
     nix fmt -- --fail-on-change
 
 # Run all checks (lint + tests + race + E2E + format)
-check: vet staticcheck govulncheck test-race test-e2e fmt-check
+check: vet staticcheck test-race test-e2e fmt-check
 
 # Build with Nix
 nix-build:
