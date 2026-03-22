@@ -122,7 +122,7 @@ func renderStyledWorktreeList() error {
 	if hasBare {
 		summaryParts = append(summaryParts, ui.Accent("bare root present"))
 	}
-	fmt.Println(ui.Section("Worktree list", body, strings.Join(summaryParts, " • ")))
+	fmt.Println(ui.Section("", body, "", strings.Join(summaryParts, " • ")))
 	return nil
 }
 

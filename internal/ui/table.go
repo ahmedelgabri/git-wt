@@ -35,16 +35,14 @@ func Title(s string) string {
 	return render(titleStyle, s)
 }
 
-// Section renders a titled section. On TTYs it adds a border; otherwise it
-// emits simple plain-text output.
+// Section renders a section. The title is optional. On TTYs it adds a border;
+// otherwise it emits simple plain-text output.
 func Section(title string, body ...string) string {
-	parts := []string{Title(title)}
-	for _, part := range body {
-		if strings.TrimSpace(part) == "" {
-			continue
-		}
-		parts = append(parts, part)
+	parts := make([]string, 0, len(body)+1)
+	if strings.TrimSpace(title) != "" {
+		parts = append(parts, Title(title))
 	}
+	parts = append(parts, body...)
 	content := strings.Join(parts, "\n")
 	if !outputIsTTY() {
 		return content

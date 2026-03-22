@@ -155,13 +155,13 @@ func printWorktreeStatuses(summaries []worktreeStatusSummary) error {
 	}
 
 	body := ui.RenderTable([]ui.TableColumn{
-		{Title: "WORKTREE", MinWidth: 12, MaxWidth: 24},
-		{Title: "BRANCH", MinWidth: 12, MaxWidth: 26},
-		{Title: "STATE", MinWidth: 10, MaxWidth: 12},
-		{Title: "SYNC", MinWidth: 10, MaxWidth: 18},
-		{Title: "LAST COMMIT", MinWidth: 11, MaxWidth: 14},
-		{Title: "FLAGS", MinWidth: 8, MaxWidth: 18},
-		{Title: "PATH", MinWidth: 20, MaxWidth: 48},
+		{Title: "WORKTREE", MinWidth: 12},
+		{Title: "BRANCH", MinWidth: 12},
+		{Title: "STATE", MinWidth: 10},
+		{Title: "SYNC", MinWidth: 10},
+		{Title: "LAST COMMIT", MinWidth: 11},
+		{Title: "FLAGS", MinWidth: 8},
+		{Title: "PATH", MinWidth: 20},
 	}, rows)
 
 	cleanCount := len(summaries) - dirtyCount
@@ -170,7 +170,7 @@ func printWorktreeStatuses(summaries []worktreeStatusSummary) error {
 		ui.Green(fmt.Sprintf("%d clean", cleanCount)),
 		ui.Yellow(fmt.Sprintf("%d dirty", dirtyCount)),
 	}, " • ")
-	fmt.Println(ui.Section("Worktree status", body, summaryLine))
+	fmt.Println(ui.Section("", body, "", summaryLine))
 	return nil
 }
 

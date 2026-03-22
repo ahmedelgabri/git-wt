@@ -586,6 +586,18 @@ func TestSectionContainsTitleAndBody(t *testing.T) {
 	}
 }
 
+func TestSectionAllowsEmptyTitleAndSpacer(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := Section("", "table", "", "summary")
+	if strings.Contains(got, "Status") {
+		t.Fatalf("Section() unexpectedly contains title: %q", got)
+	}
+	if !strings.Contains(got, "table\n\nsummary") {
+		t.Fatalf("Section() should preserve blank line before summary: %q", got)
+	}
+}
+
 func TestPathFormatsRelativePaths(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 

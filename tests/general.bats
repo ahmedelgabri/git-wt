@@ -71,7 +71,7 @@ teardown() {
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Worktree list"* ]]
+	[[ "$output" == *"WORKTREE"* ]]
 	[[ "$output" == *".bare"* ]]
 }
 

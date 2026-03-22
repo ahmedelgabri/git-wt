@@ -110,7 +110,7 @@ func renderDoctorChecks(checks []doctorCheck) string {
 		ui.Yellow(fmt.Sprintf("%d warning(s)", warnCount)),
 		ui.Red(fmt.Sprintf("%d error(s)", errorCount)),
 	}, " • ")
-	return ui.Section("Repository health", body, summary)
+	return ui.Section("", body, "", summary)
 }
 
 func renderDoctorLevel(level doctorLevel) string {

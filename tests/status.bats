@@ -40,3 +40,15 @@ teardown() {
 	run "$GIT_WT" status
 	[ "$status" -ne 0 ]
 }
+
+@test "status: does not truncate long values" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	long_branch="feature-this-is-a-very-long-branch-name-for-status-output"
+	create_worktree "$long_branch" "$long_branch"
+
+	run "$GIT_WT" status
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"$long_branch"* ]]
+	[[ "$output" == *"./$long_branch"* ]]
+}
