@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // runModel runs a bubbletea model through a real tea.Program with a timeout.
@@ -593,5 +594,21 @@ func TestRenderTableContainsHeadersAndRows(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("RenderTable() missing %q in %q", want, got)
 		}
+	}
+}
+
+func TestRenderTableHandlesColoredCells(t *testing.T) {
+	got := RenderTable(
+		[]TableColumn{{Title: "STATUS", MinWidth: 6}, {Title: "CHECK", MinWidth: 12}},
+		[][]string{{Green("OK"), "Repository"}, {Yellow("WARN"), "Default branch"}},
+	)
+	plain := ansi.Strip(got)
+	for _, want := range []string{"STATUS", "CHECK", "OK", "Repository", "WARN", "Default branch"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("RenderTable() missing %q in %q", want, plain)
+		}
+	}
+	if strings.Contains(plain, "OKRepository") || strings.Contains(plain, "WARNDefault branch") {
+		t.Fatalf("RenderTable() collapsed columns: %q", plain)
 	}
 }

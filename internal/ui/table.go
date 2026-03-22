@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	bubbletable "github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 )
 
@@ -22,6 +22,8 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(subtleColor).
 			Padding(0, 1)
+	tableHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	tableRuleStyle   = lipgloss.NewStyle().Foreground(subtleColor)
 )
 
 func outputIsTTY() bool {
@@ -50,21 +52,33 @@ func Section(title string, body ...string) string {
 	return sectionBox.Render(content)
 }
 
-// RenderTable renders a static table using Charm's bubbles/table component.
+// RenderTable renders a static table using lipgloss so ANSI-colored content is
+// measured and truncated correctly.
 func RenderTable(columns []TableColumn, rows [][]string) string {
 	if len(columns) == 0 {
 		return ""
 	}
 
-	bCols := make([]bubbletable.Column, len(columns))
-	totalWidth := 0
+	widths := tableColumnWidths(columns, rows)
+	header := tableLine(columns, widths, func(col int, value string) string {
+		return tableHeaderStyle.Render(value)
+	})
+	lines := []string{header, tableRuleStyle.Render(strings.Repeat("─", ansi.StringWidth(header)))}
+	for _, row := range rows {
+		lines = append(lines, tableLineValues(row, widths, nil))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func tableColumnWidths(columns []TableColumn, rows [][]string) []int {
+	widths := make([]int, len(columns))
 	for i, col := range columns {
-		width := lipgloss.Width(col.Title)
+		width := ansi.StringWidth(col.Title)
 		for _, row := range rows {
 			if i >= len(row) {
 				continue
 			}
-			if w := lipgloss.Width(row[i]); w > width {
+			if w := ansi.StringWidth(row[i]); w > width {
 				width = w
 			}
 		}
@@ -74,38 +88,42 @@ func RenderTable(columns []TableColumn, rows [][]string) string {
 		if col.MaxWidth > 0 && width > col.MaxWidth {
 			width = col.MaxWidth
 		}
-		bCols[i] = bubbletable.Column{Title: col.Title, Width: width}
-		totalWidth += width + 2
+		widths[i] = width
 	}
+	return widths
+}
 
-	bRows := make([]bubbletable.Row, 0, len(rows))
-	for _, row := range rows {
-		bRows = append(bRows, bubbletable.Row(row))
+func tableLine(columns []TableColumn, widths []int, decorate func(col int, value string) string) string {
+	values := make([]string, len(columns))
+	for i, col := range columns {
+		values[i] = col.Title
 	}
+	return tableLineValues(values, widths, decorate)
+}
 
-	styles := bubbletable.DefaultStyles()
-	styles.Header = styles.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderBottom(true).
-		BorderForeground(subtleColor).
-		Bold(true)
-	if !noColor() {
-		styles.Header = styles.Header.Foreground(accentColor)
+func tableLineValues(values []string, widths []int, decorate func(col int, value string) string) string {
+	cells := make([]string, len(widths))
+	for i := range widths {
+		value := ""
+		if i < len(values) {
+			value = values[i]
+		}
+		value = fitTableCell(value, widths[i])
+		if decorate != nil {
+			value = decorate(i, value)
+		}
+		cells[i] = " " + value + " "
 	}
-	styles.Cell = styles.Cell.Padding(0, 1)
-	styles.Selected = styles.Cell
+	return strings.Join(cells, " ")
+}
 
-	height := len(rows) + 1
-	if height < 2 {
-		height = 2
+func fitTableCell(value string, width int) string {
+	if width <= 0 {
+		return ""
 	}
-
-	m := bubbletable.New(
-		bubbletable.WithColumns(bCols),
-		bubbletable.WithRows(bRows),
-		bubbletable.WithHeight(height),
-		bubbletable.WithWidth(totalWidth),
-		bubbletable.WithStyles(styles),
-	)
-	return m.View()
+	value = ansi.Truncate(value, width, "…")
+	if pad := width - ansi.StringWidth(value); pad > 0 {
+		value += strings.Repeat(" ", pad)
+	}
+	return value
 }
