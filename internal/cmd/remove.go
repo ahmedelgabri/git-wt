@@ -95,26 +95,8 @@ func removeInteractive(entries []worktree.Entry, mode string, dryRun bool, remot
 
 	// Show what will be removed.
 	fmt.Println()
-	if dryRun {
-		fmt.Printf("%s Would %s %d worktree(s):\n", ui.Yellow("[DRY RUN]"), mode, len(targets))
-	} else {
-		if mode == "destroy" {
-			fmt.Printf("%s\n\n", ui.Red("WARNING: DESTRUCTIVE OPERATION"))
-		}
-		fmt.Printf("About to %s %s worktree(s):\n", mode, ui.Bold(fmt.Sprintf("%d", len(targets))))
-	}
-
-	for i, t := range targets {
-		fmt.Printf("  %s %s %s %s\n", ui.Dim(fmt.Sprintf("[%d]", i+1)), ui.Bold(filepath.Base(t.path)), ui.Muted("·"), ui.Accent(t.branchLabel()))
-	}
-
-	if mode == "destroy" {
-		fmt.Printf("\nThis will:\n  %s Remove worktree directories\n  %s Delete local branches when applicable\n  %s Delete remote branches when applicable\n\n",
-			ui.Red("·"), ui.Red("·"), ui.Red("·"))
-	} else {
-		fmt.Println()
-		fmt.Printf("%s Remote branches will NOT be deleted\n\n", ui.Muted("Note:"))
-	}
+	fmt.Println(renderRemovalPlan(targets, mode, remote, dryRun))
+	fmt.Println()
 
 	if dryRun {
 		fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
@@ -163,37 +145,16 @@ func removeNonInteractive(entries []worktree.Entry, args []string, mode string, 
 
 	// Dry run.
 	if dryRun {
-		if mode == "destroy" {
-			fmt.Printf("%s Would DESTROY %d worktree(s):\n", ui.Yellow("[DRY RUN]"), len(targets))
-			for _, t := range targets {
-				fmt.Printf("  %s %s %s\n", ui.Bold(filepath.Base(t.path)), ui.Muted("·"), ui.Accent(t.branchLabel()))
-				fmt.Printf("    %s Remove worktree directory\n", ui.Red("·"))
-				if t.hasBranch() {
-					fmt.Printf("    %s Delete local branch: %s\n", ui.Red("·"), ui.Accent(t.branch))
-					if remote != "" {
-						fmt.Printf("    %s Delete remote branch: %s\n", ui.Red("·"), ui.Accent(remote+"/"+t.branch))
-					} else {
-						fmt.Printf("    %s No remote configured; skip remote branch deletion\n", ui.Yellow("·"))
-					}
-				} else {
-					fmt.Printf("    %s Detached HEAD: no branch deletion\n", ui.Yellow("·"))
-				}
-			}
-			fmt.Println()
-			fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
-		} else {
-			fmt.Printf("%s Would remove %d worktree(s):\n", ui.Yellow("[DRY RUN]"), len(targets))
-			for _, t := range targets {
-				fmt.Printf("  %s %s %s\n", ui.Bold(filepath.Base(t.path)), ui.Muted("·"), ui.Accent(t.branchLabel()))
-			}
-			fmt.Println()
-			fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
-		}
+		fmt.Println(renderRemovalPlan(targets, mode, remote, true))
+		fmt.Println()
+		fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
 		return nil
 	}
 
 	// Confirmation for destroy mode.
 	if mode == "destroy" {
+		fmt.Println(renderRemovalPlan(targets, mode, remote, false))
+		fmt.Println()
 		extraMsg := ""
 		if targets[0].hasBranch() {
 			extraMsg = fmt.Sprintf(" and delete its remote branch [%s]", targets[0].branch)
@@ -248,6 +209,66 @@ func (t removalTarget) confirmToken() string {
 		return t.branch
 	}
 	return "destroy"
+}
+
+func renderRemovalPlan(targets []removalTarget, mode string, remote string, dryRun bool) string {
+	rows := make([][]string, 0, len(targets))
+	localDeletes := 0
+	remoteDeletes := 0
+	for _, target := range targets {
+		if target.hasBranch() {
+			localDeletes++
+			if mode == "destroy" && remote != "" {
+				remoteDeletes++
+			}
+		}
+		rows = append(rows, []string{
+			displayWorktreePath(target.path),
+			target.branchLabel(),
+			removalEffect(target, mode, remote),
+		})
+	}
+
+	notes := []string{}
+	if dryRun {
+		notes = append(notes, ui.Yellow("[DRY RUN] Preview only"))
+	}
+	if mode == "destroy" {
+		notes = append(notes, ui.Red("Destructive: matching local and remote branches will be deleted when possible."))
+	} else {
+		notes = append(notes, ui.Subtle("Remote branches are preserved."))
+	}
+
+	summaryParts := []string{ui.Subtle(fmt.Sprintf("%d target(s)", len(targets)))}
+	if localDeletes > 0 {
+		summaryParts = append(summaryParts, ui.Red(fmt.Sprintf("%d local branch delete(s)", localDeletes)))
+	}
+	if mode == "destroy" {
+		if remoteDeletes > 0 {
+			summaryParts = append(summaryParts, ui.Red(fmt.Sprintf("%d remote branch delete(s)", remoteDeletes)))
+		} else if remote == "" {
+			summaryParts = append(summaryParts, ui.Yellow("no remote configured"))
+		}
+	}
+
+	return renderTableSection([]ui.TableColumn{
+		{Title: "WORKTREE", MinWidth: 18},
+		{Title: "BRANCH", MinWidth: 14},
+		{Title: "EFFECT", MinWidth: 24},
+	}, rows, notes, strings.Join(summaryParts, " • "))
+}
+
+func removalEffect(target removalTarget, mode string, remote string) string {
+	if !target.hasBranch() {
+		return ui.Yellow("remove worktree only")
+	}
+	if mode == "destroy" {
+		if remote != "" {
+			return ui.Red("remove + delete local + remote")
+		}
+		return ui.Red("remove + delete local")
+	}
+	return ui.Red("remove + delete local")
 }
 
 func executeRemoval(targets []removalTarget, mode string, remote string) error {

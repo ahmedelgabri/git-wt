@@ -111,11 +111,11 @@ func renderStyledWorktreeList() error {
 	}
 
 	body := ui.RenderTable([]ui.TableColumn{
-		{Title: "WORKTREE", MinWidth: 12, MaxWidth: 24},
-		{Title: "BRANCH", MinWidth: 12, MaxWidth: 24},
-		{Title: "HEAD", MinWidth: 8, MaxWidth: 10},
-		{Title: "FLAGS", MinWidth: 8, MaxWidth: 20},
-		{Title: "PATH", MinWidth: 20, MaxWidth: 56},
+		{Title: "WORKTREE", MinWidth: 12},
+		{Title: "BRANCH", MinWidth: 12},
+		{Title: "HEAD", MinWidth: 8},
+		{Title: "FLAGS", MinWidth: 8},
+		{Title: "PATH", MinWidth: 20},
 	}, rows)
 
 	summaryParts := []string{ui.Subtle(fmt.Sprintf("%d linked worktree(s)", worktreeCount))}

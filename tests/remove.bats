@@ -76,6 +76,7 @@ teardown() {
 	run "$GIT_WT" remove --dry-run "$TEST_DIR/myrepo/dry-run-test"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN"* ]] || [[ "$output" == *"dry"* ]]
+	[[ "$output" == *"Remote branches are preserved"* ]]
 	# Worktree should still exist
 	assert_worktree_exists "$TEST_DIR/myrepo/dry-run-test"
 }

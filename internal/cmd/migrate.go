@@ -94,7 +94,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	printMigratePlan(plan)
+	fmt.Println(renderMigratePlan(plan))
 
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	if dryRun {
@@ -163,42 +163,38 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	var branches []treeBranch
 	if plan.defaultBranch != "" && plan.defaultBranch == plan.currentBranch {
-		branches = append(branches, treeBranch{plan.currentBranch, "worktree"})
+		branches = append(branches, treeBranch{plan.currentBranch, "active worktree"})
 	} else {
 		if plan.defaultBranch != "" {
 			branches = append(branches, treeBranch{plan.defaultBranch, "default branch"})
 		}
 		branches = append(branches, treeBranch{plan.currentBranch, "current branch"})
 	}
-	printRepoTree(plan.repoRoot, branches)
 
-	if plan.defaultURL != "" {
-		ui.Successf("Remote URL preserved: %s", ui.Accent(plan.defaultURL))
+	fmt.Println()
+	fmt.Println(renderRepoLayoutSection(".", branches))
+
+	if outcome := renderMigrateOutcome(plan); outcome != "" {
+		fmt.Println()
+		fmt.Println(outcome)
 	}
-	if len(plan.remotes) > 1 {
-		ui.Successf("Preserved %d remotes", len(plan.remotes))
-	}
-	if len(plan.configs) > 0 {
-		ui.Successf("Preserved %d repo-local config entries", len(plan.configs))
-	}
+
+	hints := []commandHint{{
+		Action:  "Create another worktree",
+		Command: fmt.Sprintf("cd %s && git wt add <branch-name> <branch-name>", plan.repoRoot),
+	}, {
+		Action:  "Open your worktree",
+		Command: fmt.Sprintf("cd %s/%s", plan.repoRoot, plan.currentBranch),
+	}}
 	if plan.stashCount > 0 {
-		ui.Successf("Migrated %d stash(es)", plan.stashCount)
-	}
-	if plan.hasChanges {
-		ui.Successf("Preserved uncommitted changes in %s/", ui.Accent(plan.currentBranch))
-	}
-	if len(plan.untrackedFiles) > 0 {
-		ui.Successf("Preserved %d untracked file(s) in %s/", len(plan.untrackedFiles), ui.Accent(plan.currentBranch))
+		hints = append(hints, commandHint{
+			Action:  "Review migrated stashes",
+			Command: fmt.Sprintf("cd %s/%s && git stash list", plan.repoRoot, plan.currentBranch),
+		})
 	}
 
-	fmt.Printf("\n  To create additional worktrees:\n")
-	fmt.Printf("    %s\n", ui.Muted("cd "+plan.repoRoot))
-	fmt.Printf("    %s\n", ui.Muted("git wt add <branch-name> <branch-name>"))
-	fmt.Printf("\n  To view migrated stashes:\n")
-	fmt.Printf("    %s\n", ui.Muted(fmt.Sprintf("cd %s/%s", plan.repoRoot, plan.currentBranch)))
-	fmt.Printf("    %s\n", ui.Muted("git stash list"))
-	fmt.Printf("\n  Navigate to your worktree:\n")
-	fmt.Printf("    %s\n", ui.Muted(fmt.Sprintf("cd %s/%s", plan.repoRoot, plan.currentBranch)))
+	fmt.Println()
+	fmt.Println(renderCommandHintsSection(hints))
 
 	success = true
 	return nil
@@ -249,33 +245,83 @@ func buildMigratePlan(repoRoot string) (migratePlan, error) {
 	return plan, nil
 }
 
-func printMigratePlan(plan migratePlan) {
-	if plan.defaultURL != "" {
-		fmt.Printf("Remote URL:     %s\n", ui.Accent(plan.defaultURL))
-	} else {
-		ui.Warn("No remote found")
+func renderMigratePlan(plan migratePlan) string {
+	rows := [][]string{
+		{"Repository", ui.Bold(plan.repoName)},
+		{"Path", ui.Path(plan.repoRoot)},
+		{"Current branch", ui.Accent(plan.currentBranch)},
 	}
-
-	fmt.Printf("Repository:      %s\n", ui.Bold(plan.repoName))
-	fmt.Printf("Current branch:  %s\n", ui.Accent(plan.currentBranch))
 	if plan.defaultBranch != "" {
-		fmt.Printf("Default branch:  %s\n", ui.Accent(plan.defaultBranch))
+		rows = append(rows, []string{"Default branch", ui.Accent(plan.defaultBranch)})
 	}
-	fmt.Println()
+	if plan.defaultRemote != "" {
+		rows = append(rows, []string{"Default remote", plan.defaultRemote})
+	}
+	if plan.defaultURL != "" {
+		rows = append(rows, []string{"Remote URL", plan.defaultURL})
+	}
 
+	notes := make([]string, 0, len(plan.warnings)+4)
+	if plan.defaultRemote == "" {
+		notes = append(notes, ui.Yellow("! no remote found"))
+	}
 	if plan.hasChanges {
-		fmt.Printf("%s uncommitted changes %s\n", ui.Yellow("!"), ui.Dim("(will preserve)"))
+		notes = append(notes, ui.Yellow("! uncommitted changes will be preserved"))
 	}
 	if len(plan.untrackedFiles) > 0 {
-		fmt.Printf("%s %d untracked file(s) %s\n", ui.Yellow("!"), len(plan.untrackedFiles), ui.Dim("(will preserve)"))
+		notes = append(notes, ui.Yellow(fmt.Sprintf("! %d untracked file(s) will be preserved", len(plan.untrackedFiles))))
 	}
 	if plan.stashCount > 0 {
-		fmt.Printf("%s %d stash(es) %s\n", ui.Yellow("!"), plan.stashCount, ui.Dim("(will migrate)"))
+		notes = append(notes, ui.Yellow(fmt.Sprintf("! %d stash(es) will be migrated", plan.stashCount)))
 	}
 	for _, warning := range plan.warnings {
-		ui.Warn(warning)
+		notes = append(notes, ui.Yellow("! "+warning))
 	}
-	fmt.Println()
+
+	summaryParts := []string{}
+	if len(plan.remotes) > 0 {
+		summaryParts = append(summaryParts, ui.Subtle(fmt.Sprintf("%d remote(s)", len(plan.remotes))))
+	}
+	if len(plan.configs) > 0 {
+		summaryParts = append(summaryParts, ui.Subtle(fmt.Sprintf("%d config entries preserved", len(plan.configs))))
+	}
+	summary := strings.Join(summaryParts, " • ")
+
+	return renderTableSection([]ui.TableColumn{
+		{Title: "ITEM", MinWidth: 16},
+		{Title: "DETAIL", MinWidth: 28},
+	}, rows, notes, summary)
+}
+
+func renderMigrateOutcome(plan migratePlan) string {
+	rows := make([][]string, 0, 5)
+	if plan.defaultURL != "" {
+		rows = append(rows, []string{"Remote URL", plan.defaultURL})
+	}
+	if len(plan.remotes) > 1 {
+		rows = append(rows, []string{"Remotes", fmt.Sprintf("Preserved %d remotes", len(plan.remotes))})
+	}
+	if len(plan.configs) > 0 {
+		rows = append(rows, []string{"Config", fmt.Sprintf("Preserved %d repo-local entries", len(plan.configs))})
+	}
+	if plan.stashCount > 0 {
+		rows = append(rows, []string{"Stashes", fmt.Sprintf("Migrated %d stash(es)", plan.stashCount)})
+	}
+	if plan.hasChanges {
+		rows = append(rows, []string{"Working tree", fmt.Sprintf("Preserved uncommitted changes in %s", plan.currentBranch)})
+	}
+	if len(plan.untrackedFiles) > 0 {
+		rows = append(rows, []string{"Untracked files", fmt.Sprintf("Preserved %d file(s) in %s", len(plan.untrackedFiles), plan.currentBranch)})
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+
+	summary := ui.Green("Migration artifacts preserved")
+	return renderTableSection([]ui.TableColumn{
+		{Title: "OUTCOME", MinWidth: 16},
+		{Title: "DETAIL", MinWidth: 28},
+	}, rows, nil, summary)
 }
 
 func preflightMigrateRepo(repoRoot string) ([]string, error) {

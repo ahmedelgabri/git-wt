@@ -633,3 +633,19 @@ func TestRenderTableHandlesColoredCells(t *testing.T) {
 		t.Fatalf("RenderTable() collapsed columns: %q", plain)
 	}
 }
+
+func TestRenderTableRespectsMaxWidth(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := RenderTable(
+		[]TableColumn{{Title: "NAME", MaxWidth: 8}, {Title: "DETAIL", MaxWidth: 10}},
+		[][]string{{"feature-very-long", "this should truncate"}},
+	)
+	plain := ansi.Strip(got)
+	if !strings.Contains(plain, "feature…") {
+		t.Fatalf("RenderTable() should truncate narrow column, got %q", plain)
+	}
+	if !strings.Contains(plain, "this shou…") {
+		t.Fatalf("RenderTable() should truncate detail column, got %q", plain)
+	}
+}

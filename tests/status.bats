@@ -18,6 +18,7 @@ teardown() {
 
 	run "$GIT_WT" status
 	[ "$status" -eq 0 ]
+	[[ "$output" != *"Worktree status"* ]]
 	[[ "$output" == *"WORKTREE"* ]]
 	[[ "$output" == *"feature-status"* ]]
 	[[ "$output" == *"dirty"* ]]

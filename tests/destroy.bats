@@ -30,6 +30,7 @@ teardown() {
 	run "$GIT_WT" destroy --dry-run "$TEST_DIR/myrepo/dry-run-destroy"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN"* ]]
+	[[ "$output" == *"Destructive:"* ]]
 	# Worktree should still exist
 	assert_worktree_exists "$TEST_DIR/myrepo/dry-run-destroy"
 	assert_branch_exists "dry-run-destroy"

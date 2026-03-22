@@ -242,6 +242,17 @@ teardown() {
 	[[ $(cat "$wt_dir/link.txt") == "real content" ]]
 }
 
+@test "migrate: prints layout and next steps after success" {
+	init_repo myrepo
+	cd myrepo
+	create_commit "file.txt"
+
+	run bash -c 'echo "y" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"./.bare"* ]]
+	[[ "$output" == *"git wt add <branch-name> <branch-name>"* ]]
+}
+
 @test "migrate: fails when submodules are present" {
 	init_repo lib
 	cd lib

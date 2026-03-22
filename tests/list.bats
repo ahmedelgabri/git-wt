@@ -16,6 +16,7 @@ teardown() {
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
+	[[ "$output" != *"Worktree list"* ]]
 	[[ "$output" == *"WORKTREE"* ]]
 	[[ "$output" == *".bare"* ]]
 	[[ "$output" == *"git database"* ]]
@@ -124,4 +125,15 @@ teardown() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"worktree "* ]]
 	[[ "$output" == *"branch refs/heads/feature-porcelain"* ]]
+}
+
+@test "list: preserves long nested relative paths" {
+	init_bare_repo myrepo
+	cd myrepo
+	long_path="feature/this-is-a-very-long-worktree-path-for-list-rendering"
+	create_worktree "$long_path" "$long_path"
+
+	run env NO_COLOR=1 "$GIT_WT" list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"./$long_path"* ]]
 }
