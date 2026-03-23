@@ -243,8 +243,11 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
 				return err
 			}
 		} else {
-			fmt.Printf("\nBranch %s created locally.\nTo push and set upstream:\n  %s\n",
-				ui.Accent(trackBranch), ui.Muted("git push -u "+remote+" "+trackBranch))
+			fmt.Println()
+			fmt.Println(renderCommandHintsSection([]commandHint{{
+				Action:  fmt.Sprintf("Push %s and set upstream", ui.Accent(trackBranch)),
+				Command: "git push -u " + remote + " " + trackBranch,
+			}}))
 		}
 	}
 

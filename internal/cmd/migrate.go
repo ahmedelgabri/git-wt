@@ -104,7 +104,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// Confirm.
 	if !ui.Confirm("This will restructure the repository. Continue? [y/N]:") {
-		fmt.Println("Migration cancelled.")
+		fmt.Println("Cancelled")
 		return nil
 	}
 

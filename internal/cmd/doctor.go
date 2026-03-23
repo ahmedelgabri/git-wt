@@ -112,6 +112,7 @@ func renderDoctorChecks(checks []doctorCheck) string {
 		{Title: "DETAIL", MinWidth: 24, MaxWidth: 80},
 	}, rows)
 	summary := strings.Join([]string{
+		ui.Subtle(fmt.Sprintf("%d check(s)", len(checks))),
 		ui.Green(fmt.Sprintf("%d ok", okCount)),
 		ui.Yellow(fmt.Sprintf("%d warning(s)", warnCount)),
 		ui.Red(fmt.Sprintf("%d error(s)", errorCount)),
