@@ -178,7 +178,7 @@ func findCleanCandidates(entries []worktree.Entry) ([]cleanCandidate, error) {
 			continue
 		}
 
-		if defaultBranch != "" && branchMergedIntoDefault(entry.Branch, defaultBranch) {
+		if defaultBranch != "" && branchHasRemoteUpstream(entry.Branch) && branchMergedIntoDefault(entry.Branch, defaultBranch) {
 			candidates = append(candidates, cleanCandidate{
 				Action: cleanActionRemove,
 				Target: removalTarget{path: entry.Path, branch: entry.Branch},
@@ -248,6 +248,14 @@ func upstreamGone(path, branch string) (bool, error) {
 		return false, err
 	}
 	return strings.Contains(out, "[gone]"), nil
+}
+
+func branchHasRemoteUpstream(branch string) bool {
+	out, err := git.Query("for-each-ref", "--format=%(upstream)", "refs/heads/"+branch)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(out), "refs/remotes/")
 }
 
 func branchMergedIntoDefault(branch, defaultBranch string) bool {
