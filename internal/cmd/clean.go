@@ -117,7 +117,7 @@ func renderCleanCandidates(candidates []cleanCandidate) string {
 		ui.Red(fmt.Sprintf("%d remove", removeCount)),
 		ui.Yellow(fmt.Sprintf("%d prune", pruneCount)),
 	}, " • ")
-	return ui.Section("Cleanup candidates", body, summary)
+	return ui.Section("", body, "", summary)
 }
 
 func renderCleanAction(action cleanAction) string {
