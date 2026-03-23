@@ -11,7 +11,9 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 type cleanAction string
@@ -35,7 +37,11 @@ var cleanCmd = &cobra.Command{
 This command removes linked worktrees whose branches are fully merged into the
 repository default branch, removes worktrees whose upstream is gone, and prunes
 stale worktree metadata. Dirty, locked, detached, current, and default-branch
-worktrees are skipped automatically.`,
+worktrees are skipped automatically.
+
+On interactive terminals the candidates are shown with checkboxes so you can
+select which ones to clean. Use space to toggle, a to toggle all, enter to
+confirm, and esc to cancel.`,
 	Example: `  git wt clean --dry-run
   git wt clean`,
 	SilenceUsage:  true,
@@ -73,20 +79,28 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Println(renderCleanCandidates(candidates))
-
+	// Dry-run: show candidates non-interactively
 	if dryRun {
+		fmt.Println(renderCleanCandidates(candidates))
 		fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
 		return nil
 	}
 
+	// Interactive selection on TTY
+	if term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stdin.Fd())) {
+		return runCleanInteractive(candidates)
+	}
+
+	// Non-TTY fallback: confirm all
+	fmt.Println(renderCleanCandidates(candidates))
 	if !ui.Confirm("Continue cleaning these worktrees? [y/N]:") {
 		fmt.Println("Cancelled")
 		return nil
 	}
-
 	return executeClean(candidates)
 }
+
+// ---------- non-interactive rendering ----------
 
 func renderCleanCandidates(candidates []cleanCandidate) string {
 	rows := make([][]string, 0, len(candidates))
@@ -106,18 +120,26 @@ func renderCleanCandidates(candidates []cleanCandidate) string {
 		})
 	}
 
-	body := ui.RenderTable([]ui.TableColumn{
+	body := ui.RenderTable(cleanColumns(), rows)
+	summary := cleanSummary(len(candidates), removeCount, pruneCount)
+	return ui.Section("", body, "", summary)
+}
+
+func cleanColumns() []ui.TableColumn {
+	return []ui.TableColumn{
 		{Title: "ACTION", MinWidth: 8, MaxWidth: 10},
 		{Title: "WORKTREE", MinWidth: 12, MaxWidth: 24},
 		{Title: "BRANCH", MinWidth: 12, MaxWidth: 24},
 		{Title: "REASON", MinWidth: 24, MaxWidth: 72},
-	}, rows)
-	summary := strings.Join([]string{
-		ui.Subtle(fmt.Sprintf("%d candidate(s)", len(candidates))),
+	}
+}
+
+func cleanSummary(total, removeCount, pruneCount int) string {
+	return strings.Join([]string{
+		ui.Subtle(fmt.Sprintf("%d candidate(s)", total)),
 		ui.Red(fmt.Sprintf("%d remove", removeCount)),
 		ui.Yellow(fmt.Sprintf("%d prune", pruneCount)),
 	}, " • ")
-	return ui.Section("", body, "", summary)
 }
 
 func renderCleanAction(action cleanAction) string {
@@ -128,6 +150,144 @@ func renderCleanAction(action cleanAction) string {
 		return ui.Red("remove")
 	}
 }
+
+// ---------- interactive selection (TTY) ----------
+
+type cleanModel struct {
+	candidates []cleanCandidate
+	selected   []bool
+	cursor     int
+	done       bool
+	cancelled  bool
+}
+
+func newCleanModel(candidates []cleanCandidate) cleanModel {
+	selected := make([]bool, len(candidates))
+	for i := range selected {
+		selected[i] = true
+	}
+	return cleanModel{
+		candidates: candidates,
+		selected:   selected,
+	}
+}
+
+func runCleanInteractive(candidates []cleanCandidate) error {
+	m := newCleanModel(candidates)
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+	cm := result.(cleanModel)
+	if cm.cancelled {
+		fmt.Println("Cancelled")
+		return nil
+	}
+
+	var selected []cleanCandidate
+	for i, c := range cm.candidates {
+		if cm.selected[i] {
+			selected = append(selected, c)
+		}
+	}
+
+	if len(selected) == 0 {
+		fmt.Println(ui.Subtle("No candidates selected"))
+		return nil
+	}
+
+	return executeClean(selected)
+}
+
+func (m cleanModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m cleanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.candidates)-1 {
+				m.cursor++
+			}
+		case " ":
+			m.selected[m.cursor] = !m.selected[m.cursor]
+		case "a":
+			allSelected := true
+			for _, s := range m.selected {
+				if !s {
+					allSelected = false
+					break
+				}
+			}
+			for i := range m.selected {
+				m.selected[i] = !allSelected
+			}
+		case "enter":
+			m.done = true
+			return m, tea.Quit
+		case "esc", "ctrl+c", "q":
+			m.cancelled = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m cleanModel) View() string {
+	if m.done || m.cancelled {
+		return ""
+	}
+
+	rows := make([][]string, len(m.candidates))
+	for i, c := range m.candidates {
+		cursor := " "
+		if i == m.cursor {
+			cursor = ui.Accent("▸")
+		}
+		check := ui.Subtle("○")
+		if m.selected[i] {
+			check = ui.Green("✓")
+		}
+
+		rows[i] = []string{
+			cursor + " " + check,
+			renderCleanAction(c.Action),
+			filepath.Base(c.Target.path),
+			c.Target.branchLabel(),
+			c.Reason,
+		}
+	}
+
+	body := ui.RenderTable([]ui.TableColumn{
+		{Title: " ", MinWidth: 4},
+		{Title: "ACTION", MinWidth: 8, MaxWidth: 10},
+		{Title: "WORKTREE", MinWidth: 12, MaxWidth: 24},
+		{Title: "BRANCH", MinWidth: 12, MaxWidth: 24},
+		{Title: "REASON", MinWidth: 24, MaxWidth: 72},
+	}, rows)
+
+	selectedCount := 0
+	for _, s := range m.selected {
+		if s {
+			selectedCount++
+		}
+	}
+	summary := ui.Subtle(fmt.Sprintf("%d of %d selected", selectedCount, len(m.candidates)))
+	section := ui.Section("", body, "", summary)
+
+	help := ui.Subtle("↑/↓ navigate · space select · a all · enter confirm · esc cancel")
+
+	return section + "\n" + help + "\n"
+}
+
+// ---------- candidate discovery ----------
 
 func findCleanCandidates(entries []worktree.Entry) ([]cleanCandidate, error) {
 	defaultBranch := worktree.DefaultBranch(worktree.DefaultRemote())
@@ -190,6 +350,8 @@ func findCleanCandidates(entries []worktree.Entry) ([]cleanCandidate, error) {
 	return candidates, nil
 }
 
+// ---------- execution ----------
+
 func executeClean(candidates []cleanCandidate) error {
 	var removeTargets []removalTarget
 	var pruneTargets []removalTarget
@@ -219,6 +381,8 @@ func executeClean(candidates []cleanCandidate) error {
 
 	return nil
 }
+
+// ---------- helpers ----------
 
 func pruneReason(entry worktree.Entry) (string, bool) {
 	if entry.Prunable {
