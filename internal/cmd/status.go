@@ -12,22 +12,35 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
-type worktreeStatusSummary struct {
-	Workspace  string
-	Path       string
-	Branch     string
-	Dirty      bool
-	Upstream   string
-	Ahead      int
-	Behind     int
-	LastCommit string
-	Flags      string
-	Current    bool
+// ---------- row ----------
+
+type statusRow struct {
+	entryPath string // absolute worktree path (for git commands)
+	workspace string
+	branch    string
+	path      string // display path
+	flags     string
+	current   bool
+
+	// populated asynchronously (or synchronously for non-TTY)
+	loaded     bool
+	dirty      bool
+	upstream   string
+	ahead      int
+	behind     int
+	lastCommit string
+	fetchErr   error
 }
+
+// ---------- command ----------
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
@@ -50,17 +63,12 @@ last commit age, and a repo-relative path for each worktree.`,
 		}
 
 		currentRoot, _ := currentWorktreeRoot()
-		summaries := make([]worktreeStatusSummary, 0, len(entries))
-		for _, entry := range entries {
-			summary, err := summarizeWorktreeStatus(entry, currentRoot)
-			if err != nil {
-				return err
-			}
-			summaries = append(summaries, summary)
-		}
+		rows := buildStatusRows(entries, currentRoot)
 
-		slices.SortFunc(summaries, compareStatusSummaries)
-		return printWorktreeStatuses(summaries)
+		if !term.IsTerminal(int(os.Stdout.Fd())) {
+			return runStatusSync(rows)
+		}
+		return runStatusAsync(rows)
 	},
 }
 
@@ -68,56 +76,306 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 }
 
-func summarizeWorktreeStatus(entry worktree.Entry, currentRoot string) (worktreeStatusSummary, error) {
-	statusOut, err := git.QueryIn(entry.Path, "status", "--porcelain=v2", "--branch")
-	if err != nil {
-		return worktreeStatusSummary{}, err
+// ---------- shared row building ----------
+
+func buildStatusRows(entries []worktree.Entry, currentRoot string) []statusRow {
+	rows := make([]statusRow, len(entries))
+	for i, entry := range entries {
+		current := samePath(entry.Path, currentRoot)
+		branch := entry.Branch
+		if entry.Detached {
+			branch = "detached HEAD"
+		}
+		if branch == "" {
+			branch = "no branch"
+		}
+
+		flags := make([]string, 0, 2)
+		if current {
+			flags = append(flags, ui.Accent("current"))
+		}
+		if entry.Locked {
+			flags = append(flags, ui.Yellow("locked"))
+		}
+		if len(flags) == 0 {
+			flags = append(flags, ui.Subtle("—"))
+		}
+
+		workspace := workspaceName(entry.Path)
+		if current {
+			workspace = ui.Accent(workspace)
+		}
+
+		rows[i] = statusRow{
+			entryPath: entry.Path,
+			workspace: workspace,
+			branch:    branch,
+			path:      displayWorktreePath(entry.Path),
+			flags:     strings.Join(flags, ", "),
+			current:   current,
+		}
 	}
 
+	slices.SortFunc(rows, func(a, b statusRow) int {
+		switch {
+		case a.current && !b.current:
+			return -1
+		case !a.current && b.current:
+			return 1
+		default:
+			return strings.Compare(ansiLess(a.workspace), ansiLess(b.workspace))
+		}
+	})
+
+	return rows
+}
+
+func statusColumns() []ui.TableColumn {
+	return []ui.TableColumn{
+		{Title: "WORKTREE", MinWidth: 12},
+		{Title: "BRANCH", MinWidth: 12},
+		{Title: "STATE", MinWidth: 10},
+		{Title: "SYNC", MinWidth: 10},
+		{Title: "LAST COMMIT", MinWidth: 11},
+		{Title: "FLAGS", MinWidth: 8},
+		{Title: "PATH", MinWidth: 20},
+	}
+}
+
+func statusSummaryLine(total, clean, dirty int) string {
+	return strings.Join([]string{
+		ui.Subtle(fmt.Sprintf("%d worktree(s)", total)),
+		ui.Green(fmt.Sprintf("%d clean", clean)),
+		ui.Yellow(fmt.Sprintf("%d dirty", dirty)),
+	}, " • ")
+}
+
+// ---------- sync path (non-TTY / piped) ----------
+
+func runStatusSync(rows []statusRow) error {
+	for i := range rows {
+		fetchStatusInto(&rows[i])
+	}
+	return printStatusTable(rows)
+}
+
+func fetchStatusInto(row *statusRow) {
+	statusOut, err := git.QueryIn(row.entryPath, "status", "--porcelain=v2", "--branch")
+	if err != nil {
+		row.loaded = true
+		row.fetchErr = err
+		return
+	}
 	upstream, ahead, behind, dirty := parseBranchStatus(statusOut)
 	lastCommit := "n/a"
-	if ts, err := git.QueryIn(entry.Path, "log", "-1", "--format=%ct"); err == nil && ts != "" {
+	if ts, err := git.QueryIn(row.entryPath, "log", "-1", "--format=%ct"); err == nil && ts != "" {
 		lastCommit = humanizeCommitAge(ts)
 	}
-
-	branch := entry.Branch
-	if entry.Detached {
-		branch = "detached HEAD"
-	}
-	if branch == "" {
-		branch = "no branch"
-	}
-
-	current := samePath(entry.Path, currentRoot)
-	flags := make([]string, 0, 2)
-	if current {
-		flags = append(flags, ui.Accent("current"))
-	}
-	if entry.Locked {
-		flags = append(flags, ui.Yellow("locked"))
-	}
-	if len(flags) == 0 {
-		flags = append(flags, ui.Subtle("—"))
-	}
-
-	workspace := workspaceName(entry.Path)
-	if current {
-		workspace = ui.Accent(workspace)
-	}
-
-	return worktreeStatusSummary{
-		Workspace:  workspace,
-		Path:       displayWorktreePath(entry.Path),
-		Branch:     branch,
-		Dirty:      dirty,
-		Upstream:   upstream,
-		Ahead:      ahead,
-		Behind:     behind,
-		LastCommit: lastCommit,
-		Flags:      strings.Join(flags, ", "),
-		Current:    current,
-	}, nil
+	row.loaded = true
+	row.dirty = dirty
+	row.upstream = upstream
+	row.ahead = ahead
+	row.behind = behind
+	row.lastCommit = lastCommit
 }
+
+func printStatusTable(rows []statusRow) error {
+	tableRows := make([][]string, 0, len(rows))
+	dirtyCount := 0
+	for _, row := range rows {
+		if row.dirty {
+			dirtyCount++
+		}
+		state := formatWorktreeState(row.dirty)
+		sync := formatSyncState(row.upstream, row.ahead, row.behind)
+		commit := row.lastCommit
+		if row.fetchErr != nil {
+			state = ui.Red("● error")
+			sync = ui.Subtle("—")
+			commit = ui.Subtle("—")
+		}
+		tableRows = append(tableRows, []string{
+			row.workspace,
+			row.branch,
+			state,
+			sync,
+			commit,
+			row.flags,
+			row.path,
+		})
+	}
+
+	body := ui.RenderTable(statusColumns(), tableRows)
+	cleanCount := len(rows) - dirtyCount
+	summary := statusSummaryLine(len(rows), cleanCount, dirtyCount)
+	fmt.Println(ui.Section("", body, "", summary))
+	return nil
+}
+
+// ---------- async path (TTY with bubbletea) ----------
+
+type statusResultMsg struct {
+	index      int
+	dirty      bool
+	upstream   string
+	ahead      int
+	behind     int
+	lastCommit string
+	err        error
+}
+
+type statusModel struct {
+	spinner spinner.Model
+	rows    []statusRow
+	pending int
+	err     error
+}
+
+func runStatusAsync(rows []statusRow) error {
+	m := statusModel{
+		spinner: spinner.New(
+			spinner.WithSpinner(spinner.MiniDot),
+			spinner.WithStyle(lipgloss.NewStyle().Foreground(ui.SubtleColor())),
+		),
+		rows:    rows,
+		pending: len(rows),
+	}
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+	if sm, ok := result.(statusModel); ok && sm.err != nil {
+		return sm.err
+	}
+	return nil
+}
+
+func (m statusModel) Init() tea.Cmd {
+	cmds := make([]tea.Cmd, 0, len(m.rows)+1)
+	cmds = append(cmds, m.spinner.Tick)
+	for i, row := range m.rows {
+		cmds = append(cmds, fetchWorktreeStatusCmd(i, row.entryPath))
+	}
+	return tea.Batch(cmds...)
+}
+
+func fetchWorktreeStatusCmd(index int, path string) tea.Cmd {
+	return func() tea.Msg {
+		statusOut, err := git.QueryIn(path, "status", "--porcelain=v2", "--branch")
+		if err != nil {
+			return statusResultMsg{index: index, err: err}
+		}
+		upstream, ahead, behind, dirty := parseBranchStatus(statusOut)
+		lastCommit := "n/a"
+		if ts, err := git.QueryIn(path, "log", "-1", "--format=%ct"); err == nil && ts != "" {
+			lastCommit = humanizeCommitAge(ts)
+		}
+		return statusResultMsg{
+			index:      index,
+			dirty:      dirty,
+			upstream:   upstream,
+			ahead:      ahead,
+			behind:     behind,
+			lastCommit: lastCommit,
+		}
+	}
+}
+
+func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case statusResultMsg:
+		m.rows[msg.index].loaded = true
+		m.pending--
+		if msg.err != nil {
+			m.rows[msg.index].fetchErr = msg.err
+		} else {
+			m.rows[msg.index].dirty = msg.dirty
+			m.rows[msg.index].upstream = msg.upstream
+			m.rows[msg.index].ahead = msg.ahead
+			m.rows[msg.index].behind = msg.behind
+			m.rows[msg.index].lastCommit = msg.lastCommit
+		}
+		if m.pending == 0 {
+			return m, tea.Quit
+		}
+		return m, nil
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			m.err = fmt.Errorf("interrupted")
+			return m, tea.Quit
+		}
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m statusModel) View() string {
+	tableRows := make([][]string, 0, len(m.rows))
+	for _, row := range m.rows {
+		tableRows = append(tableRows, []string{
+			row.workspace,
+			row.branch,
+			m.stateCell(row),
+			m.syncCell(row),
+			m.commitCell(row),
+			row.flags,
+			row.path,
+		})
+	}
+
+	body := ui.RenderTable(statusColumns(), tableRows)
+
+	if m.pending == 0 {
+		dirtyCount := 0
+		for _, row := range m.rows {
+			if row.dirty {
+				dirtyCount++
+			}
+		}
+		summary := statusSummaryLine(len(m.rows), len(m.rows)-dirtyCount, dirtyCount)
+		return ui.Section("", body, "", summary) + "\n"
+	}
+
+	loaded := len(m.rows) - m.pending
+	progress := ui.Subtle(fmt.Sprintf("loading %d/%d…", loaded, len(m.rows)))
+	return ui.Section("", body, "", progress) + "\n"
+}
+
+func (m statusModel) stateCell(row statusRow) string {
+	if !row.loaded {
+		return m.spinner.View() + ui.Subtle(" …")
+	}
+	if row.fetchErr != nil {
+		return ui.Red("● error")
+	}
+	return formatWorktreeState(row.dirty)
+}
+
+func (m statusModel) syncCell(row statusRow) string {
+	if !row.loaded {
+		return m.spinner.View() + ui.Subtle(" …")
+	}
+	if row.fetchErr != nil {
+		return ui.Subtle("—")
+	}
+	return formatSyncState(row.upstream, row.ahead, row.behind)
+}
+
+func (m statusModel) commitCell(row statusRow) string {
+	if !row.loaded {
+		return ui.Subtle("…")
+	}
+	if row.fetchErr != nil {
+		return ui.Subtle("—")
+	}
+	return row.lastCommit
+}
+
+// ---------- formatting helpers ----------
 
 func parseBranchStatus(output string) (upstream string, ahead, behind int, dirty bool) {
 	for line := range strings.SplitSeq(output, "\n") {
@@ -141,44 +399,6 @@ func parseBranchStatus(output string) (upstream string, ahead, behind int, dirty
 	return upstream, ahead, behind, dirty
 }
 
-func printWorktreeStatuses(summaries []worktreeStatusSummary) error {
-	rows := make([][]string, 0, len(summaries))
-	dirtyCount := 0
-	for _, summary := range summaries {
-		if summary.Dirty {
-			dirtyCount++
-		}
-		rows = append(rows, []string{
-			summary.Workspace,
-			summary.Branch,
-			formatWorktreeState(summary.Dirty),
-			formatSyncState(summary.Upstream, summary.Ahead, summary.Behind),
-			summary.LastCommit,
-			summary.Flags,
-			summary.Path,
-		})
-	}
-
-	body := ui.RenderTable([]ui.TableColumn{
-		{Title: "WORKTREE", MinWidth: 12},
-		{Title: "BRANCH", MinWidth: 12},
-		{Title: "STATE", MinWidth: 10},
-		{Title: "SYNC", MinWidth: 10},
-		{Title: "LAST COMMIT", MinWidth: 11},
-		{Title: "FLAGS", MinWidth: 8},
-		{Title: "PATH", MinWidth: 20},
-	}, rows)
-
-	cleanCount := len(summaries) - dirtyCount
-	summaryLine := strings.Join([]string{
-		ui.Subtle(fmt.Sprintf("%d worktree(s)", len(summaries))),
-		ui.Green(fmt.Sprintf("%d clean", cleanCount)),
-		ui.Yellow(fmt.Sprintf("%d dirty", dirtyCount)),
-	}, " • ")
-	fmt.Println(ui.Section("", body, "", summaryLine))
-	return nil
-}
-
 func formatWorktreeState(dirty bool) string {
 	if dirty {
 		return ui.Yellow("● dirty")
@@ -199,21 +419,6 @@ func formatSyncState(upstream string, ahead, behind int) string {
 		return ui.Accent(fmt.Sprintf("↑%d ahead", ahead))
 	default:
 		return ui.Yellow(fmt.Sprintf("↓%d behind", behind))
-	}
-}
-
-func compareStatusSummaries(a, b worktreeStatusSummary) int {
-	switch {
-	case a.Current && !b.Current:
-		return -1
-	case !a.Current && b.Current:
-		return 1
-	case a.Dirty && !b.Dirty:
-		return -1
-	case !a.Dirty && b.Dirty:
-		return 1
-	default:
-		return strings.Compare(ansiLess(a.Workspace), ansiLess(b.Workspace))
 	}
 }
 
