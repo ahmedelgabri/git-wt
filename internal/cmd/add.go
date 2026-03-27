@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -21,7 +22,10 @@ select from remote branches or create a new branch. All git worktree add
 flags are supported (-b, -B, -d, --lock, --quiet, etc).
 
 Always fetches from the remote before creating the worktree. When using -b/-B,
-upstream tracking is set automatically if the branch exists on the remote.`,
+upstream tracking is set automatically if the branch exists on the remote.
+
+On success, prints the absolute created worktree path to stdout. Human-oriented
+progress, prompts, and hints are written to stderr.`,
 	Example: `  git wt add                               # Interactive selection
   git wt add feature origin/feature        # From remote branch
   git wt add -b new-feature new-feature    # New branch
@@ -62,7 +66,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		if err := fetchInteractiveBranches(); err != nil {
 			return err
 		}
-		return runAddInteractive()
+		createdPath, err := runAddInteractive()
+		if err != nil {
+			return err
+		}
+		return printCreatedWorktreePath(createdPath)
 	}
 
 	remote := worktree.DefaultRemote()
@@ -75,7 +83,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Non-interactive: build git args from parsed flags.
-	return runAddDirect(cmd, args, remote)
+	createdPath, err := runAddDirect(cmd, args, remote)
+	if err != nil {
+		return err
+	}
+	return printCreatedWorktreePath(createdPath)
 }
 
 func fetchInteractiveBranches() error {
@@ -89,7 +101,7 @@ func fetchInteractiveBranches() error {
 	})
 }
 
-func runAddInteractive() error {
+func runAddInteractive() (string, error) {
 	// Build set of branches already checked out as worktrees.
 	checkedOut := make(map[string]bool)
 	if entries, err := worktree.List(); err == nil {
@@ -110,7 +122,7 @@ func runAddInteractive() error {
 	// Get remote branches (excluding HEAD).
 	lines, err := git.QueryLines("branch", "-r", "--format=%(refname:short)")
 	if err != nil {
-		return fmt.Errorf("failed to list remote branches: %w", err)
+		return "", fmt.Errorf("failed to list remote branches: %w", err)
 	}
 
 	for _, remoteRef := range lines {
@@ -138,11 +150,11 @@ func runAddInteractive() error {
 		PreviewCmd: previewBranchCmdStr(),
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if result.Canceled || len(result.Items) == 0 {
-		return nil
+		return "", nil
 	}
 
 	selected := result.Items[0]
@@ -153,7 +165,7 @@ func runAddInteractive() error {
 
 	remote, branch := splitRemoteBranchRef(selected.Value)
 	if remote == "" || branch == "" {
-		return fmt.Errorf("invalid remote branch ref: %s", selected.Value)
+		return "", fmt.Errorf("invalid remote branch ref: %s", selected.Value)
 	}
 
 	wtPath := promptWorktreePath(branch)
@@ -162,32 +174,35 @@ func runAddInteractive() error {
 	if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(w io.Writer) error {
 		return git.RunTo(w, "worktree", "add", "-b", branch, wtPath, selected.Value)
 	}); err != nil {
-		return err
+		return "", err
 	}
 
 	// Set upstream tracking.
 	if err := ui.SpinWithOutput(fmt.Sprintf("Setting upstream to %s", ui.Accent(selected.Value)), func(w io.Writer) error {
 		return git.RunTo(w, "branch", "--set-upstream-to="+selected.Value, branch)
 	}); err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return wtPath, nil
 }
 
-func createNewBranch() error {
+func createNewBranch() (string, error) {
 	branchName := ui.PromptInput("Enter new branch name:")
 
 	if branchName == "" {
 		ui.Error("Branch name cannot be empty")
-		return fmt.Errorf("branch name cannot be empty")
+		return "", fmt.Errorf("branch name cannot be empty")
 	}
 
 	wtPath := promptWorktreePath(branchName)
 
-	return ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func(w io.Writer) error {
+	if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func(w io.Writer) error {
 		return git.RunTo(w, "worktree", "add", "-b", branchName, wtPath)
-	})
+	}); err != nil {
+		return "", err
+	}
+	return wtPath, nil
 }
 
 func promptWorktreePath(defaultPath string) string {
@@ -198,7 +213,7 @@ func promptWorktreePath(defaultPath string) string {
 	return wtPath
 }
 
-func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
+func runAddDirect(cmd *cobra.Command, args []string, remote string) (string, error) {
 	var gitArgs []string
 
 	branch, _ := cmd.Flags().GetString("branch")
@@ -222,12 +237,17 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
 	// Append positional args (path, commit-ish).
 	gitArgs = append(gitArgs, args...)
 
+	createdPath := ""
+	if len(args) > 0 {
+		createdPath = args[0]
+	}
+
 	// Create the worktree.
 	fullArgs := append([]string{"worktree", "add"}, gitArgs...)
 	if err := ui.SpinWithOutput("Creating worktree", func(w io.Writer) error {
 		return git.RunTo(w, fullArgs...)
 	}); err != nil {
-		return err
+		return "", err
 	}
 
 	// Set upstream tracking if -b/-B was used.
@@ -240,21 +260,36 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
 			if err := ui.SpinWithOutput(fmt.Sprintf("Setting upstream to %s", ui.Accent(remote+"/"+trackBranch)), func(w io.Writer) error {
 				return git.RunTo(w, "branch", "--set-upstream-to="+remote+"/"+trackBranch, trackBranch)
 			}); err != nil {
-				return err
+				return "", err
 			}
 		} else {
-			fmt.Println()
-			fmt.Println(renderCommandHintsSection([]commandHint{{
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, renderCommandHintsSection([]commandHint{{
 				Action:  fmt.Sprintf("Push %s and set upstream", ui.Accent(trackBranch)),
 				Command: "git push -u " + remote + " " + trackBranch,
 			}}))
 		}
 	}
 
-	return nil
+	return createdPath, nil
 }
 
 func splitRemoteBranchRef(remoteRef string) (remote string, branch string) {
 	remote, branch, _ = strings.Cut(remoteRef, "/")
 	return remote, branch
+}
+
+func printCreatedWorktreePath(path string) error {
+	if path == "" {
+		return nil
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if resolvedPath, err := filepath.EvalSymlinks(absPath); err == nil {
+		absPath = resolvedPath
+	}
+	fmt.Println(absPath)
+	return nil
 }

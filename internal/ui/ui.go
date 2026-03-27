@@ -168,14 +168,14 @@ func useSimpleIO() bool {
 // Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
 func Confirm(msg string) bool {
 	if useSimpleIO() {
-		fmt.Printf("%s %s ", Accent("?"), msg)
+		fmt.Fprintf(os.Stderr, "%s %s ", Accent("?"), msg)
 		reader := getReader()
 		input, _ := reader.ReadString('\n')
 		return strings.TrimSpace(input) == "y"
 	}
 
 	m := newConfirmModel(msg)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
 		return false
@@ -187,14 +187,14 @@ func Confirm(msg string) bool {
 // Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
 func PromptInput(msg string) string {
 	if useSimpleIO() {
-		fmt.Printf("%s %s ", Accent("?"), msg)
+		fmt.Fprintf(os.Stderr, "%s %s ", Accent("?"), msg)
 		reader := getReader()
 		input, _ := reader.ReadString('\n')
 		return strings.TrimSpace(input)
 	}
 
 	m := newInputModel(msg, Accent("?"), "")
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
 		return ""
@@ -207,14 +207,14 @@ func PromptInput(msg string) string {
 // Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
 func PromptDangerous(msg, expect string) bool {
 	if useSimpleIO() {
-		fmt.Printf("%s %s ", Red("!"), msg)
+		fmt.Fprintf(os.Stderr, "%s %s ", Red("!"), msg)
 		reader := getReader()
 		input, _ := reader.ReadString('\n')
 		return strings.TrimSpace(input) == expect
 	}
 
 	m := newInputModel(msg, Red("!"), "")
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
 		return false
@@ -228,17 +228,17 @@ func PromptDangerous(msg, expect string) bool {
 // git.Query instead of git.Run).
 func Spin(msg string, fn func() error) error {
 	if useSimpleIO() {
-		fmt.Printf("%s %s...\n", Accent("●"), msg)
+		fmt.Fprintf(os.Stderr, "%s %s...\n", Accent("●"), msg)
 		if err := fn(); err != nil {
-			fmt.Printf("%s %s\n", Red("●"), msg)
+			fmt.Fprintf(os.Stderr, "%s %s\n", Red("●"), msg)
 			return err
 		}
-		fmt.Printf("%s %s\n", Green("●"), msg)
+		fmt.Fprintf(os.Stderr, "%s %s\n", Green("●"), msg)
 		return nil
 	}
 
 	m := newSpinnerModel(msg, fn)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
 		return err
@@ -246,16 +246,16 @@ func Spin(msg string, fn func() error) error {
 	return result.(spinnerModel).err
 }
 
-// SpinWithOutput prints a status message, runs fn with an io.Writer
-// connected to stderr so subprocess output is visible, then prints
-// the result. Stderr is used so that stdout remains clean for
-// structured output and BATS test assertions.
+// SpinWithOutput prints a status message to stderr, runs fn with an io.Writer
+// connected to stderr so subprocess output is visible, then prints the result.
+// Stderr is used so that stdout remains clean for machine-readable output and
+// test assertions.
 func SpinWithOutput(msg string, fn func(w io.Writer) error) error {
-	fmt.Printf("%s %s\n", Accent("●"), msg)
+	fmt.Fprintf(os.Stderr, "%s %s\n", Accent("●"), msg)
 	if err := fn(os.Stderr); err != nil {
-		fmt.Printf("%s %s\n", Red("●"), msg)
+		fmt.Fprintf(os.Stderr, "%s %s\n", Red("●"), msg)
 		return err
 	}
-	fmt.Printf("%s %s\n", Green("●"), msg)
+	fmt.Fprintf(os.Stderr, "%s %s\n", Green("●"), msg)
 	return nil
 }

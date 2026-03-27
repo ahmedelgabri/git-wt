@@ -20,6 +20,48 @@ teardown() {
 	assert_branch_exists "feature-x"
 }
 
+@test "add: prints absolute created path to stdout and status to stderr" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	local stdout_file stderr_file stdout_text stderr_text
+	stdout_file="$TEST_DIR/stdout.txt"
+	stderr_file="$TEST_DIR/stderr.txt"
+
+	"$GIT_WT" add -b path-only path-only >"$stdout_file" 2>"$stderr_file"
+
+	stdout_text=$(cat "$stdout_file")
+	stderr_text=$(cat "$stderr_file")
+	[ "$stdout_text" = "$TEST_DIR/myrepo/path-only" ]
+	[[ "$stderr_text" == *"Creating worktree"* ]]
+	[[ "$stderr_text" == *"git push -u origin path-only"* ]]
+	assert_worktree_exists "$TEST_DIR/myrepo/path-only"
+	assert_branch_exists "path-only"
+}
+
+@test "add: interactive mode keeps stdout machine-readable" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	command git checkout -b remote-only --quiet
+	create_commit "remote-only.txt"
+	command git push --quiet -u origin remote-only
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D remote-only --quiet
+
+	local stdout_file stderr_file stdout_text stderr_text
+	stdout_file="$TEST_DIR/stdout.txt"
+	stderr_file="$TEST_DIR/stderr.txt"
+
+	printf '\n' | env GIT_WT_SELECT="origin/remote-only" "$GIT_WT" add >"$stdout_file" 2>"$stderr_file"
+
+	stdout_text=$(cat "$stdout_file")
+	stderr_text=$(cat "$stderr_file")
+	[ "$stdout_text" = "$TEST_DIR/myrepo/remote-only" ]
+	[[ "$stderr_text" == *"Enter worktree path"* ]]
+	assert_worktree_exists "$TEST_DIR/myrepo/remote-only"
+	assert_branch_exists "remote-only"
+}
+
 @test "add: creates worktree from remote branch" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
