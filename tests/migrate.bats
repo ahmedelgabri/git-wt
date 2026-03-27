@@ -143,6 +143,22 @@ teardown() {
 	[[ "$remote_url" == *"myrepo-origin"* ]]
 }
 
+@test "migrate: preserves local commits when branch is ahead of remote" {
+	init_repo_with_remote myrepo
+	cd myrepo
+	create_commit "ahead.txt"
+
+	local before_sha
+	before_sha=$(command git rev-parse HEAD)
+
+	echo "y" | "$GIT_WT" migrate
+
+	cd "$TEST_DIR/myrepo/main"
+	local after_sha
+	after_sha=$(command git rev-parse HEAD)
+	[ "$after_sha" = "$before_sha" ]
+}
+
 @test "migrate: preserves multiple remotes" {
 	init_repo_with_remote myrepo
 	mkdir -p "$TEST_DIR/myrepo-upstream"

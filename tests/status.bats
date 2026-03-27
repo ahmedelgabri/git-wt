@@ -37,6 +37,19 @@ teardown() {
 	[[ "$output" == *"detached-status"* ]]
 }
 
+@test "status: counts worktree errors separately from clean worktrees" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree stale-status stale-status
+	rm -rf "$TEST_DIR/myrepo/stale-status"
+
+	run "$GIT_WT" status
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"● error"* ]]
+	[[ "$output" == *"0 clean"* ]]
+	[[ "$output" == *"1 error"* ]]
+}
+
 @test "status: fails outside git repo" {
 	run "$GIT_WT" status
 	[ "$status" -ne 0 ]

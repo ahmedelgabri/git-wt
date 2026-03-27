@@ -22,28 +22,42 @@ func configureBareRepo(dir string) error {
 }
 
 // cleanupLocalBranchRefs removes local branch refs that a bare clone creates as
-// copies of remote branches, while preserving branches that exist only locally.
+// exact duplicates of remote-tracking refs, while preserving local branches
+// whose commits differ from the remote.
 func cleanupLocalBranchRefs(dir string) {
-	refs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)", "refs/heads")
-	if refs == "" {
+	localRefs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/heads")
+	if localRefs == "" {
 		return
 	}
 
-	remoteRefs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
-	remoteBranches := make(map[string]bool)
-	for remoteRef := range strings.SplitSeq(remoteRefs, "\n") {
-		remoteRef = strings.TrimSpace(remoteRef)
-		if remoteRef == "" || strings.HasSuffix(remoteRef, "/HEAD") {
+	remoteRefs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/remotes")
+	remoteBranches := make(map[string]map[string]bool)
+	for line := range strings.SplitSeq(remoteRefs, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		remoteRef, oid, ok := strings.Cut(line, "\t")
+		if !ok || remoteRef == "" || oid == "" || strings.HasSuffix(remoteRef, "/HEAD") {
 			continue
 		}
 		if _, branch, ok := strings.Cut(remoteRef, "/"); ok && branch != "" {
-			remoteBranches[branch] = true
+			if remoteBranches[branch] == nil {
+				remoteBranches[branch] = make(map[string]bool)
+			}
+			remoteBranches[branch][oid] = true
 		}
 	}
 
-	for ref := range strings.SplitSeq(refs, "\n") {
-		ref = strings.TrimSpace(ref)
-		if ref == "" || !remoteBranches[ref] {
+	for line := range strings.SplitSeq(localRefs, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		ref, oid, ok := strings.Cut(line, "\t")
+		if !ok || ref == "" || oid == "" || !remoteBranches[ref][oid] {
 			continue
 		}
 		git.RunInWithOutput(dir, "branch", "-D", ref)

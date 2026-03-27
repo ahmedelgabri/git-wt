@@ -142,12 +142,30 @@ func statusColumns() []ui.TableColumn {
 	}
 }
 
-func statusSummaryLine(total, clean, dirty int) string {
-	return strings.Join([]string{
+func statusSummaryLine(total, clean, dirty, errors int) string {
+	parts := []string{
 		ui.Subtle(fmt.Sprintf("%d worktree(s)", total)),
 		ui.Green(fmt.Sprintf("%d clean", clean)),
 		ui.Yellow(fmt.Sprintf("%d dirty", dirty)),
-	}, " • ")
+	}
+	if errors > 0 {
+		parts = append(parts, ui.Red(fmt.Sprintf("%d error", errors)))
+	}
+	return strings.Join(parts, " • ")
+}
+
+func statusCounts(rows []statusRow) (clean, dirty, errors int) {
+	for _, row := range rows {
+		switch {
+		case row.fetchErr != nil:
+			errors++
+		case row.dirty:
+			dirty++
+		default:
+			clean++
+		}
+	}
+	return clean, dirty, errors
 }
 
 // ---------- sync path (non-TTY / piped) ----------
@@ -181,11 +199,7 @@ func fetchStatusInto(row *statusRow) {
 
 func printStatusTable(rows []statusRow) error {
 	tableRows := make([][]string, 0, len(rows))
-	dirtyCount := 0
 	for _, row := range rows {
-		if row.dirty {
-			dirtyCount++
-		}
 		state := formatWorktreeState(row.dirty)
 		sync := formatSyncState(row.upstream, row.ahead, row.behind)
 		commit := row.lastCommit
@@ -206,8 +220,8 @@ func printStatusTable(rows []statusRow) error {
 	}
 
 	body := ui.RenderTable(statusColumns(), tableRows)
-	cleanCount := len(rows) - dirtyCount
-	summary := statusSummaryLine(len(rows), cleanCount, dirtyCount)
+	cleanCount, dirtyCount, errorCount := statusCounts(rows)
+	summary := statusSummaryLine(len(rows), cleanCount, dirtyCount, errorCount)
 	fmt.Println(ui.Section("", body, "", summary))
 	return nil
 }
@@ -330,13 +344,8 @@ func (m statusModel) View() string {
 	body := ui.RenderTable(statusColumns(), tableRows)
 
 	if m.pending == 0 {
-		dirtyCount := 0
-		for _, row := range m.rows {
-			if row.dirty {
-				dirtyCount++
-			}
-		}
-		summary := statusSummaryLine(len(m.rows), len(m.rows)-dirtyCount, dirtyCount)
+		cleanCount, dirtyCount, errorCount := statusCounts(m.rows)
+		summary := statusSummaryLine(len(m.rows), cleanCount, dirtyCount, errorCount)
 		return ui.Section("", body, "", summary) + "\n"
 	}
 
