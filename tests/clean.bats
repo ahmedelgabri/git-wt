@@ -10,39 +10,37 @@ teardown() {
 	teardown_test_env
 }
 
-@test "clean: removes merged worktrees with upstream" {
+@test "remove: --sweep interactively removes selected merged worktrees with upstream" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 	create_worktree feature-clean feature-clean
 
-	# use absolute remote URL so push works from worktree subdirectory
 	command git remote set-url origin "$TEST_DIR/myrepo-origin"
-	# commit, push with upstream tracking, then merge into main
 	echo "work" > "$TEST_DIR/myrepo/feature-clean/work.txt"
 	command git -C "$TEST_DIR/myrepo/feature-clean" add work.txt
 	command git -C "$TEST_DIR/myrepo/feature-clean" commit --quiet -m "feature work"
 	command git -C "$TEST_DIR/myrepo/feature-clean" push --quiet -u origin feature-clean
-	# HEAD is main at repo root, merge feature branch into it
 	command git merge --quiet feature-clean
 
-	echo "y" | "$GIT_WT" clean
+	run bash -c 'printf "cleanup\n" | env GIT_WT_SELECT="$2" "$1" remove --sweep' _ "$GIT_WT" "$TEST_DIR/myrepo/feature-clean"
+	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/feature-clean"
 	assert_branch_not_exists "feature-clean"
 }
 
-@test "clean: skips local-only branches without upstream" {
+@test "remove: --merged skips local-only branches without upstream" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 	create_worktree feature-local feature-local
 
-	run "$GIT_WT" clean --dry-run
+	run "$GIT_WT" remove --merged --dry-run
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"No cleanable worktrees found"* ]]
+	[[ "$output" == *"No matching cleanup candidates found"* ]]
 	assert_worktree_exists "$TEST_DIR/myrepo/feature-local"
 	assert_branch_exists "feature-local"
 }
 
-@test "clean: removes worktrees whose upstream is gone" {
+@test "remove: --gone interactively removes worktrees whose upstream is gone" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 	create_worktree feature-gone feature-gone
@@ -53,53 +51,52 @@ teardown() {
 	command git -C "$TEST_DIR/myrepo/feature-gone" push --quiet -u origin feature-gone
 	command git push --quiet origin --delete feature-gone
 
-	echo "y" | "$GIT_WT" clean
+	run bash -c 'printf "cleanup\n" | env GIT_WT_SELECT="$2" "$1" remove --gone' _ "$GIT_WT" "$TEST_DIR/myrepo/feature-gone"
+	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/feature-gone"
 	assert_branch_not_exists "feature-gone"
 }
 
-@test "clean: prunes stale worktree metadata" {
+@test "remove: --stale prunes stale worktree metadata" {
 	init_bare_repo myrepo
 	cd myrepo
 	create_worktree stale-wt stale-wt
 	rm -rf "$TEST_DIR/myrepo/stale-wt"
 
-	echo "y" | "$GIT_WT" clean
+	run bash -c 'printf "cleanup\n" | env GIT_WT_SELECT="$2" "$1" remove --stale' _ "$GIT_WT" "$TEST_DIR/myrepo/stale-wt"
+	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/stale-wt"
 	assert_branch_exists "stale-wt"
 }
 
-@test "clean: dry-run preserves worktrees" {
+@test "remove: --sweep --dry-run preserves worktrees" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 	create_worktree dry-run-clean dry-run-clean
 
-	# use absolute remote URL so push works from worktree subdirectory
 	command git remote set-url origin "$TEST_DIR/myrepo-origin"
-	# push with upstream tracking, then merge into main so it becomes a candidate
 	echo "work" > "$TEST_DIR/myrepo/dry-run-clean/work.txt"
 	command git -C "$TEST_DIR/myrepo/dry-run-clean" add work.txt
 	command git -C "$TEST_DIR/myrepo/dry-run-clean" commit --quiet -m "work"
 	command git -C "$TEST_DIR/myrepo/dry-run-clean" push --quiet -u origin dry-run-clean
-	# HEAD is main at repo root, merge feature branch into it
 	command git merge --quiet dry-run-clean
 
-	run "$GIT_WT" clean --dry-run
+	run env GIT_WT_SELECT="$TEST_DIR/myrepo/dry-run-clean" "$GIT_WT" remove --sweep --dry-run
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN"* ]]
 	assert_worktree_exists "$TEST_DIR/myrepo/dry-run-clean"
 	assert_branch_exists "dry-run-clean"
 }
 
-@test "clean: skips dirty worktrees" {
+@test "remove: --merged skips dirty worktrees" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 	create_worktree dirty-clean dirty-clean
 	echo "dirty" > "$TEST_DIR/myrepo/dirty-clean/dirty.txt"
 
-	run "$GIT_WT" clean --dry-run
+	run "$GIT_WT" remove --merged --dry-run
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"No cleanable worktrees found"* ]]
+	[[ "$output" == *"No matching cleanup candidates found"* ]]
 	assert_worktree_exists "$TEST_DIR/myrepo/dirty-clean"
 	assert_branch_exists "dirty-clean"
 }

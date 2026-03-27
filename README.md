@@ -29,9 +29,9 @@ separate directories. They are useful for:
 ## Features
 
 - **Bare clone structure** with `.bare/` for Git data
-- **Interactive add / switch / remove / destroy** flows with fzf
+- **Interactive add / switch / remove** flows with fzf
 - **Repository migration** from a standard repo to the bare worktree layout
-- **Safe cleanup** with `git wt clean`
+- **Safe cleanup filters** with `git wt remove --sweep`
 - **Repository diagnostics** with `git wt doctor`
 - **Status dashboard** with `git wt status`
 - **Structured output** with `git wt list --json`
@@ -163,18 +163,18 @@ git wt remove feature-branch
 git wt remove --dry-run feature-branch
 ```
 
-### Destroy a worktree and local + remote branch
+### Remove a worktree and local + remote branch
 
 ```bash
-git wt destroy feature-branch
-git wt destroy --dry-run feature-branch
+git wt remove feature-branch --delete-remote
 ```
 
-### Clean safe cleanup candidates
+### Sweep safe cleanup candidates
 
 ```bash
-git wt clean --dry-run
-git wt clean
+git wt remove --sweep
+
+git wt remove --sweep --dry-run
 ```
 
 ### Inspect repository health
@@ -210,9 +210,7 @@ git wt update   # or: git wt u
 | `clone <url>`        | Clone a repo with the bare worktree structure              |
 | `migrate`            | Convert an existing repo to the bare worktree structure    |
 | `add [options] ...`  | Create a new worktree                                      |
-| `remove` / `rm`      | Remove a worktree and delete its local branch              |
-| `destroy [worktree]` | Remove a worktree and delete local + remote branches       |
-| `clean`              | Clean merged, gone, or stale worktrees safely              |
+| `remove` / `rm`      | Remove worktrees directly or by safe cleanup filters       |
 | `doctor`             | Run repository diagnostics                                 |
 | `status`             | Show a compact dashboard for linked worktrees              |
 | `list`               | List worktrees with table, JSON, or passthrough Git output |
