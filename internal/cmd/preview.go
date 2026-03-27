@@ -11,7 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const createNewBranchValue = "__create_new__"
+const (
+	createNewBranchValue    = "__create_new__"
+	previewModeRemove       = "remove"
+	previewModeDeleteRemote = "remove-remote"
+)
 
 // previewCmd is a hidden command used by fzf --preview to generate preview
 // content. It is not intended for direct user invocation.
@@ -27,7 +31,7 @@ var previewWorktreeCmd = &cobra.Command{
 	Args:          cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		wtPath := args[0]
-		mode := "remove"
+		mode := previewModeRemove
 		if len(args) > 1 {
 			mode = args[1]
 		}
@@ -72,10 +76,6 @@ func init() {
 func generateWorktreePreview(wtPath string, mode string) string {
 	var b strings.Builder
 
-	if mode == "destroy" {
-		b.WriteString(ui.Bold(ui.Red("DESTROY MODE")) + "\n\n")
-	}
-
 	b.WriteString(ui.Bold(ui.Accent("Worktree")) + "\n")
 	b.WriteString(fmt.Sprintf("  %s %s\n", ui.Subtle("Path:"), wtPath))
 
@@ -92,8 +92,8 @@ func generateWorktreePreview(wtPath string, mode string) string {
 
 	remote := worktree.DefaultRemote()
 
-	if mode == "destroy" {
-		b.WriteString("\n")
+	if mode == previewModeDeleteRemote {
+		b.WriteString("\n" + ui.Bold(ui.Accent("Actions")) + "\n")
 		b.WriteString(ui.Yellow("  - Remove worktree directory") + "\n")
 		if entry == nil || entry.Detached || entry.Branch == "" {
 			b.WriteString(ui.Yellow("  - Detached HEAD: no local or remote branch deletion") + "\n")

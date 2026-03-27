@@ -16,12 +16,20 @@ teardown() {
 	run "$GIT_WT" --help
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"git-wt"* ]] || [[ "$output" == *"worktree"* ]]
+	[[ "$output" != *"destroy"* ]]
 }
 
 @test "general: help command shows main help" {
 	run "$GIT_WT" help
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"git-wt"* ]] || [[ "$output" == *"worktree"* ]]
+}
+
+@test "general: generated man pages do not include destroy" {
+	mkdir -p man
+	run "$GIT_WT" man man
+	[ "$status" -eq 0 ]
+	! grep -R "destroy" man/*.1
 }
 
 @test "general: no arguments shows help" {

@@ -206,7 +206,7 @@ func TestEntriesToPickerItems(t *testing.T) {
 }
 
 func TestPreviewWorktreeCmdStr(t *testing.T) {
-	got := previewWorktreeCmdStr("remove")
+	got := previewWorktreeCmdStr(previewModeRemove)
 	if !strings.Contains(got, "sh -c") || !strings.Contains(got, `_preview worktree "$2" "$3"`) {
 		t.Errorf("previewWorktreeCmdStr(remove) = %q, want sh -c positional args", got)
 	}
@@ -214,9 +214,9 @@ func TestPreviewWorktreeCmdStr(t *testing.T) {
 		t.Errorf("previewWorktreeCmdStr(remove) = %q, want to contain {1}", got)
 	}
 
-	got = previewWorktreeCmdStr("destroy")
-	if !strings.Contains(got, shellQuote("destroy")) {
-		t.Errorf("previewWorktreeCmdStr(destroy) = %q, want quoted destroy mode", got)
+	got = previewWorktreeCmdStr(previewModeDeleteRemote)
+	if !strings.Contains(got, shellQuote(previewModeDeleteRemote)) {
+		t.Errorf("previewWorktreeCmdStr(remove-remote) = %q, want quoted remove-remote mode", got)
 	}
 }
 
@@ -368,7 +368,7 @@ func TestGenerateWorktreePreviewRemoveMode(t *testing.T) {
 	c.Dir = wtPath
 	c.CombinedOutput()
 
-	out := generateWorktreePreview(wtPath, "remove")
+	out := generateWorktreePreview(wtPath, previewModeRemove)
 	if !strings.Contains(out, "Worktree") {
 		t.Errorf("preview should contain 'Worktree', got %q", out)
 	}
@@ -378,13 +378,15 @@ func TestGenerateWorktreePreviewRemoveMode(t *testing.T) {
 	if !strings.Contains(out, "Recent Commits") {
 		t.Errorf("preview should contain 'Recent Commits', got %q", out)
 	}
-	// Should NOT contain destroy mode header
-	if strings.Contains(out, "DESTROY MODE") {
-		t.Error("remove mode should not contain 'DESTROY MODE'")
+	if strings.Contains(out, "Actions") {
+		t.Error("remove mode should not contain 'Actions'")
+	}
+	if strings.Contains(out, "Delete remote branch") {
+		t.Error("remove mode should not mention remote branch deletion")
 	}
 }
 
-func TestGenerateWorktreePreviewDestroyMode(t *testing.T) {
+func TestGenerateWorktreePreviewDeleteRemoteMode(t *testing.T) {
 	dir := t.TempDir()
 	bareDir := filepath.Join(dir, ".bare")
 
@@ -406,16 +408,16 @@ func TestGenerateWorktreePreviewDestroyMode(t *testing.T) {
 	c.Dir = dir
 	c.CombinedOutput()
 
-	out := generateWorktreePreview(wtPath, "destroy")
-	if !strings.Contains(out, "DESTROY MODE") {
-		t.Errorf("destroy mode should contain 'DESTROY MODE', got %q", out)
+	out := generateWorktreePreview(wtPath, previewModeDeleteRemote)
+	if !strings.Contains(out, "Actions") {
+		t.Errorf("remove-remote mode should contain 'Actions', got %q", out)
 	}
 	if !strings.Contains(out, "Delete remote branch") && !strings.Contains(out, "No remote configured") {
-		t.Errorf("destroy mode should describe remote branch handling, got %q", out)
+		t.Errorf("remove-remote mode should describe remote branch handling, got %q", out)
 	}
 }
 
-func TestGenerateWorktreePreviewDestroyModeDetached(t *testing.T) {
+func TestGenerateWorktreePreviewDeleteRemoteModeDetached(t *testing.T) {
 	repo := initGitRepo(t)
 
 	orig, err := os.Getwd()
@@ -440,7 +442,7 @@ func TestGenerateWorktreePreviewDestroyModeDetached(t *testing.T) {
 		t.Fatalf("git worktree add --detach: %v\n%s", err, out)
 	}
 
-	out := generateWorktreePreview(wtPath, "destroy")
+	out := generateWorktreePreview(wtPath, previewModeDeleteRemote)
 	if !strings.Contains(out, "detached HEAD") {
 		t.Errorf("detached preview should mention detached HEAD, got %q", out)
 	}
