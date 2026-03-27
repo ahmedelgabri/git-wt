@@ -83,8 +83,8 @@ repo/
 
 ## Commands
 
-| Command              | Description                                                |
-| -------------------- | ---------------------------------------------------------- |
+| Command             | Description                                                |
+| ------------------- | ---------------------------------------------------------- |
 | `clone <url>`       | Clone a repo with the bare worktree structure              |
 | `migrate`           | Convert an existing repo to the bare worktree structure    |
 | `add [options] ...` | Create a new worktree                                      |
