@@ -107,17 +107,20 @@ func runClone(cmd *cobra.Command, args []string) error {
 		fmt.Printf("No worktree created. Use %s to create worktrees.\n", ui.Accent("git wt add"))
 	}
 
-	ui.Success("\nRepository cloned successfully")
+	ui.Success("Repository cloned successfully")
 
 	var branches []treeBranch
 	if defaultBranch != "" {
-		branches = append(branches, treeBranch{defaultBranch, "worktree"})
+		branches = append(branches, treeBranch{defaultBranch, "default worktree"})
 	}
-	printRepoTree(folderName, branches)
 
-	fmt.Printf("\n  To create additional worktrees:\n")
-	fmt.Printf("    %s\n", ui.Muted("cd "+folderName))
-	fmt.Printf("    %s\n", ui.Muted("git wt add"))
+	fmt.Println()
+	fmt.Println(renderRepoLayoutSection(folderName, branches))
+	fmt.Println()
+	fmt.Println(renderCommandHintsSection([]commandHint{{
+		Action:  "Create another worktree",
+		Command: fmt.Sprintf("cd %s && git wt add", folderName),
+	}}))
 
 	return nil
 }
@@ -125,32 +128,4 @@ func runClone(cmd *cobra.Command, args []string) error {
 type treeBranch struct {
 	Name string
 	Desc string
-}
-
-func printRepoTree(rootDir string, branches []treeBranch) {
-	// Compute padding for aligned descriptions
-	treeWidth := len(".bare/")
-	for _, b := range branches {
-		if w := len(b.Name) + 1; w > treeWidth {
-			treeWidth = w
-		}
-	}
-
-	fmt.Printf("\n  Repository structure:\n")
-	fmt.Printf("    %s/\n", ui.Bold(rootDir))
-	fmt.Printf("    ├── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".bare/")), ui.Dim("(git data)"))
-
-	if len(branches) == 0 {
-		fmt.Printf("    └── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".git")), ui.Dim("(pointer to .bare)"))
-	} else {
-		fmt.Printf("    ├── %s  %s\n", ui.Muted(fmt.Sprintf("%-*s", treeWidth, ".git")), ui.Dim("(pointer to .bare)"))
-		for i, b := range branches {
-			connector := "├──"
-			if i == len(branches)-1 {
-				connector = "└──"
-			}
-			fmt.Printf("    %s %s  %s\n", connector, ui.Accent(fmt.Sprintf("%-*s", treeWidth, b.Name+"/")), ui.Dim("("+b.Desc+")"))
-		}
-	}
-	fmt.Println()
 }

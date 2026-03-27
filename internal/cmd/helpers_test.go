@@ -58,6 +58,32 @@ func TestMoveContentsNonExistentSrc(t *testing.T) {
 	}
 }
 
+func TestFinalizeMigrationRollbackOnValidationFailure(t *testing.T) {
+	repoRoot := t.TempDir()
+	newStructure := t.TempDir()
+	tempBackup := filepath.Join(t.TempDir(), "backup")
+
+	os.WriteFile(filepath.Join(repoRoot, "original.txt"), []byte("original"), 0o644)
+	os.MkdirAll(filepath.Join(newStructure, ".bare"), 0o755)
+	os.WriteFile(filepath.Join(newStructure, ".git"), []byte("gitdir: ./.bare\n"), 0o644)
+
+	err := finalizeMigration(repoRoot, newStructure, tempBackup, []string{".git", ".bare", "main"})
+	if err == nil {
+		t.Fatal("finalizeMigration should fail validation when required entries are missing")
+	}
+
+	data, readErr := os.ReadFile(filepath.Join(repoRoot, "original.txt"))
+	if readErr != nil {
+		t.Fatalf("original repo contents should be restored: %v", readErr)
+	}
+	if string(data) != "original" {
+		t.Fatalf("original repo contents = %q, want %q", data, "original")
+	}
+	if _, statErr := os.Stat(filepath.Join(repoRoot, ".git")); !os.IsNotExist(statErr) {
+		t.Fatalf("repoRoot should not retain promoted .git after rollback")
+	}
+}
+
 func TestCopyFileSimple(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "src.txt")
 	dst := filepath.Join(t.TempDir(), "dst.txt")
@@ -143,7 +169,7 @@ func TestIsKnownCommand(t *testing.T) {
 func TestEntriesToPickerItems(t *testing.T) {
 	entries := []worktree.Entry{
 		{Path: "/tmp/project/main", Branch: "main", Head: "abc1234"},
-		{Path: "/tmp/project/detached-wt", Branch: "(detached)", Head: "def5678"},
+		{Path: "/tmp/project/detached-wt", Detached: true, Head: "def5678"},
 		{Path: "/tmp/project/no-branch", Branch: "", Head: "111aaaa"},
 	}
 
@@ -180,21 +206,34 @@ func TestEntriesToPickerItems(t *testing.T) {
 }
 
 func TestPreviewWorktreeCmdStr(t *testing.T) {
-	got := previewWorktreeCmdStr("remove")
-	if !strings.Contains(got, "_preview worktree {1} remove") {
-		t.Errorf("previewWorktreeCmdStr(remove) = %q, want to contain '_preview worktree {1} remove'", got)
+	got := previewWorktreeCmdStr(previewModeRemove)
+	if !strings.Contains(got, "sh -c") || !strings.Contains(got, `_preview worktree "$2" "$3"`) {
+		t.Errorf("previewWorktreeCmdStr(remove) = %q, want sh -c positional args", got)
+	}
+	if !strings.Contains(got, "{1}") {
+		t.Errorf("previewWorktreeCmdStr(remove) = %q, want to contain {1}", got)
 	}
 
-	got = previewWorktreeCmdStr("destroy")
-	if !strings.Contains(got, "_preview worktree {1} destroy") {
-		t.Errorf("previewWorktreeCmdStr(destroy) = %q, want to contain '_preview worktree {1} destroy'", got)
+	got = previewWorktreeCmdStr(previewModeDeleteRemote)
+	if !strings.Contains(got, shellQuote(previewModeDeleteRemote)) {
+		t.Errorf("previewWorktreeCmdStr(remove-remote) = %q, want quoted remove-remote mode", got)
 	}
 }
 
 func TestPreviewBranchCmdStr(t *testing.T) {
 	got := previewBranchCmdStr()
-	if !strings.Contains(got, "_preview branch {1}") {
-		t.Errorf("previewBranchCmdStr() = %q, want to contain '_preview branch {1}'", got)
+	if !strings.Contains(got, "sh -c") || !strings.Contains(got, `_preview branch "$2"`) {
+		t.Errorf("previewBranchCmdStr() = %q, want sh -c positional args", got)
+	}
+	if !strings.Contains(got, "{1}") {
+		t.Errorf("previewBranchCmdStr() = %q, want to contain {1}", got)
+	}
+}
+
+func TestSplitRemoteBranchRef(t *testing.T) {
+	remote, branch := splitRemoteBranchRef("origin/feature/nested")
+	if remote != "origin" || branch != "feature/nested" {
+		t.Fatalf("splitRemoteBranchRef() = (%q, %q), want (%q, %q)", remote, branch, "origin", "feature/nested")
 	}
 }
 
@@ -329,7 +368,7 @@ func TestGenerateWorktreePreviewRemoveMode(t *testing.T) {
 	c.Dir = wtPath
 	c.CombinedOutput()
 
-	out := generateWorktreePreview(wtPath, "remove")
+	out := generateWorktreePreview(wtPath, previewModeRemove)
 	if !strings.Contains(out, "Worktree") {
 		t.Errorf("preview should contain 'Worktree', got %q", out)
 	}
@@ -339,13 +378,15 @@ func TestGenerateWorktreePreviewRemoveMode(t *testing.T) {
 	if !strings.Contains(out, "Recent Commits") {
 		t.Errorf("preview should contain 'Recent Commits', got %q", out)
 	}
-	// Should NOT contain destroy mode header
-	if strings.Contains(out, "DESTROY MODE") {
-		t.Error("remove mode should not contain 'DESTROY MODE'")
+	if strings.Contains(out, "Actions") {
+		t.Error("remove mode should not contain 'Actions'")
+	}
+	if strings.Contains(out, "Delete remote branch") {
+		t.Error("remove mode should not mention remote branch deletion")
 	}
 }
 
-func TestGenerateWorktreePreviewDestroyMode(t *testing.T) {
+func TestGenerateWorktreePreviewDeleteRemoteMode(t *testing.T) {
 	dir := t.TempDir()
 	bareDir := filepath.Join(dir, ".bare")
 
@@ -367,11 +408,64 @@ func TestGenerateWorktreePreviewDestroyMode(t *testing.T) {
 	c.Dir = dir
 	c.CombinedOutput()
 
-	out := generateWorktreePreview(wtPath, "destroy")
-	if !strings.Contains(out, "DESTROY MODE") {
-		t.Errorf("destroy mode should contain 'DESTROY MODE', got %q", out)
+	out := generateWorktreePreview(wtPath, previewModeDeleteRemote)
+	if !strings.Contains(out, "Actions") {
+		t.Errorf("remove-remote mode should contain 'Actions', got %q", out)
 	}
-	if !strings.Contains(out, "Delete remote branch") {
-		t.Errorf("destroy mode should contain 'Delete remote branch', got %q", out)
+	if !strings.Contains(out, "Delete remote branch") && !strings.Contains(out, "No remote configured") {
+		t.Errorf("remove-remote mode should describe remote branch handling, got %q", out)
+	}
+}
+
+func TestGenerateWorktreePreviewDeleteRemoteModeDetached(t *testing.T) {
+	repo := initGitRepo(t)
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(repo)
+
+	shaCmd := exec.Command("git", "rev-parse", "HEAD")
+	shaCmd.Dir = repo
+	shaBytes, err := shaCmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v", err)
+	}
+	sha := strings.TrimSpace(string(shaBytes))
+
+	wtPath := filepath.Join(repo, "detached;$(preview)")
+	c := exec.Command("git", "worktree", "add", "--detach", wtPath, sha)
+	c.Dir = repo
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add --detach: %v\n%s", err, out)
+	}
+
+	out := generateWorktreePreview(wtPath, previewModeDeleteRemote)
+	if !strings.Contains(out, "detached HEAD") {
+		t.Errorf("detached preview should mention detached HEAD, got %q", out)
+	}
+	if strings.Contains(out, "Delete remote branch") {
+		t.Errorf("detached preview should not include remote branch deletion, got %q", out)
+	}
+}
+
+func TestShellQuoteHandlesShellMetacharacters(t *testing.T) {
+	values := []string{
+		`feature;$(echo shell)`,
+		`feat;$(echo preview)`,
+		`quote's-and-$dollars`,
+	}
+
+	for _, value := range values {
+		cmd := exec.Command("sh", "-c", "printf '%s' "+shellQuote(value))
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("shellQuote(%q): %v", value, err)
+		}
+		if string(out) != value {
+			t.Fatalf("shellQuote(%q) roundtrip = %q, want %q", value, out, value)
+		}
 	}
 }

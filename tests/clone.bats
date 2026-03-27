@@ -81,3 +81,16 @@ teardown() {
 	gitdir_content=$(cat "$TEST_DIR/gitdir-test/.git")
 	[[ "$gitdir_content" == "gitdir: ./.bare" ]]
 }
+
+@test "clone: prints layout and next steps" {
+	init_repo source-ui
+	cd source-ui
+	create_commit "file.txt"
+	cd "$TEST_DIR"
+
+	run env NO_COLOR=1 "$GIT_WT" clone "$TEST_DIR/source-ui" clone-ui
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"clone-ui/.bare"* ]]
+	[[ "$output" == *"clone-ui/.git"* ]]
+	[[ "$output" == *"cd clone-ui && git wt add"* ]]
+}

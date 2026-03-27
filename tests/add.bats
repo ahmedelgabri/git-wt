@@ -46,7 +46,7 @@ teardown() {
 	command git branch -D remote-only --quiet
 
 	# Use GIT_WT_SELECT to bypass fzf TUI and select the branch directly
-	GIT_WT_SELECT="remote-only" run "$GIT_WT" add
+	run env GIT_WT_SELECT="origin/remote-only" "$GIT_WT" add
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/remote-only"
 	assert_branch_exists "remote-only"
@@ -77,13 +77,13 @@ teardown() {
 	command git worktree add -b feature-a feature-a origin/feature-a --quiet
 
 	# feature-a is checked out, so selecting it should cancel (filtered from picker)
-	GIT_WT_SELECT="feature-a" run "$GIT_WT" add
+	run env GIT_WT_SELECT="origin/feature-a" "$GIT_WT" add
 	[ "$status" -eq 0 ]
 	# Worktree should NOT be re-created (selection was canceled)
 	[ ! -d "$TEST_DIR/myrepo/feature-a-copy" ]
 
 	# feature-b is available, so selecting it should succeed
-	GIT_WT_SELECT="feature-b" run "$GIT_WT" add
+	run env GIT_WT_SELECT="origin/feature-b" "$GIT_WT" add
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/feature-b"
 	assert_branch_exists "feature-b"
@@ -99,6 +99,16 @@ teardown() {
 
 	assert_branch_exists "my-new-branch"
 	assert_worktree_exists "$TEST_DIR/myrepo/my-new-branch"
+}
+
+@test "add: interactive mode supports custom path for new branch" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	printf 'my-custom-branch\ncustom-path\n' | GIT_WT_SELECT="__create_new__" "$GIT_WT" add
+
+	assert_branch_exists "my-custom-branch"
+	assert_worktree_exists "$TEST_DIR/myrepo/custom-path"
 }
 
 @test "add: creates worktree from remote branch at flat path with -b" {
@@ -331,10 +341,66 @@ teardown() {
 	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
 	command git branch -D remote-feat --quiet
 
-	GIT_WT_SELECT="remote-feat" run "$GIT_WT" add
+	run env GIT_WT_SELECT="upstream/remote-feat" "$GIT_WT" add
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/remote-feat"
 	assert_branch_exists "remote-feat"
+}
+
+@test "add: interactive mode uses selected remote in multi-remote repos" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+
+	mkdir -p "$TEST_DIR/myrepo-upstream"
+	(
+		cd "$TEST_DIR/myrepo-upstream" || exit 1
+		command git init --quiet --bare -b main
+	)
+	command git remote add upstream "$TEST_DIR/myrepo-upstream"
+	command git push --quiet upstream HEAD:main
+
+	command git checkout -b upstream-only --quiet
+	create_commit "upstream-only.txt"
+	command git push --quiet -u upstream upstream-only
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D upstream-only --quiet
+
+	run env GIT_WT_SELECT="upstream/upstream-only" "$GIT_WT" add
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/upstream-only"
+	assert_branch_exists "upstream-only"
+}
+
+@test "add: interactive mode supports custom path for remote branch" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	command git checkout -b remote-custom --quiet
+	create_commit "remote-custom.txt"
+	command git push --quiet -u origin remote-custom
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D remote-custom --quiet
+
+	printf 'custom-remote-path\n' | env GIT_WT_SELECT="origin/remote-custom" "$GIT_WT" add
+
+	assert_branch_exists "remote-custom"
+	assert_worktree_exists "$TEST_DIR/myrepo/custom-remote-path"
+}
+
+@test "add: interactive mode handles shell metacharacters in remote branch names" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	local branch='feature;$(echo_shell)'
+
+	command git checkout -b "$branch" --quiet
+	create_commit "shell-branch.txt"
+	command git push --quiet -u origin "$branch"
+	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	command git branch -D "$branch" --quiet
+
+	run env GIT_WT_SELECT="origin/$branch" "$GIT_WT" add
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/myrepo/$branch"
+	assert_branch_exists "$branch"
 }
 
 @test "add: supports -B flag to reset branch" {

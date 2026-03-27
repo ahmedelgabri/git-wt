@@ -118,6 +118,18 @@ teardown() {
 	[ ! -d "$TEST_DIR/myrepo/.bare" ]
 }
 
+@test "migrate: supports --dry-run" {
+	init_repo myrepo
+	cd myrepo
+	create_commit "file.txt"
+
+	run "$GIT_WT" migrate --dry-run
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"DRY RUN"* ]]
+	[ -d "$TEST_DIR/myrepo/.git" ]
+	[ ! -d "$TEST_DIR/myrepo/.bare" ]
+}
+
 @test "migrate: preserves remote URL" {
 	init_repo_with_remote myrepo
 	cd myrepo
@@ -129,6 +141,60 @@ teardown() {
 	local remote_url
 	remote_url=$(command git remote get-url origin 2>/dev/null || true)
 	[[ "$remote_url" == *"myrepo-origin"* ]]
+}
+
+@test "migrate: preserves local commits when branch is ahead of remote" {
+	init_repo_with_remote myrepo
+	cd myrepo
+	create_commit "ahead.txt"
+
+	local before_sha
+	before_sha=$(command git rev-parse HEAD)
+
+	echo "y" | "$GIT_WT" migrate
+
+	cd "$TEST_DIR/myrepo/main"
+	local after_sha
+	after_sha=$(command git rev-parse HEAD)
+	[ "$after_sha" = "$before_sha" ]
+}
+
+@test "migrate: preserves multiple remotes" {
+	init_repo_with_remote myrepo
+	mkdir -p "$TEST_DIR/myrepo-upstream"
+	(
+		cd "$TEST_DIR/myrepo-upstream" || exit 1
+		command git init --quiet --bare -b main
+	)
+
+	cd "$TEST_DIR/myrepo"
+	command git remote add upstream "$TEST_DIR/myrepo-upstream"
+	command git push --quiet upstream HEAD:main
+	create_commit "file.txt"
+
+	echo "y" | "$GIT_WT" migrate
+
+	cd "$TEST_DIR/myrepo"
+	local origin_url upstream_url
+	origin_url=$(command git remote get-url origin 2>/dev/null || true)
+	upstream_url=$(command git remote get-url upstream 2>/dev/null || true)
+	[[ "$origin_url" == *"myrepo-origin"* ]]
+	[[ "$upstream_url" == *"myrepo-upstream"* ]]
+}
+
+@test "migrate: preserves repo-local hooksPath" {
+	init_repo myrepo
+	cd myrepo
+	mkdir .githooks
+	command git config core.hooksPath .githooks
+	create_commit "file.txt"
+
+	echo "y" | "$GIT_WT" migrate
+
+	cd "$TEST_DIR/myrepo"
+	local hooks_path
+	hooks_path=$(command git config core.hooksPath 2>/dev/null || true)
+	[ "$hooks_path" = ".githooks" ]
 }
 
 @test "migrate: preserves repo directory inode (no getcwd errors)" {
@@ -190,6 +256,61 @@ teardown() {
 	[ -L "$wt_dir/link.txt" ]
 	[[ $(readlink "$wt_dir/link.txt") == "target.txt" ]]
 	[[ $(cat "$wt_dir/link.txt") == "real content" ]]
+}
+
+@test "migrate: prints layout and next steps after success" {
+	init_repo myrepo
+	cd myrepo
+	create_commit "file.txt"
+
+	run bash -c 'echo "y" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"./.bare"* ]]
+	[[ "$output" == *"git wt add <branch-name> <branch-name>"* ]]
+}
+
+@test "migrate: fails when submodules are present" {
+	init_repo lib
+	cd lib
+	create_commit "lib.txt"
+
+	cd "$TEST_DIR"
+	init_repo myrepo
+	cd myrepo
+	create_commit "file.txt"
+	command git -c protocol.file.allow=always submodule add --quiet ../lib vendor/lib
+	command git commit --quiet -am "add submodule"
+
+	run bash -c 'echo "y" | '"$GIT_WT"' migrate 2>&1'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"submodules"* ]]
+}
+
+@test "migrate: fails when sparse checkout is enabled" {
+	init_repo myrepo
+	cd myrepo
+	mkdir -p app docs
+	echo "app" > app/app.txt
+	echo "docs" > docs/docs.txt
+	command git add app docs
+	command git commit --quiet -m "add tree"
+	command git sparse-checkout init --cone
+	command git sparse-checkout set app
+
+	run bash -c 'echo "y" | '"$GIT_WT"' migrate 2>&1'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"sparse checkout"* ]]
+}
+
+@test "migrate: fails when linked worktrees are present" {
+	init_repo myrepo
+	cd myrepo
+	create_commit "file.txt"
+	command git worktree add ../myrepo-feature -b feature --quiet
+
+	run bash -c 'echo "y" | '"$GIT_WT"' migrate 2>&1'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"linked worktrees"* ]]
 }
 
 @test "migrate: --help shows usage" {

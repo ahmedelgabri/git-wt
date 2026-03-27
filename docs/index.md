@@ -9,79 +9,72 @@ title: git-wt
 
 # git-wt
 
-A Git custom command that enhances Git's native worktree functionality with interactive features, automation, and repository migration capabilities.
+A Git custom command that makes Git worktrees easier to use with interactive
+selection, safer destructive flows, repository migration, diagnostics, and
+compact dashboards.
 
-git-wt uses a [**bare repository** structure](https://gabri.me/blog/git-worktrees-done-right) where the git data lives in a `.bare` directory and each branch gets its own worktree directory.
-
-## Why Git Worktrees?
-
-Git worktrees allow you to have multiple branches checked out simultaneously in different directories:
-
-- Work on multiple features in parallel without stashing
-- Review PRs while keeping your work intact
-- Run tests on one branch while developing on another
-- Compare implementations across branches side-by-side
+`git-wt` uses a [**bare repository** structure](https://gabri.me/blog/git-worktrees-done-right)
+where Git data lives in `.bare/` and each branch gets its own sibling
+worktree directory.
 
 ## Features
 
-- **Bare clone structure** - Git data in `.bare/`, each branch in its own directory
-- **Interactive branch selection** with fzf for creating and switching worktrees
-- **Repository migration** - convert existing repos to worktree structure
-- **Automatic upstream tracking** when creating worktrees from remote branches
-- **Multi-select support** for batch operations (remove, destroy)
-- **Dry-run mode** for destructive operations
-- **Preserves uncommitted changes** during migration
+- **Bare clone structure** with `.bare/` for Git data
+- **Interactive add / switch / remove** flows with fzf
+- **Repository migration** from a standard repo to the bare worktree layout
+- **Safe cleanup filters** with `git wt remove --sweep`
+- **Repository diagnostics** with `git wt doctor`
+- **Status dashboard** with `git wt status`
+- **Structured output** with `git wt list --json`
+- **Dry-run support** for destructive operations
 
 ## Quick Start
 
 ### Installation
 
-**Homebrew:**
+**Homebrew**
 
 ```bash
 brew tap ahmedelgabri/git-wt
 brew install git-wt
 ```
 
-**Nix Flakes:**
+**Nix Flakes**
 
 ```bash
 nix run github:ahmedelgabri/git-wt
 ```
 
-**Manual:**
-
-Download a prebuilt binary from the [releases page](https://github.com/ahmedelgabri/git-wt/releases/latest):
-
-```bash
-curl -sL https://github.com/ahmedelgabri/git-wt/releases/latest/download/git-wt-VERSION-OS-ARCH.tar.gz | tar xz
-cp git-wt-VERSION-OS-ARCH/git-wt ~/.local/bin/
-```
-
 ### Basic Usage
 
 ```bash
-# Clone with worktree structure
+# Clone with the bare worktree layout
 git wt clone https://github.com/user/repo.git
 
-# Migrate existing repo (experimental)
+# Migrate an existing repo
 git wt migrate
 
-# Create new worktree (interactive)
+# Create a worktree interactively
 git wt add
 
 # Switch between worktrees
-cd $(git wt switch)
+cd "$(git wt switch)"
 
-# Remove worktree
-git wt remove feature-branch
+# Show repository health
+git wt doctor
+
+# Show status for all worktrees
+git wt status
+
+# Sweep safe cleanup candidates
+git wt remove --sweep --dry-run
 ```
 
 ## Repository Structure
 
 When you clone with `git wt clone`, you get:
 
-```
+```text
 repo/
 ├── .bare/          # Git data (bare repository)
 ├── .git            # Points to .bare
@@ -90,21 +83,23 @@ repo/
 
 ## Commands
 
-| Command              | Description                                                |
-| -------------------- | ---------------------------------------------------------- |
-| `clone <url>`        | Clone repo with worktree structure                         |
-| `migrate`            | Convert existing repo to worktree structure (experimental) |
-| `add [options] ...`  | Create new worktree (supports all git worktree flags)      |
-| `remove [worktree]`  | Remove worktree and local branch                           |
-| `destroy [worktree]` | Remove worktree and delete local + remote branches         |
-| `update`             | Fetch all and update default branch                        |
-| `switch`             | Interactive worktree selection                             |
+| Command             | Description                                                |
+| ------------------- | ---------------------------------------------------------- |
+| `clone <url>`       | Clone a repo with the bare worktree structure              |
+| `migrate`           | Convert an existing repo to the bare worktree structure    |
+| `add [options] ...` | Create a new worktree                                      |
+| `remove [worktree]` | Remove worktrees directly or by safe cleanup filters       |
+| `doctor`            | Run repository diagnostics                                 |
+| `status`            | Show a compact dashboard for linked worktrees              |
+| `list`              | List worktrees with table, JSON, or passthrough Git output |
+| `switch`            | Interactive worktree selection                             |
+| `update`            | Fetch remotes and update the default branch                |
 
-All native `git worktree` commands (list, lock, unlock, move, prune, repair) are also supported as pass-through.
+Native `git worktree` commands (`lock`, `unlock`, `move`, `prune`, `repair`) are also supported as pass-through commands.
 
 ## Dependencies
 
-- `git` (2.48.0+ for relative worktree support)
+- `git` (`2.48.0+` for relative worktree support)
 
 ## License
 

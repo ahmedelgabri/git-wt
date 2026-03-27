@@ -10,12 +10,12 @@ teardown() {
 	teardown_test_env
 }
 
-@test "remove: removes worktree by path and deletes branch" {
+@test "remove: removes worktree by path and deletes branch after confirmation" {
 	init_bare_repo myrepo
 	cd myrepo
 	create_worktree feature-to-remove feature-to-remove
 
-	run "$GIT_WT" remove "$TEST_DIR/myrepo/feature-to-remove"
+	run bash -c 'printf "y\n" | "$1" remove "$2"' _ "$GIT_WT" "$TEST_DIR/myrepo/feature-to-remove"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/feature-to-remove"
 	assert_branch_not_exists "feature-to-remove"
@@ -27,7 +27,7 @@ teardown() {
 	create_worktree wt-one wt-one
 	create_worktree wt-two wt-two
 
-	run "$GIT_WT" remove "$TEST_DIR/myrepo/wt-one" "$TEST_DIR/myrepo/wt-two"
+	run bash -c 'printf "y\n" | "$1" remove "$2" "$3"' _ "$GIT_WT" "$TEST_DIR/myrepo/wt-one" "$TEST_DIR/myrepo/wt-two"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/wt-one"
 	assert_worktree_not_exists "$TEST_DIR/myrepo/wt-two"
@@ -45,7 +45,7 @@ teardown() {
 	init_bare_repo myrepo
 	cd myrepo
 
-	run "$GIT_WT" remove "$TEST_DIR/myrepo"
+	run bash -c 'printf "y\n" | "$1" remove "$2"' _ "$GIT_WT" "$TEST_DIR/myrepo"
 	[ "$status" -ne 0 ]
 }
 
@@ -63,7 +63,7 @@ teardown() {
 	cd myrepo
 	create_worktree to-rm to-rm
 
-	run "$GIT_WT" rm "$TEST_DIR/myrepo/to-rm"
+	run bash -c 'printf "y\n" | "$1" rm "$2"' _ "$GIT_WT" "$TEST_DIR/myrepo/to-rm"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/to-rm"
 }
@@ -76,17 +76,17 @@ teardown() {
 	run "$GIT_WT" remove --dry-run "$TEST_DIR/myrepo/dry-run-test"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN"* ]] || [[ "$output" == *"dry"* ]]
-	# Worktree should still exist
+	[[ "$output" == *"Remote branches are preserved"* ]]
 	assert_worktree_exists "$TEST_DIR/myrepo/dry-run-test"
 }
 
-@test "remove: removes worktree with uncommitted changes (force)" {
+@test "remove: removes worktree with uncommitted changes after confirmation" {
 	init_bare_repo myrepo
 	cd myrepo
 	create_worktree dirty-wt dirty-wt
 	echo "uncommitted change" >"$TEST_DIR/myrepo/dirty-wt/dirty.txt"
 
-	run "$GIT_WT" remove "$TEST_DIR/myrepo/dirty-wt"
+	run bash -c 'printf "y\n" | "$1" remove "$2"' _ "$GIT_WT" "$TEST_DIR/myrepo/dirty-wt"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/dirty-wt"
 }
@@ -96,7 +96,7 @@ teardown() {
 	cd myrepo
 	create_worktree bex-1697 bex-1697
 
-	run "$GIT_WT" remove bex-1697
+	run bash -c 'printf "y\n" | "$1" remove bex-1697' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/bex-1697"
 	assert_branch_not_exists "bex-1697"
@@ -107,7 +107,7 @@ teardown() {
 	cd myrepo
 	create_worktree rel-path-test rel-path-test
 
-	run "$GIT_WT" remove ./rel-path-test
+	run bash -c 'printf "y\n" | "$1" remove ./rel-path-test' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/rel-path-test"
 	assert_branch_not_exists "rel-path-test"
@@ -119,7 +119,7 @@ teardown() {
 	create_worktree name-one name-one
 	create_worktree name-two name-two
 
-	run "$GIT_WT" remove name-one name-two
+	run bash -c 'printf "y\n" | "$1" remove name-one name-two' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/name-one"
 	assert_worktree_not_exists "$TEST_DIR/myrepo/name-two"
@@ -152,7 +152,7 @@ teardown() {
 	cd myrepo
 	create_worktree feature/my-thing feature/my-thing
 
-	run "$GIT_WT" remove feature/my-thing
+	run bash -c 'printf "y\n" | "$1" remove feature/my-thing' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/my-thing"
 	assert_branch_not_exists "feature/my-thing"
@@ -163,7 +163,7 @@ teardown() {
 	cd myrepo
 	create_worktree feature/another feature/another
 
-	run "$GIT_WT" remove "$TEST_DIR/myrepo/feature/another"
+	run bash -c 'printf "y\n" | "$1" remove "$2"' _ "$GIT_WT" "$TEST_DIR/myrepo/feature/another"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/another"
 	assert_branch_not_exists "feature/another"
@@ -176,10 +176,40 @@ teardown() {
 	create_worktree feature/nested feature/nested
 	cd main
 
-	run "$GIT_WT" remove feature/nested
+	run bash -c 'printf "y\n" | "$1" remove feature/nested' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/feature/nested"
 	assert_branch_not_exists "feature/nested"
+}
+
+@test "remove: rejects ambiguous basename matches" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature/login feature/login
+	create_worktree bugfix/login bugfix/login
+
+	run "$GIT_WT" remove login
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"ambiguous"* ]]
+	[[ "$output" == *"feature/login"* ]]
+	[[ "$output" == *"bugfix/login"* ]]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature/login"
+	assert_worktree_exists "$TEST_DIR/myrepo/bugfix/login"
+}
+
+@test "remove: detached worktree skips branch deletion" {
+	init_bare_repo myrepo
+	cd myrepo
+	local sha wt
+	sha=$(command git rev-parse HEAD)
+	wt='detached-$(echo shell)'
+	command git worktree add --detach "$wt" "$sha" --quiet
+
+	run bash -c 'printf "y\n" | "$1" remove "$2"' _ "$GIT_WT" "$wt"
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"Deleted local branch"* ]]
+	assert_worktree_not_exists "$TEST_DIR/myrepo/$wt"
+	assert_branch_exists main
 }
 
 @test "remove: works from worktree subdirectory" {
@@ -190,8 +220,20 @@ teardown() {
 	mkdir -p main/src
 	cd main/src
 
-	run "$GIT_WT" remove to-remove
+	run bash -c 'printf "y\n" | "$1" remove to-remove' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/to-remove"
 	assert_branch_not_exists "to-remove"
+}
+
+@test "remove: --delete-remote deletes remote branch after explicit confirmation" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	create_worktree feature-remote feature-remote
+	command git push -u origin feature-remote --quiet 2>/dev/null || true
+
+	run bash -c 'printf "feature-remote\n" | "$1" remove --delete-remote "$2"' _ "$GIT_WT" "$TEST_DIR/myrepo/feature-remote"
+	[ "$status" -eq 0 ]
+	assert_worktree_not_exists "$TEST_DIR/myrepo/feature-remote"
+	assert_branch_not_exists "feature-remote"
 }

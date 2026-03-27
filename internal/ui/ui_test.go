@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // runModel runs a bubbletea model through a real tea.Program with a timeout.
@@ -152,6 +153,20 @@ func TestPromptInputTrimmed(t *testing.T) {
 	got := PromptInput("Enter value:")
 	if got != "spaces" {
 		t.Errorf("PromptInput() = %q, want %q", got, "spaces")
+	}
+}
+
+func TestPromptInputSequentialReads(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("first\nsecond\n"))
+	old := stdinReader
+	stdinReader = func() *bufio.Reader { return reader }
+	defer func() { stdinReader = old }()
+
+	if got := PromptInput("First:"); got != "first" {
+		t.Fatalf("first PromptInput() = %q, want %q", got, "first")
+	}
+	if got := PromptInput("Second:"); got != "second" {
+		t.Fatalf("second PromptInput() = %q, want %q", got, "second")
 	}
 }
 
@@ -556,5 +571,81 @@ func TestSpinWithOutputError(t *testing.T) {
 	})
 	if !errors.Is(err, testErr) {
 		t.Errorf("SpinWithOutput() = %v, want %v", err, testErr)
+	}
+}
+
+func TestSectionContainsTitleAndBody(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := Section("Status", "hello", "world")
+	if !strings.Contains(got, "Status") {
+		t.Fatalf("Section() missing title: %q", got)
+	}
+	if !strings.Contains(got, "hello") || !strings.Contains(got, "world") {
+		t.Fatalf("Section() missing body: %q", got)
+	}
+}
+
+func TestSectionAllowsEmptyTitleAndSpacer(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := Section("", "table", "", "summary")
+	if strings.Contains(got, "Status") {
+		t.Fatalf("Section() unexpectedly contains title: %q", got)
+	}
+	if !strings.Contains(got, "table\n\nsummary") {
+		t.Fatalf("Section() should preserve blank line before summary: %q", got)
+	}
+}
+
+func TestPathFormatsRelativePaths(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := Path("./main")
+	if got != "./main" {
+		t.Fatalf("Path() = %q, want %q", got, "./main")
+	}
+}
+
+func TestRenderTableContainsHeadersAndRows(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := RenderTable([]TableColumn{{Title: "COL1"}, {Title: "COL2"}}, [][]string{{"a", "b"}, {"c", "d"}})
+	for _, want := range []string{"COL1", "COL2", "a", "b", "c", "d"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("RenderTable() missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestRenderTableHandlesColoredCells(t *testing.T) {
+	got := RenderTable(
+		[]TableColumn{{Title: "STATUS", MinWidth: 6}, {Title: "CHECK", MinWidth: 12}},
+		[][]string{{Green("OK"), "Repository"}, {Yellow("WARN"), "Default branch"}},
+	)
+	plain := ansi.Strip(got)
+	for _, want := range []string{"STATUS", "CHECK", "OK", "Repository", "WARN", "Default branch"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("RenderTable() missing %q in %q", want, plain)
+		}
+	}
+	if strings.Contains(plain, "OKRepository") || strings.Contains(plain, "WARNDefault branch") {
+		t.Fatalf("RenderTable() collapsed columns: %q", plain)
+	}
+}
+
+func TestRenderTableRespectsMaxWidth(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	got := RenderTable(
+		[]TableColumn{{Title: "NAME", MaxWidth: 8}, {Title: "DETAIL", MaxWidth: 10}},
+		[][]string{{"feature-very-long", "this should truncate"}},
+	)
+	plain := ansi.Strip(got)
+	if !strings.Contains(plain, "feature…") {
+		t.Fatalf("RenderTable() should truncate narrow column, got %q", plain)
+	}
+	if !strings.Contains(plain, "this shou…") {
+		t.Fatalf("RenderTable() should truncate detail column, got %q", plain)
 	}
 }

@@ -16,8 +16,10 @@ teardown() {
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"myrepo"* ]]
-	[[ "$output" == *"[main]"* ]] || [[ "$output" == *"[master]"* ]]
+	[[ "$output" != *"Worktree list"* ]]
+	[[ "$output" == *"WORKTREE"* ]]
+	[[ "$output" == *".bare"* ]]
+	[[ "$output" == *"git database"* ]]
 }
 
 @test "list: shows multiple worktrees" {
@@ -28,7 +30,7 @@ teardown() {
 
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"myrepo"* ]]
+	[[ "$output" == *".bare"* ]]
 	[[ "$output" == *"feature-a"* ]]
 	[[ "$output" == *"feature-b"* ]]
 }
@@ -90,4 +92,48 @@ teardown() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"main"* ]]
 	[[ "$output" == *"feature-list"* ]]
+}
+
+@test "list: still lists worktrees in DEBUG mode" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature-debug feature-debug
+
+	run env DEBUG=1 "$GIT_WT" list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"feature-debug"* ]]
+	[[ "$output" != *"git worktree list"* ]]
+}
+
+@test "list: supports --json output" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature-json feature-json
+
+	run "$GIT_WT" list --json
+	[ "$status" -eq 0 ]
+	[[ "$output" == *'"Path"'* ]]
+	[[ "$output" == *'"feature-json"'* ]]
+}
+
+@test "list: passes through native git flags" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature-porcelain feature-porcelain
+
+	run "$GIT_WT" list --porcelain
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"worktree "* ]]
+	[[ "$output" == *"branch refs/heads/feature-porcelain"* ]]
+}
+
+@test "list: preserves long nested relative paths" {
+	init_bare_repo myrepo
+	cd myrepo
+	long_path="feature/this-is-a-very-long-worktree-path-for-list-rendering"
+	create_worktree "$long_path" "$long_path"
+
+	run env NO_COLOR=1 "$GIT_WT" list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"./$long_path"* ]]
 }

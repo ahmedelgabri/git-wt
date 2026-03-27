@@ -28,6 +28,9 @@ jobs:
       - name: Go vet
         run: nix develop --command just vet
 
+      - name: Staticcheck
+        run: nix develop --command just staticcheck
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
@@ -55,6 +58,9 @@ jobs:
 
       - name: Run unit tests
         run: just test
+
+      - name: Run race tests
+        run: just test-race
 
       - name: Run E2E tests
         run: just test-e2e

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -72,6 +73,36 @@ func Dim(s string) string {
 	return dimStyle.Render(s)
 }
 
+func Path(s string) string {
+	if s == "" {
+		return Subtle("—")
+	}
+
+	prefix := ""
+	if strings.HasPrefix(s, "."+string(os.PathSeparator)) {
+		prefix = "." + string(os.PathSeparator)
+		s = strings.TrimPrefix(s, prefix)
+	}
+
+	cleaned := filepath.Clean(s)
+	dir, base := filepath.Split(cleaned)
+	if base == "" {
+		return prefix + s
+	}
+	if dir == "" || dir == "." {
+		if prefix != "" {
+			return Subtle(prefix) + Bold(base)
+		}
+		return Bold(base)
+	}
+
+	dir = strings.TrimSuffix(dir, string(os.PathSeparator))
+	if dir == "" {
+		return Bold(base)
+	}
+	return Subtle(prefix+dir+string(os.PathSeparator)) + Bold(base)
+}
+
 func Error(msg string) {
 	fmt.Fprintf(os.Stderr, "%s %s\n", Red("Error:"), msg)
 }
@@ -115,13 +146,16 @@ func FailPrefix(prefix, msg string) string {
 }
 
 // stdinReader can be overridden in tests to provide canned input.
-var stdinReader func() *bufio.Reader
+var (
+	stdinReader       func() *bufio.Reader
+	sharedStdinReader = bufio.NewReader(os.Stdin)
+)
 
 func getReader() *bufio.Reader {
 	if stdinReader != nil {
 		return stdinReader()
 	}
-	return bufio.NewReader(os.Stdin)
+	return sharedStdinReader
 }
 
 // useSimpleIO returns true when bubbletea should not be used (test mocks or

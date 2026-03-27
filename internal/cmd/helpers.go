@@ -21,17 +21,45 @@ func configureBareRepo(dir string) error {
 	return nil
 }
 
-// cleanupLocalBranchRefs removes all local branch refs that a bare clone creates
-// as copies of remote branches.
+// cleanupLocalBranchRefs removes local branch refs that a bare clone creates as
+// exact duplicates of remote-tracking refs, while preserving local branches
+// whose commits differ from the remote.
 func cleanupLocalBranchRefs(dir string) {
-	refs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)", "refs/heads")
-	if refs == "" {
+	localRefs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/heads")
+	if localRefs == "" {
 		return
 	}
-	for ref := range strings.SplitSeq(refs, "\n") {
-		ref = strings.TrimSpace(ref)
-		if ref != "" {
-			git.RunInWithOutput(dir, "branch", "-D", ref)
+
+	remoteRefs, _ := git.QueryIn(dir, "for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/remotes")
+	remoteBranches := make(map[string]map[string]bool)
+	for line := range strings.SplitSeq(remoteRefs, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
+
+		remoteRef, oid, ok := strings.Cut(line, "\t")
+		if !ok || remoteRef == "" || oid == "" || strings.HasSuffix(remoteRef, "/HEAD") {
+			continue
+		}
+		if _, branch, ok := strings.Cut(remoteRef, "/"); ok && branch != "" {
+			if remoteBranches[branch] == nil {
+				remoteBranches[branch] = make(map[string]bool)
+			}
+			remoteBranches[branch][oid] = true
+		}
+	}
+
+	for line := range strings.SplitSeq(localRefs, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		ref, oid, ok := strings.Cut(line, "\t")
+		if !ok || ref == "" || oid == "" || !remoteBranches[ref][oid] {
+			continue
+		}
+		git.RunInWithOutput(dir, "branch", "-D", ref)
 	}
 }

@@ -57,6 +57,8 @@ func init() {
 
 // Execute runs the root command.
 func Execute() {
+	os.Args = normalizeLegacyAliases(os.Args)
+
 	if err := rootCmd.Execute(); err != nil {
 		// Only pass through to git worktree for unknown subcommands.
 		// Check if the error is an "unknown command" error by seeing if the
@@ -70,6 +72,20 @@ func Execute() {
 		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+func normalizeLegacyAliases(args []string) []string {
+	if len(args) < 2 {
+		return args
+	}
+
+	switch args[1] {
+	case "destroy":
+		normalized := []string{args[0], "remove", "--delete-remote"}
+		return append(normalized, args[2:]...)
+	default:
+		return args
 	}
 }
 

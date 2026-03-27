@@ -48,7 +48,7 @@ func init() {
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
-	// Change to bare root
+	// Change to bare root.
 	root, err := worktree.BareRoot()
 	if err != nil {
 		return err
@@ -57,8 +57,15 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to change to bare root: %w", err)
 	}
 
-	remote := worktree.DefaultRemote()
+	interactive := len(args) == 0 && !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("force-branch")
+	if interactive {
+		if err := fetchInteractiveBranches(); err != nil {
+			return err
+		}
+		return runAddInteractive()
+	}
 
+	remote := worktree.DefaultRemote()
 	if remote != "" {
 		if err := ui.SpinWithOutput(fmt.Sprintf("Fetching from %s", remote), func(w io.Writer) error {
 			return git.RunTo(w, "fetch", remote, "--prune")
@@ -67,54 +74,61 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// If no arguments and no flags set, run interactive mode
-	if len(args) == 0 && !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("force-branch") {
-		return runAddInteractive(remote)
-	}
-
-	// Non-interactive: build git args from parsed flags
+	// Non-interactive: build git args from parsed flags.
 	return runAddDirect(cmd, args, remote)
 }
 
-func runAddInteractive(remote string) error {
-	// Build set of branches already checked out as worktrees
+func fetchInteractiveBranches() error {
+	remotes, err := git.QueryLines("remote")
+	if err != nil || len(remotes) == 0 {
+		return nil
+	}
+
+	return ui.SpinWithOutput("Fetching from all remotes", func(w io.Writer) error {
+		return git.RunTo(w, "fetch", "--all", "--prune")
+	})
+}
+
+func runAddInteractive() error {
+	// Build set of branches already checked out as worktrees.
 	checkedOut := make(map[string]bool)
 	if entries, err := worktree.List(); err == nil {
 		for _, e := range entries {
-			if e.Branch != "" && e.Branch != "(detached)" {
+			if e.Branch != "" && !e.Detached {
 				checkedOut[e.Branch] = true
 			}
 		}
 	}
 
 	var items []picker.Item
-	// Add "Create new branch" option first
+	// Add "Create new branch" option first.
 	items = append(items, picker.Item{
 		Label: "➕ Create new branch",
-		Value: "__create_new__",
+		Value: createNewBranchValue,
 	})
 
-	// Get remote branches (excluding HEAD)
+	// Get remote branches (excluding HEAD).
 	lines, err := git.QueryLines("branch", "-r", "--format=%(refname:short)")
 	if err != nil {
 		return fmt.Errorf("failed to list remote branches: %w", err)
 	}
 
-	for _, line := range lines {
-		if strings.Contains(line, "HEAD") {
+	for _, remoteRef := range lines {
+		if strings.Contains(remoteRef, "HEAD") {
 			continue
 		}
-		// Strip remote name prefix (e.g., "origin/feature" -> "feature")
-		_, branch, _ := strings.Cut(line, "/")
-		if branch == "" {
+
+		remote, branch := splitRemoteBranchRef(remoteRef)
+		if remote == "" || branch == "" {
 			continue
 		}
 		if checkedOut[branch] {
 			continue
 		}
+
 		items = append(items, picker.Item{
-			Label: branch,
-			Value: branch,
+			Label: fmt.Sprintf("%s [%s]", branch, remote),
+			Value: remoteRef,
 		})
 	}
 
@@ -133,21 +147,27 @@ func runAddInteractive(remote string) error {
 
 	selected := result.Items[0]
 
-	if selected.Value == "__create_new__" {
+	if selected.Value == createNewBranchValue {
 		return createNewBranch()
 	}
 
-	// Create worktree from selected remote branch
-	branch := selected.Value
+	remote, branch := splitRemoteBranchRef(selected.Value)
+	if remote == "" || branch == "" {
+		return fmt.Errorf("invalid remote branch ref: %s", selected.Value)
+	}
+
+	wtPath := promptWorktreePath(branch)
+
+	// Create worktree from selected remote branch.
 	if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(w io.Writer) error {
-		return git.RunTo(w, "worktree", "add", "-b", branch, branch, remote+"/"+branch)
+		return git.RunTo(w, "worktree", "add", "-b", branch, wtPath, selected.Value)
 	}); err != nil {
 		return err
 	}
 
-	// Set upstream tracking
-	if err := ui.SpinWithOutput(fmt.Sprintf("Setting upstream to %s", ui.Accent(remote+"/"+branch)), func(w io.Writer) error {
-		return git.RunTo(w, "branch", "--set-upstream-to="+remote+"/"+branch, branch)
+	// Set upstream tracking.
+	if err := ui.SpinWithOutput(fmt.Sprintf("Setting upstream to %s", ui.Accent(selected.Value)), func(w io.Writer) error {
+		return git.RunTo(w, "branch", "--set-upstream-to="+selected.Value, branch)
 	}); err != nil {
 		return err
 	}
@@ -163,11 +183,19 @@ func createNewBranch() error {
 		return fmt.Errorf("branch name cannot be empty")
 	}
 
-	wtPath := branchName
+	wtPath := promptWorktreePath(branchName)
 
 	return ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func(w io.Writer) error {
 		return git.RunTo(w, "worktree", "add", "-b", branchName, wtPath)
 	})
+}
+
+func promptWorktreePath(defaultPath string) string {
+	wtPath := ui.PromptInput(fmt.Sprintf("Enter worktree path (optional, default: %s):", defaultPath))
+	if wtPath == "" {
+		return defaultPath
+	}
+	return wtPath
 }
 
 func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
@@ -191,10 +219,10 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
 		}
 	}
 
-	// Append positional args (path, commit-ish)
+	// Append positional args (path, commit-ish).
 	gitArgs = append(gitArgs, args...)
 
-	// Create the worktree
+	// Create the worktree.
 	fullArgs := append([]string{"worktree", "add"}, gitArgs...)
 	if err := ui.SpinWithOutput("Creating worktree", func(w io.Writer) error {
 		return git.RunTo(w, fullArgs...)
@@ -202,7 +230,7 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
 		return err
 	}
 
-	// Set upstream tracking if -b/-B was used
+	// Set upstream tracking if -b/-B was used.
 	trackBranch := branch
 	if trackBranch == "" {
 		trackBranch = forceBranch
@@ -215,10 +243,18 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) error {
 				return err
 			}
 		} else {
-			fmt.Printf("\nBranch %s created locally.\nTo push and set upstream:\n  %s\n",
-				ui.Accent(trackBranch), ui.Muted("git push -u "+remote+" "+trackBranch))
+			fmt.Println()
+			fmt.Println(renderCommandHintsSection([]commandHint{{
+				Action:  fmt.Sprintf("Push %s and set upstream", ui.Accent(trackBranch)),
+				Command: "git push -u " + remote + " " + trackBranch,
+			}}))
 		}
 	}
 
 	return nil
+}
+
+func splitRemoteBranchRef(remoteRef string) (remote string, branch string) {
+	remote, branch, _ = strings.Cut(remoteRef, "/")
+	return remote, branch
 }
