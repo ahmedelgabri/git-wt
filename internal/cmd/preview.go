@@ -54,7 +54,7 @@ var previewBranchCmd = &cobra.Command{
 
 		remote, branch := splitRemoteBranchRef(remoteRef)
 		out, _ := git.Query("log", "--oneline", "--graph", "--date=short",
-			"--color=always", "--pretty=format:%C(auto)%cd %h%d %s",
+			previewGitColorArg(), "--pretty=format:%C(auto)%cd %h%d %s",
 			remoteRef, "-10", "--")
 
 		if branch == "" {
@@ -119,7 +119,7 @@ func generateWorktreePreview(wtPath string, mode string) string {
 
 	b.WriteString("\n" + ui.Bold(ui.Accent("Recent Commits")) + "\n")
 	log, err := git.QueryIn(wtPath, "log", "--oneline", "--graph", "--date=short",
-		"--color=always", "--pretty=format:%C(auto)%cd %h%d %s", "HEAD", "-10", "--")
+		previewGitColorArg(), "--pretty=format:%C(auto)%cd %h%d %s", "HEAD", "-10", "--")
 	if err != nil {
 		b.WriteString("  (unable to get log)\n")
 	} else {
@@ -145,6 +145,13 @@ func previewWorktreeCmdStr(mode string) string {
 func previewBranchCmdStr() string {
 	exe, _ := os.Executable()
 	return fmt.Sprintf("sh -c 'exec \"$1\" _preview branch \"$2\"' sh %s {1}", shellQuote(exe))
+}
+
+func previewGitColorArg() string {
+	if ui.NoColor() {
+		return "--color=never"
+	}
+	return "--color=always"
 }
 
 func shellQuote(s string) string {

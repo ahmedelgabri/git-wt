@@ -22,7 +22,7 @@ type spinnerModel struct {
 func newSpinnerModel(message string, fn func() error) spinnerModel {
 	s := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),
-		spinner.WithStyle(accentStyle),
+		spinner.WithStyle(ForegroundStyle(accentColor)),
 	)
 	return spinnerModel{
 		spinner: s,

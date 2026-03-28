@@ -230,6 +230,18 @@ func TestPreviewBranchCmdStr(t *testing.T) {
 	}
 }
 
+func TestPreviewGitColorArgRespectsNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	if got := previewGitColorArg(); got != "--color=never" {
+		t.Fatalf("previewGitColorArg() with NO_COLOR = %q, want %q", got, "--color=never")
+	}
+
+	t.Setenv("NO_COLOR", "")
+	if got := previewGitColorArg(); got != "--color=always" {
+		t.Fatalf("previewGitColorArg() without NO_COLOR = %q, want %q", got, "--color=always")
+	}
+}
+
 func TestSplitRemoteBranchRef(t *testing.T) {
 	remote, branch := splitRemoteBranchRef("origin/feature/nested")
 	if remote != "origin" || branch != "feature/nested" {

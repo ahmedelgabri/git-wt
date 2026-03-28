@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/ahmedelgabri/git-wt/internal/picker"
+	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -23,7 +25,7 @@ Use with cd to change directories: cd $(git wt switch)`,
 		}
 
 		if len(entries) == 0 {
-			fmt.Println("No worktrees available")
+			fmt.Fprintln(os.Stderr, ui.Subtle("No worktrees available"))
 			return nil
 		}
 

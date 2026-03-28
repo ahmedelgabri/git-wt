@@ -1,12 +1,10 @@
 package ui
 
 import (
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"golang.org/x/term"
 )
 
 // TableColumn defines a rendered column in a static table view.
@@ -17,17 +15,21 @@ type TableColumn struct {
 }
 
 var (
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	sectionBox = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(subtleColor).
-			Padding(0, 1)
+	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	tableHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	tableRuleStyle   = lipgloss.NewStyle().Foreground(subtleColor)
 )
 
 func outputIsTTY() bool {
-	return term.IsTerminal(int(os.Stdout.Fd()))
+	return StdoutTTY()
+}
+
+func sectionBoxStyle() lipgloss.Style {
+	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
+	if NoColor() {
+		return style
+	}
+	return style.BorderForeground(subtleColor)
 }
 
 // Title renders a section title.
@@ -47,7 +49,7 @@ func Section(title string, body ...string) string {
 	if !outputIsTTY() {
 		return content
 	}
-	return sectionBox.Render(content)
+	return sectionBoxStyle().Render(content)
 }
 
 // RenderTable renders a static table using lipgloss so ANSI-colored content is
@@ -59,9 +61,9 @@ func RenderTable(columns []TableColumn, rows [][]string) string {
 
 	widths := tableColumnWidths(columns, rows)
 	header := tableLine(columns, widths, func(col int, value string) string {
-		return tableHeaderStyle.Render(value)
+		return render(tableHeaderStyle, value)
 	})
-	lines := []string{header, tableRuleStyle.Render(strings.Repeat("─", ansi.StringWidth(header)))}
+	lines := []string{header, render(tableRuleStyle, strings.Repeat("─", ansi.StringWidth(header)))}
 	for _, row := range rows {
 		lines = append(lines, tableLineValues(row, widths, nil))
 	}

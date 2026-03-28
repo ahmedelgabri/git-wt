@@ -12,7 +12,6 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 type removalAction string
@@ -213,7 +212,7 @@ func shouldUseInteractiveCleanupSelection() bool {
 	if os.Getenv("GIT_WT_SELECT") != "" {
 		return true
 	}
-	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stdin.Fd()))
+	return ui.CanRenderSelection()
 }
 
 func selectRemovalCandidates(items []removalItem, deleteRemote bool) ([]removalItem, error) {

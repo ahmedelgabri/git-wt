@@ -1,19 +1,14 @@
 package ui
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"golang.org/x/term"
 )
-
-func noColor() bool { return os.Getenv("NO_COLOR") != "" }
 
 var (
 	accentColor    = lipgloss.Color("6") // Cyan
@@ -45,7 +40,7 @@ func MutedColor() lipgloss.TerminalColor     { return subtleColor }
 func HighlightColor() lipgloss.TerminalColor { return highlightColor }
 
 func render(style lipgloss.Style, s string) string {
-	if noColor() {
+	if NoColor() {
 		return s
 	}
 	return style.Render(s)
@@ -60,14 +55,14 @@ func Muted(s string) string     { return render(subtleStyle, s) }
 func Highlight(s string) string { return render(highlightStyle, s) }
 
 func Bold(s string) string {
-	if noColor() {
+	if NoColor() {
 		return s
 	}
 	return boldStyle.Render(s)
 }
 
 func Dim(s string) string {
-	if noColor() {
+	if NoColor() {
 		return s
 	}
 	return dimStyle.Render(s)
@@ -145,37 +140,28 @@ func FailPrefix(prefix, msg string) string {
 	return fmt.Sprintf("%s%s%s", prefix, Red("●"), " "+msg)
 }
 
-// stdinReader can be overridden in tests to provide canned input.
-var (
-	stdinReader       func() *bufio.Reader
-	sharedStdinReader = bufio.NewReader(os.Stdin)
-)
-
-func getReader() *bufio.Reader {
-	if stdinReader != nil {
-		return stdinReader()
-	}
-	return sharedStdinReader
-}
-
 // useSimpleIO returns true when bubbletea should not be used (test mocks or
 // non-TTY stdin like piped input in scripts and E2E tests).
 func useSimpleIO() bool {
-	return stdinReader != nil || !term.IsTerminal(int(os.Stdin.Fd()))
+	return !CanPrompt()
+}
+
+func normalizeInputValue(value string) string {
+	return strings.TrimSpace(value)
 }
 
 // Confirm prints a styled prompt and returns true if the user enters "y".
 // Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
 func Confirm(msg string) bool {
 	if useSimpleIO() {
-		fmt.Fprintf(os.Stderr, "%s %s ", Accent("?"), msg)
+		fmt.Fprintf(os.Stderr, "%s %s %s ", Accent("?"), normalizeConfirmMessage(msg), confirmPromptSuffixPlain())
 		reader := getReader()
 		input, _ := reader.ReadString('\n')
-		return strings.TrimSpace(input) == "y"
+		return normalizeInputValue(input) == "y"
 	}
 
 	m := newConfirmModel(msg)
-	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	p := NewProgram(m, os.Stderr)
 	result, err := p.Run()
 	if err != nil {
 		return false
@@ -190,16 +176,16 @@ func PromptInput(msg string) string {
 		fmt.Fprintf(os.Stderr, "%s %s ", Accent("?"), msg)
 		reader := getReader()
 		input, _ := reader.ReadString('\n')
-		return strings.TrimSpace(input)
+		return normalizeInputValue(input)
 	}
 
 	m := newInputModel(msg, Accent("?"), "")
-	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	p := NewProgram(m, os.Stderr)
 	result, err := p.Run()
 	if err != nil {
 		return ""
 	}
-	return result.(inputModel).Value()
+	return normalizeInputValue(result.(inputModel).Value())
 }
 
 // PromptDangerous prints a red-styled prompt and returns true if the user's
@@ -210,16 +196,16 @@ func PromptDangerous(msg, expect string) bool {
 		fmt.Fprintf(os.Stderr, "%s %s ", Red("!"), msg)
 		reader := getReader()
 		input, _ := reader.ReadString('\n')
-		return strings.TrimSpace(input) == expect
+		return normalizeInputValue(input) == expect
 	}
 
 	m := newInputModel(msg, Red("!"), "")
-	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	p := NewProgram(m, os.Stderr)
 	result, err := p.Run()
 	if err != nil {
 		return false
 	}
-	return result.(inputModel).Value() == expect
+	return normalizeInputValue(result.(inputModel).Value()) == expect
 }
 
 // Spin shows an animated spinner while running fn. On TTYs, renders a
@@ -238,7 +224,7 @@ func Spin(msg string, fn func() error) error {
 	}
 
 	m := newSpinnerModel(msg, fn)
-	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	p := NewProgram(m, os.Stderr)
 	result, err := p.Run()
 	if err != nil {
 		return err

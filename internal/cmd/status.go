@@ -14,10 +14,8 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 // ---------- row ----------
@@ -65,7 +63,7 @@ last commit age, and a repo-relative path for each worktree.`,
 		currentRoot, _ := currentWorktreeRoot()
 		rows := buildStatusRows(entries, currentRoot)
 
-		if !term.IsTerminal(int(os.Stdout.Fd())) {
+		if !ui.StdoutTTY() {
 			return runStatusSync(rows)
 		}
 		return runStatusAsync(rows)
@@ -249,12 +247,12 @@ func runStatusAsync(rows []statusRow) error {
 	m := statusModel{
 		spinner: spinner.New(
 			spinner.WithSpinner(spinner.MiniDot),
-			spinner.WithStyle(lipgloss.NewStyle().Foreground(ui.SubtleColor())),
+			spinner.WithStyle(ui.ForegroundStyle(ui.SubtleColor())),
 		),
 		rows:    rows,
 		pending: len(rows),
 	}
-	p := tea.NewProgram(m)
+	p := ui.NewProgram(m, os.Stdout)
 	result, err := p.Run()
 	if err != nil {
 		return err

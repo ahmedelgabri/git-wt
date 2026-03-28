@@ -19,7 +19,7 @@ func newInputModel(message, prefix, placeholder string) inputModel {
 	ti := textinput.New()
 	ti.Placeholder = placeholder
 	ti.Focus()
-	ti.PromptStyle = accentStyle
+	ti.PromptStyle = ForegroundStyle(accentColor)
 	ti.Prompt = ""
 
 	return inputModel{
