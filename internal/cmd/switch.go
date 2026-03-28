@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -19,7 +21,13 @@ Use with cd to change directories: cd $(git wt switch)`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		entries, err := worktree.List()
+		entries, err := runPreload(context.Background(), "Loading worktrees…", func(ctx context.Context, update func(phase ui.AsyncPhase, message string)) ([]worktree.Entry, error) {
+			update(ui.AsyncLoading, "Loading worktrees…")
+			return worktree.List()
+		})
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}

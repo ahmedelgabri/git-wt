@@ -1,13 +1,8 @@
 package cmd
 
 import (
-	"context"
 	"strings"
 	"testing"
-
-	"github.com/ahmedelgabri/git-wt/internal/picker"
-	"github.com/ahmedelgabri/git-wt/internal/ui"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestBranchCandidateDesc(t *testing.T) {
@@ -75,36 +70,5 @@ func TestRemoteBranchCandidatePickerItem(t *testing.T) {
 	}
 	if item.Desc != "2d · Bob · Fix login" {
 		t.Fatalf("picker desc = %q, want %q", item.Desc, "2d · Bob · Fix login")
-	}
-}
-
-func TestAddPreloadModelStatusAndDone(t *testing.T) {
-	m := newAddPreloadModel(context.Background())
-
-	updated, _ := m.Update(addPreloadStatusMsg{phase: ui.AsyncPartial, message: "Loading remote branches…"})
-	result := updated.(*addPreloadModel)
-	if result.message != "Loading remote branches…" {
-		t.Fatalf("message = %q, want %q", result.message, "Loading remote branches…")
-	}
-
-	updated, _ = result.Update(addPreloadDoneMsg{items: []picker.Item{{Label: "foo", Value: "bar"}}})
-	result = updated.(*addPreloadModel)
-	if result.phase != ui.AsyncReady {
-		t.Fatalf("phase = %v, want %v", result.phase, ui.AsyncReady)
-	}
-	if len(result.items) != 1 || result.items[0].Label != "foo" {
-		t.Fatalf("items = %+v, want one ready item", result.items)
-	}
-}
-
-func TestAddPreloadModelCancel(t *testing.T) {
-	m := newAddPreloadModel(context.Background())
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	result := updated.(*addPreloadModel)
-	if result.err != context.Canceled {
-		t.Fatalf("cancel err = %v, want %v", result.err, context.Canceled)
-	}
-	if result.phase != ui.AsyncCanceled {
-		t.Fatalf("phase = %v, want %v", result.phase, ui.AsyncCanceled)
 	}
 }

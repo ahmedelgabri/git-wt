@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -107,21 +108,34 @@ func runRemoveWithDefaults(cmd *cobra.Command, args []string, defaultDeleteRemot
 		return fmt.Errorf("cleanup filters cannot be combined with explicit worktree arguments")
 	}
 
-	entries, err := worktree.List()
-	if err != nil {
-		return err
-	}
-
 	remote := worktree.DefaultRemote()
 
 	switch {
 	case filters.any():
-		return removeByFilter(entries, filters, opts, remote)
+		return removeByFilterPreloaded(filters, opts, remote)
 	case len(args) == 0:
-		return removeInteractive(entries, opts, remote)
+		return removeInteractivePreloaded(opts, remote)
 	default:
+		entries, err := worktree.List()
+		if err != nil {
+			return err
+		}
 		return removeNonInteractive(entries, args, opts, remote)
 	}
+}
+
+func removeInteractivePreloaded(opts removeOptions, remote string) error {
+	entries, err := runPreload(context.Background(), "Loading worktrees…", func(ctx context.Context, update func(phase ui.AsyncPhase, message string)) ([]worktree.Entry, error) {
+		update(ui.AsyncLoading, "Loading worktrees…")
+		return worktree.List()
+	})
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return removeInteractive(entries, opts, remote)
 }
 
 func removeInteractive(entries []worktree.Entry, opts removeOptions, remote string) error {
@@ -183,6 +197,41 @@ func explicitRemovalItems(entries []worktree.Entry, args []string) ([]removalIte
 		})
 	}
 	return items, nil
+}
+
+func removeByFilterPreloaded(filters removeFilters, opts removeOptions, remote string) error {
+	items, err := runPreload(context.Background(), "Scanning cleanup candidates…", func(ctx context.Context, update func(phase ui.AsyncPhase, message string)) ([]removalItem, error) {
+		update(ui.AsyncLoading, "Loading worktrees…")
+		entries, err := worktree.List()
+		if err != nil {
+			return nil, err
+		}
+		update(ui.AsyncPartial, "Scanning cleanup candidates…")
+		return findRemovalCandidates(entries, filters)
+	})
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		fmt.Println(ui.Subtle("No matching cleanup candidates found"))
+		return nil
+	}
+
+	selected := items
+	if shouldUseInteractiveCleanupSelection() {
+		selected, err = selectRemovalCandidates(items, opts.deleteRemote)
+		if err != nil {
+			return err
+		}
+		if len(selected) == 0 {
+			return nil
+		}
+	}
+
+	return runRemovalPlan(selected, opts, remote, true)
 }
 
 func removeByFilter(entries []worktree.Entry, filters removeFilters, opts removeOptions, remote string) error {

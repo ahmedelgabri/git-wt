@@ -2,18 +2,14 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/ahmedelgabri/git-wt/internal/picker"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type remoteBranchCandidate struct {
@@ -135,7 +131,7 @@ func buildInteractiveAddItems(ctx context.Context) ([]picker.Item, error) {
 }
 
 func canUseAddPreloadUI() bool {
-	return ui.CanPrompt() && ui.StdoutTTY()
+	return canUseSelectionPreloadUI()
 }
 
 func fetchInteractiveBranchesQuiet(ctx context.Context) error {
@@ -146,124 +142,13 @@ func fetchInteractiveBranchesQuiet(ctx context.Context) error {
 	return git.RunToContext(ctx, io.Discard, "fetch", "--all", "--prune")
 }
 
-type addPreloadStatusMsg struct {
-	phase   ui.AsyncPhase
-	message string
-}
-
-type addPreloadDoneMsg struct {
-	items []picker.Item
-	err   error
-}
-
-type addPreloadModel struct {
-	spinner spinner.Model
-	phase   ui.AsyncPhase
-	message string
-	items   []picker.Item
-	err     error
-	ctx     context.Context
-	cancel  context.CancelFunc
-	send    func(tea.Msg)
-}
-
-func newAddPreloadModel(ctx context.Context) *addPreloadModel {
-	baseCtx := ctx
-	if baseCtx == nil {
-		baseCtx = context.Background()
-	}
-	ctx, cancel := context.WithCancel(baseCtx)
-	return &addPreloadModel{
-		spinner: spinner.New(
-			spinner.WithSpinner(spinner.MiniDot),
-			spinner.WithStyle(ui.ForegroundStyle(ui.AccentColor())),
-		),
-		phase:   ui.AsyncLoading,
-		message: "Fetching from all remotes…",
-		ctx:     ctx,
-		cancel:  cancel,
-	}
-}
-
-func (m *addPreloadModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.load())
-}
-
-func (m *addPreloadModel) load() tea.Cmd {
-	ctx := m.ctx
-	return func() tea.Msg {
-		if m.send != nil {
-			m.send(addPreloadStatusMsg{phase: ui.AsyncLoading, message: "Fetching from all remotes…"})
-		}
-		if err := fetchInteractiveBranchesQuiet(ctx); err != nil {
-			return addPreloadDoneMsg{err: err}
-		}
-		if m.send != nil {
-			m.send(addPreloadStatusMsg{phase: ui.AsyncPartial, message: "Loading remote branches…"})
-		}
-		items, err := buildInteractiveAddItems(ctx)
-		return addPreloadDoneMsg{items: items, err: err}
-	}
-}
-
-func (m *addPreloadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case addPreloadStatusMsg:
-		m.phase = msg.phase
-		m.message = msg.message
-		return m, nil
-	case addPreloadDoneMsg:
-		m.items = msg.items
-		m.err = msg.err
-		switch {
-		case errors.Is(m.err, context.Canceled):
-			m.phase = ui.AsyncCanceled
-		case m.err != nil:
-			m.phase = ui.AsyncError
-		default:
-			m.phase = ui.AsyncReady
-		}
-		return m, tea.Quit
-	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
-			m.cancel()
-			m.phase = ui.AsyncCanceled
-			m.err = context.Canceled
-			return m, tea.Quit
-		}
-	case spinner.TickMsg:
-		if m.phase.Active() {
-			var cmd tea.Cmd
-			m.spinner, cmd = m.spinner.Update(msg)
-			return m, cmd
-		}
-	}
-	return m, nil
-}
-
-func (m *addPreloadModel) View() string {
-	prefix := m.spinner.View()
-	switch m.phase {
-	case ui.AsyncReady:
-		prefix = ui.Green("●")
-	case ui.AsyncError, ui.AsyncCanceled:
-		prefix = ui.Red("●")
-	}
-	return fmt.Sprintf("%s %s\n", prefix, m.message)
-}
-
 func runAddPreload(ctx context.Context) ([]picker.Item, error) {
-	m := newAddPreloadModel(ctx)
-	p := ui.NewProgram(m, os.Stderr)
-	m.send = p.Send
-	result, err := p.Run()
-	m.cancel()
-	if err != nil {
-		return nil, err
-	}
-	r := result.(*addPreloadModel)
-	if errors.Is(r.err, context.Canceled) {
-		return nil, nil
-	}
-	return r.items, r.err
+	return runPreload(ctx, "Fetching from all remotes…", func(ctx context.Context, update func(phase ui.AsyncPhase, message string)) ([]picker.Item, error) {
+		update(ui.AsyncLoading, "Fetching from all remotes…")
+		if err := fetchInteractiveBranchesQuiet(ctx); err != nil {
+			return nil, err
+		}
+		update(ui.AsyncPartial, "Loading remote branches…")
+		return buildInteractiveAddItems(ctx)
+	})
 }

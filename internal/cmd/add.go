@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -101,6 +102,9 @@ func fetchInteractiveBranches() error {
 
 func runAddInteractive() (string, error) {
 	items, err := loadInteractiveAddItems(context.Background())
+	if errors.Is(err, context.Canceled) {
+		return "", nil
+	}
 	if err != nil {
 		return "", err
 	}
