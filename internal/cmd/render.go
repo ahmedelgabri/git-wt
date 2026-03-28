@@ -14,12 +14,19 @@ type commandHint struct {
 }
 
 func renderTableSection(columns []ui.TableColumn, rows [][]string, notes []string, summary string) string {
+	return renderTableSectionWithFooter(columns, rows, notes, summary, "")
+}
+
+func renderTableSectionWithFooter(columns []ui.TableColumn, rows [][]string, notes []string, summary string, footer string) string {
 	parts := []string{ui.RenderTable(columns, rows)}
 	if len(notes) > 0 {
 		parts = append(parts, "", strings.Join(notes, "\n"))
 	}
 	if summary != "" {
 		parts = append(parts, "", summary)
+	}
+	if strings.TrimSpace(footer) != "" {
+		parts = append(parts, "", footer)
 	}
 	return ui.Section("", parts...)
 }
@@ -38,8 +45,8 @@ func renderRepoLayoutSection(rootDir string, branches []treeBranch) string {
 
 	summary := ui.Subtle(fmt.Sprintf("%d worktree(s) ready", len(branches)))
 	return renderTableSection([]ui.TableColumn{
-		{Title: "PATH", MinWidth: 18},
-		{Title: "ROLE", MinWidth: 16},
+		{Title: "PATH", MinWidth: 18, MaxWidth: 48},
+		{Title: "ROLE", MinWidth: 16, MaxWidth: 32},
 	}, rows, nil, summary)
 }
 
@@ -50,7 +57,7 @@ func renderCommandHintsSection(hints []commandHint) string {
 	}
 
 	return renderTableSection([]ui.TableColumn{
-		{Title: "NEXT", MinWidth: 18},
+		{Title: "NEXT", MinWidth: 18, MaxWidth: 28},
 		{Title: "COMMAND", MinWidth: 24},
 	}, rows, nil, "")
 }

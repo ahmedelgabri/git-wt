@@ -110,19 +110,17 @@ func renderStyledWorktreeList() error {
 		})
 	}
 
-	body := ui.RenderTable([]ui.TableColumn{
-		{Title: "WORKTREE", MinWidth: 12},
-		{Title: "BRANCH", MinWidth: 12},
-		{Title: "HEAD", MinWidth: 8},
-		{Title: "FLAGS", MinWidth: 8},
-		{Title: "PATH", MinWidth: 20},
-	}, rows)
-
 	summaryParts := []string{ui.Subtle(fmt.Sprintf("%d linked worktree(s)", worktreeCount))}
 	if hasBare {
 		summaryParts = append(summaryParts, ui.Accent("bare root present"))
 	}
-	fmt.Println(ui.Section("", body, "", strings.Join(summaryParts, " • ")))
+	fmt.Println(renderTableSection([]ui.TableColumn{
+		{Title: "WORKTREE", MinWidth: 12, MaxWidth: 24},
+		{Title: "BRANCH", MinWidth: 12, MaxWidth: 28},
+		{Title: "HEAD", MinWidth: 8, MaxWidth: 8},
+		{Title: "FLAGS", MinWidth: 8, MaxWidth: 24},
+		{Title: "PATH", MinWidth: 20},
+	}, rows, nil, strings.Join(summaryParts, " • ")))
 	return nil
 }
 

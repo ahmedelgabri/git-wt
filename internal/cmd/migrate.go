@@ -289,8 +289,8 @@ func renderMigratePlan(plan migratePlan) string {
 	summary := strings.Join(summaryParts, " • ")
 
 	return renderTableSection([]ui.TableColumn{
-		{Title: "ITEM", MinWidth: 16},
-		{Title: "DETAIL", MinWidth: 28},
+		{Title: "ITEM", MinWidth: 16, MaxWidth: 20},
+		{Title: "DETAIL", MinWidth: 28, MaxWidth: 64},
 	}, rows, notes, summary)
 }
 
@@ -320,8 +320,8 @@ func renderMigrateOutcome(plan migratePlan) string {
 
 	summary := ui.Green("Migration artifacts preserved")
 	return renderTableSection([]ui.TableColumn{
-		{Title: "OUTCOME", MinWidth: 16},
-		{Title: "DETAIL", MinWidth: 28},
+		{Title: "OUTCOME", MinWidth: 16, MaxWidth: 20},
+		{Title: "DETAIL", MinWidth: 28, MaxWidth: 64},
 	}, rows, nil, summary)
 }
 

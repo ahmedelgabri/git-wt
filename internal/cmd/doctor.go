@@ -115,22 +115,17 @@ func renderDoctorChecksWithFooter(checks []doctorCheck, footer string) string {
 		})
 	}
 
-	body := ui.RenderTable([]ui.TableColumn{
-		{Title: "STATUS", MinWidth: 8, MaxWidth: 10},
-		{Title: "CHECK", MinWidth: 20, MaxWidth: 26},
-		{Title: "DETAIL", MinWidth: 24, MaxWidth: 80},
-	}, rows)
 	summary := strings.Join([]string{
 		ui.Subtle(fmt.Sprintf("%d check(s)", len(checks))),
 		ui.Green(fmt.Sprintf("%d ok", okCount)),
 		ui.Yellow(fmt.Sprintf("%d warning(s)", warnCount)),
 		ui.Red(fmt.Sprintf("%d error(s)", errorCount)),
 	}, " • ")
-	parts := []string{body, "", summary}
-	if strings.TrimSpace(footer) != "" {
-		parts = append(parts, "", footer)
-	}
-	return ui.Section("", parts...)
+	return renderTableSectionWithFooter([]ui.TableColumn{
+		{Title: "STATUS", MinWidth: 8, MaxWidth: 10},
+		{Title: "CHECK", MinWidth: 20, MaxWidth: 26},
+		{Title: "DETAIL", MinWidth: 24, MaxWidth: 80},
+	}, rows, nil, summary, footer)
 }
 
 func renderDoctorLevel(level doctorLevel) string {
