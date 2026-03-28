@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sync"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/spf13/cobra"
@@ -11,6 +12,17 @@ import (
 
 // Version is set at build time via ldflags.
 var Version = "dev"
+
+const (
+	supportedCommandGroup   = "supported"
+	passthroughCommandGroup = "passthrough"
+)
+
+var (
+	configureRootCommandOnce sync.Once
+	supportedCommandNames    = []string{"add", "clone", "doctor", "list", "migrate", "remove", "status", "switch", "update"}
+	passthroughCommandNames  = []string{"lock", "unlock", "move", "prune", "repair"}
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "git-wt",
@@ -20,8 +32,8 @@ var rootCmd = &cobra.Command{
 Uses a .bare/ directory for git data with each branch in its own worktree
 directory. Run 'git-wt <command> --help' for details on any command.
 
-Native git worktree commands (list, lock, unlock, move, prune, repair) are
-also supported as pass-throughs.`,
+Native git worktree commands (lock, unlock, move, prune, repair) are also
+supported as pass-throughs.`,
 	// Don't show usage on errors from subcommands
 	SilenceUsage: true,
 	// We handle error formatting ourselves
@@ -39,7 +51,7 @@ func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	// Pass-through commands to git worktree
-	for _, name := range []string{"lock", "unlock", "move", "prune", "repair"} {
+	for _, name := range passthroughCommandNames {
 		name := name
 		rootCmd.AddCommand(&cobra.Command{
 			Use:                name,
@@ -55,8 +67,28 @@ func init() {
 	}
 }
 
+func configureRootCommand() {
+	configureRootCommandOnce.Do(func() {
+		rootCmd.AddGroup(
+			&cobra.Group{ID: supportedCommandGroup, Title: "Supported commands:"},
+			&cobra.Group{ID: passthroughCommandGroup, Title: "Passthrough:"},
+		)
+		rootCmd.SetHelpCommandGroupID(supportedCommandGroup)
+
+		for _, cmd := range rootCmd.Commands() {
+			switch {
+			case slices.Contains(supportedCommandNames, cmd.Name()):
+				cmd.GroupID = supportedCommandGroup
+			case slices.Contains(passthroughCommandNames, cmd.Name()):
+				cmd.GroupID = passthroughCommandGroup
+			}
+		}
+	})
+}
+
 // Execute runs the root command.
 func Execute() {
+	configureRootCommand()
 	os.Args = normalizeLegacyAliases(os.Args)
 
 	if err := rootCmd.Execute(); err != nil {

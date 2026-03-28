@@ -12,10 +12,13 @@ teardown() {
 
 # General help and usage tests
 
-@test "general: --help shows main help" {
+@test "general: --help shows grouped main help" {
 	run "$GIT_WT" --help
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"git-wt"* ]] || [[ "$output" == *"worktree"* ]]
+	[[ "$output" == *"Supported commands:"* ]]
+	[[ "$output" == *"Passthrough:"* ]]
+	[[ "$output" != *"Available Commands:"* ]]
 	[[ "$output" != *"destroy"* ]]
 }
 
@@ -32,10 +35,12 @@ teardown() {
 	! grep -R "destroy" man/*.1
 }
 
-@test "general: no arguments shows help" {
+@test "general: no arguments shows grouped help" {
 	run "$GIT_WT"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"git-wt"* ]] || [[ "$output" == *"worktree"* ]]
+	[[ "$output" == *"Supported commands:"* ]]
+	[[ "$output" == *"Passthrough:"* ]]
 }
 
 @test "general: unknown command shows error" {
