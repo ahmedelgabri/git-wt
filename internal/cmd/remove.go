@@ -234,30 +234,6 @@ func removeByFilterPreloaded(filters removeFilters, opts removeOptions, remote s
 	return runRemovalPlan(selected, opts, remote, true)
 }
 
-func removeByFilter(entries []worktree.Entry, filters removeFilters, opts removeOptions, remote string) error {
-	items, err := findRemovalCandidates(entries, filters)
-	if err != nil {
-		return err
-	}
-	if len(items) == 0 {
-		fmt.Println(ui.Subtle("No matching cleanup candidates found"))
-		return nil
-	}
-
-	selected := items
-	if shouldUseInteractiveCleanupSelection() {
-		selected, err = selectRemovalCandidates(items, opts.deleteRemote)
-		if err != nil {
-			return err
-		}
-		if len(selected) == 0 {
-			return nil
-		}
-	}
-
-	return runRemovalPlan(selected, opts, remote, true)
-}
-
 func shouldUseInteractiveCleanupSelection() bool {
 	if os.Getenv("GIT_WT_SELECT") != "" {
 		return true
@@ -636,11 +612,6 @@ func removalCandidatesToPickerItems(items []removalItem) []picker.Item {
 		})
 	}
 	return pickerItems
-}
-
-func pickerWorkspaceName(path string) string {
-	bareRoot, _ := worktree.BareRoot()
-	return pickerWorkspaceNameWithBareRoot(path, bareRoot)
 }
 
 func pickerWorkspaceNameWithBareRoot(path, bareRoot string) string {

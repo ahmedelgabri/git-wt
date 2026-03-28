@@ -73,10 +73,10 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 }
 
 func newCommand(ctx context.Context, args ...string) *exec.Cmd {
-	if ctx != nil {
-		return exec.CommandContext(ctx, "git", args...)
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return exec.Command("git", args...)
+	return exec.CommandContext(ctx, "git", args...)
 }
 
 func formatDebugCommand(dir string, args []string) string {
@@ -89,7 +89,7 @@ func formatDebugCommand(dir string, args []string) string {
 // Run executes a git mutation command. In DEBUG mode, it prints the command
 // instead of executing it.
 func Run(args ...string) error {
-	return RunContext(nil, args...)
+	return RunContext(context.Background(), args...)
 }
 
 // RunContext executes a git mutation command with an optional context.
@@ -100,7 +100,7 @@ func RunContext(ctx context.Context, args ...string) error {
 
 // RunIn executes a git mutation command in the specified directory.
 func RunIn(dir string, args ...string) error {
-	return RunInContext(nil, dir, args...)
+	return RunInContext(context.Background(), dir, args...)
 }
 
 // RunInContext executes a git mutation command in the specified directory with
@@ -112,7 +112,7 @@ func RunInContext(ctx context.Context, dir string, args ...string) error {
 
 // RunWithOutput executes a git mutation command and returns its combined output.
 func RunWithOutput(args ...string) (string, error) {
-	return RunWithOutputContext(nil, args...)
+	return RunWithOutputContext(context.Background(), args...)
 }
 
 // RunWithOutputContext executes a git mutation command with an optional
@@ -124,7 +124,7 @@ func RunWithOutputContext(ctx context.Context, args ...string) (string, error) {
 // RunInWithOutput executes a git mutation command in the specified directory
 // and returns its combined output.
 func RunInWithOutput(dir string, args ...string) (string, error) {
-	return RunInWithOutputContext(nil, dir, args...)
+	return RunInWithOutputContext(context.Background(), dir, args...)
 }
 
 // RunInWithOutputContext executes a git mutation command in the specified
@@ -135,7 +135,7 @@ func RunInWithOutputContext(ctx context.Context, dir string, args ...string) (st
 
 // RunTo executes a git mutation command, streaming stdout and stderr to w.
 func RunTo(w io.Writer, args ...string) error {
-	return RunToContext(nil, w, args...)
+	return RunToContext(context.Background(), w, args...)
 }
 
 // RunToContext executes a git mutation command with an optional context,
@@ -148,7 +148,7 @@ func RunToContext(ctx context.Context, w io.Writer, args ...string) error {
 // RunInTo executes a git mutation command in the specified directory,
 // streaming stdout and stderr to w.
 func RunInTo(dir string, w io.Writer, args ...string) error {
-	return RunInToContext(nil, dir, w, args...)
+	return RunInToContext(context.Background(), dir, w, args...)
 }
 
 // RunInToContext executes a git mutation command in the specified directory
@@ -160,7 +160,7 @@ func RunInToContext(ctx context.Context, dir string, w io.Writer, args ...string
 
 // Query executes a read-only git command (always runs, even in DEBUG mode).
 func Query(args ...string) (string, error) {
-	return QueryContext(nil, args...)
+	return QueryContext(context.Background(), args...)
 }
 
 // QueryContext executes a read-only git command with an optional context.
@@ -170,13 +170,13 @@ func QueryContext(ctx context.Context, args ...string) (string, error) {
 
 // QueryRun executes a read-only git command, streaming stdout/stderr directly.
 func QueryRun(args ...string) error {
-	_, err := execGit(ExecOptions{}, args...)
+	_, err := execGit(ExecOptions{Context: context.Background()}, args...)
 	return err
 }
 
 // QueryIn executes a read-only git command in the specified directory.
 func QueryIn(dir string, args ...string) (string, error) {
-	return QueryInContext(nil, dir, args...)
+	return QueryInContext(context.Background(), dir, args...)
 }
 
 // QueryInContext executes a read-only git command in the specified directory
@@ -187,7 +187,7 @@ func QueryInContext(ctx context.Context, dir string, args ...string) (string, er
 
 // QueryCombined executes a read-only git command and returns combined output.
 func QueryCombined(args ...string) (string, error) {
-	return execGit(ExecOptions{Capture: true, Combined: true}, args...)
+	return execGit(ExecOptions{Capture: true, Combined: true, Context: context.Background()}, args...)
 }
 
 // QueryLines executes a read-only git command and returns output lines.
