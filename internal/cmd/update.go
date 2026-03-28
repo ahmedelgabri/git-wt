@@ -23,34 +23,51 @@ in its worktree.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := ui.SpinWithOutputContext("Fetching from all remotes", func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "fetch", "--all", "--prune", "--prune-tags")
-		}); err != nil {
+		var defaultBranch string
+		var entryPath string
+
+		if err := ui.RunSteps([]ui.Step{{
+			Message:    "Fetching from all remotes",
+			ShowOutput: true,
+			Run: func(ctx context.Context, w io.Writer) error {
+				return git.RunToContext(ctx, w, "fetch", "--all", "--prune", "--prune-tags")
+			},
+		}, {
+			Message: "Resolving default branch worktree",
+			Run: func(context.Context, io.Writer) error {
+				remote := worktree.DefaultRemote()
+				defaultBranch = worktree.DefaultBranch(remote)
+				if defaultBranch == "" {
+					ui.Error("Could not determine default branch from remote")
+					return fmt.Errorf("could not determine default branch")
+				}
+
+				entries, err := worktree.List()
+				if err != nil {
+					return err
+				}
+
+				entry := worktree.FindByBranch(entries, defaultBranch)
+				if entry == nil {
+					ui.Errorf("No worktree found for default branch '%s'", defaultBranch)
+					fmt.Fprintln(os.Stderr, "Available worktrees:")
+					git.Run("worktree", "list")
+					return fmt.Errorf("no worktree for default branch '%s'", defaultBranch)
+				}
+				entryPath = entry.Path
+				return nil
+			},
+		}}); err != nil {
 			return err
 		}
 
-		remote := worktree.DefaultRemote()
-		defaultBranch := worktree.DefaultBranch(remote)
-		if defaultBranch == "" {
-			ui.Error("Could not determine default branch from remote")
-			return fmt.Errorf("could not determine default branch")
-		}
-
-		entries, err := worktree.List()
-		if err != nil {
-			return err
-		}
-
-		entry := worktree.FindByBranch(entries, defaultBranch)
-		if entry == nil {
-			ui.Errorf("No worktree found for default branch '%s'", defaultBranch)
-			fmt.Fprintln(os.Stderr, "Available worktrees:")
-			git.Run("worktree", "list")
-			return fmt.Errorf("no worktree for default branch '%s'", defaultBranch)
-		}
-
-		fmt.Printf("Updating %s in %s\n", ui.Accent(defaultBranch), ui.Muted(entry.Path))
-		return git.RunIn(entry.Path, "pull")
+		return ui.RunSteps([]ui.Step{{
+			Message:    fmt.Sprintf("Updating %s in %s", ui.Accent(defaultBranch), ui.Muted(entryPath)),
+			ShowOutput: true,
+			Run: func(ctx context.Context, w io.Writer) error {
+				return git.RunInToContext(ctx, entryPath, w, "pull")
+			},
+		}})
 	},
 }
 

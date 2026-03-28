@@ -153,9 +153,12 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	if err := ui.Spin("Finalizing migration", func() error {
-		return finalizeMigration(plan.repoRoot, newStructure, tempBackup, requiredEntries)
-	}); err != nil {
+	if err := ui.RunSteps([]ui.Step{{
+		Message: "Finalizing migration",
+		Run: func(context.Context, io.Writer) error {
+			return finalizeMigration(plan.repoRoot, newStructure, tempBackup, requiredEntries)
+		},
+	}}); err != nil {
 		return err
 	}
 
@@ -373,37 +376,40 @@ func buildMigratedStructure(plan migratePlan, newStructure string) error {
 		return err
 	}
 
-	// Clone existing repo as bare into .bare.
-	if err := ui.SpinWithOutputContext("Converting to bare repository", func(ctx context.Context, w io.Writer) error {
-		return git.RunToContext(ctx, w, "clone", "--bare", plan.repoRoot, filepath.Join(newStructure, ".bare"))
-	}); err != nil {
+	if err := ui.RunSteps([]ui.Step{{
+		Message:    "Converting to bare repository",
+		ShowOutput: true,
+		Run: func(ctx context.Context, w io.Writer) error {
+			return git.RunToContext(ctx, w, "clone", "--bare", plan.repoRoot, filepath.Join(newStructure, ".bare"))
+		},
+	}, {
+		Message: "Configuring migrated worktree layout",
+		Run: func(context.Context, io.Writer) error {
+			if err := os.WriteFile(filepath.Join(newStructure, ".git"), []byte("gitdir: ./.bare\n"), 0o644); err != nil {
+				return err
+			}
+			if err := configureBareRepo(newStructure); err != nil {
+				return err
+			}
+			if err := applyRemotes(newStructure, plan.remotes); err != nil {
+				return err
+			}
+			return applyPreservedConfig(newStructure, plan.configs)
+		},
+	}, {
+		Message:    "Fetching all branches from preserved remotes",
+		ShowOutput: true,
+		Run: func(ctx context.Context, w io.Writer) error {
+			if len(plan.remotes) == 0 {
+				return nil
+			}
+			if err := git.RunInToContext(ctx, newStructure, w, "fetch", "--all"); err != nil {
+				ui.Warn("Could not fetch from remote (remote may be unreachable) - continuing with local data")
+			}
+			return nil
+		},
+	}}); err != nil {
 		return err
-	}
-
-	// Create .git file.
-	if err := os.WriteFile(filepath.Join(newStructure, ".git"), []byte("gitdir: ./.bare\n"), 0o644); err != nil {
-		return err
-	}
-
-	// Configure bare repo.
-	if err := configureBareRepo(newStructure); err != nil {
-		return err
-	}
-
-	if err := applyRemotes(newStructure, plan.remotes); err != nil {
-		return err
-	}
-	if err := applyPreservedConfig(newStructure, plan.configs); err != nil {
-		return err
-	}
-
-	// Fetch from preserved remotes if available.
-	if len(plan.remotes) > 0 {
-		if err := ui.SpinWithOutputContext("Fetching all branches from preserved remotes", func(ctx context.Context, w io.Writer) error {
-			return git.RunInToContext(ctx, newStructure, w, "fetch", "--all")
-		}); err != nil {
-			ui.Warn("Could not fetch from remote (remote may be unreachable) - continuing with local data")
-		}
 	}
 
 	cleanupLocalBranchRefs(newStructure)
@@ -454,20 +460,23 @@ func buildMigratedStructure(plan migratePlan, newStructure string) error {
 
 	// Restore working directory state.
 	destDir := filepath.Join(newStructure, plan.currentBranch)
-	if err := ui.Spin("Restoring working directory state", func() error {
-		if err := fsutil.CopyDir(plan.repoRoot, destDir, []string{".git"}); err != nil {
-			return fmt.Errorf("failed to copy working directory: %w", err)
-		}
-		// Restore git index (staged changes).
-		oldIndex := filepath.Join(plan.repoRoot, ".git", "index")
-		if _, err := os.Stat(oldIndex); err == nil {
-			newIndex := filepath.Join(newStructure, ".bare", "worktrees", plan.currentBranch, "index")
-			if err := copyFileSimple(oldIndex, newIndex); err != nil {
-				return fmt.Errorf("failed to restore git index: %w", err)
+	if err := ui.RunSteps([]ui.Step{{
+		Message: "Restoring working directory state",
+		Run: func(context.Context, io.Writer) error {
+			if err := fsutil.CopyDir(plan.repoRoot, destDir, []string{".git"}); err != nil {
+				return fmt.Errorf("failed to copy working directory: %w", err)
 			}
-		}
-		return nil
-	}); err != nil {
+			// Restore git index (staged changes).
+			oldIndex := filepath.Join(plan.repoRoot, ".git", "index")
+			if _, err := os.Stat(oldIndex); err == nil {
+				newIndex := filepath.Join(newStructure, ".bare", "worktrees", plan.currentBranch, "index")
+				if err := copyFileSimple(oldIndex, newIndex); err != nil {
+					return fmt.Errorf("failed to restore git index: %w", err)
+				}
+			}
+			return nil
+		},
+	}}); err != nil {
 		return err
 	}
 

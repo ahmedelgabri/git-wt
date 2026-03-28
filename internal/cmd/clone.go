@@ -53,43 +53,43 @@ func runClone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Clone with cleanup on failure
-	if err := ui.SpinWithOutputContext("Cloning repository", func(ctx context.Context, w io.Writer) error {
-		return git.RunToContext(ctx, w, "clone", "--bare", repoURL, ".bare")
-	}); err != nil {
+	var defaultBranch string
+	if err := ui.RunSteps([]ui.Step{{
+		Message:    "Cloning repository",
+		ShowOutput: true,
+		Run: func(ctx context.Context, w io.Writer) error {
+			return git.RunToContext(ctx, w, "clone", "--bare", repoURL, ".bare")
+		},
+	}, {
+		Message: "Configuring worktree layout",
+		Run: func(context.Context, io.Writer) error {
+			if err := os.WriteFile(".git", []byte("gitdir: ./.bare\n"), 0o644); err != nil {
+				return err
+			}
+			return configureBareRepo(".")
+		},
+	}, {
+		Message:    "Fetching all branches",
+		ShowOutput: true,
+		Run: func(ctx context.Context, w io.Writer) error {
+			if err := git.RunToContext(ctx, w, "fetch", "--all"); err != nil {
+				ui.Warn("Failed to fetch all branches")
+			}
+			return nil
+		},
+	}, {
+		Message: "Discovering default branch",
+		Run: func(context.Context, io.Writer) error {
+			cleanupLocalBranchRefs(".")
+			defaultBranch = worktree.DefaultBranch("origin")
+			return nil
+		},
+	}}); err != nil {
 		ui.Error("Failed to clone repository")
 		os.Chdir("..")
 		os.RemoveAll(folderName)
 		return err
 	}
-
-	// Create .git file pointing to .bare
-	if err := os.WriteFile(".git", []byte("gitdir: ./.bare\n"), 0o644); err != nil {
-		return err
-	}
-
-	// Configure the bare repo
-	if err := configureBareRepo("."); err != nil {
-		return err
-	}
-
-	if err := ui.SpinWithOutputContext("Fetching all branches", func(ctx context.Context, w io.Writer) error {
-		return git.RunToContext(ctx, w, "fetch", "--all")
-	}); err != nil {
-		ui.Warn("Failed to fetch all branches")
-	}
-
-	cleanupLocalBranchRefs(".")
-
-	var defaultBranch string
-	// Error ignored: the fallback prompt below handles the empty-branch case
-	_ = ui.Spin("Discovering default branch", func() error {
-		defaultBranch = worktree.DefaultBranch("origin")
-		if defaultBranch == "" {
-			return fmt.Errorf("not found")
-		}
-		return nil
-	})
 
 	if defaultBranch == "" {
 		ui.Warn("Could not discover default branch from remote")
@@ -99,10 +99,17 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	if defaultBranch != "" {
-		if err := ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)), func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch)
-		}); err != nil {
-			ui.Warn("Failed to create worktree for default branch")
+		if err := ui.RunSteps([]ui.Step{{
+			Message:    fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)),
+			ShowOutput: true,
+			Run: func(ctx context.Context, w io.Writer) error {
+				if err := git.RunToContext(ctx, w, "worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch); err != nil {
+					ui.Warn("Failed to create worktree for default branch")
+				}
+				return nil
+			},
+		}}); err != nil {
+			return err
 		}
 	} else {
 		fmt.Printf("No worktree created. Use %s to create worktrees.\n", ui.Accent("git wt add"))
