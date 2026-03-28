@@ -64,9 +64,6 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	interactive := len(args) == 0 && !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("force-branch")
 	if interactive {
-		if err := fetchInteractiveBranches(); err != nil {
-			return err
-		}
 		createdPath, err := runAddInteractive()
 		if err != nil {
 			return err
@@ -103,46 +100,12 @@ func fetchInteractiveBranches() error {
 }
 
 func runAddInteractive() (string, error) {
-	// Build set of branches already checked out as worktrees.
-	checkedOut := make(map[string]bool)
-	if entries, err := worktree.List(); err == nil {
-		for _, e := range entries {
-			if e.Branch != "" && !e.Detached {
-				checkedOut[e.Branch] = true
-			}
-		}
-	}
-
-	var items []picker.Item
-	// Add "Create new branch" option first.
-	items = append(items, picker.Item{
-		Label: "➕ Create new branch",
-		Value: createNewBranchValue,
-	})
-
-	// Get remote branches (excluding HEAD).
-	lines, err := git.QueryLines("branch", "-r", "--format=%(refname:short)")
+	items, err := loadInteractiveAddItems(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("failed to list remote branches: %w", err)
+		return "", err
 	}
-
-	for _, remoteRef := range lines {
-		if strings.Contains(remoteRef, "HEAD") {
-			continue
-		}
-
-		remote, branch := splitRemoteBranchRef(remoteRef)
-		if remote == "" || branch == "" {
-			continue
-		}
-		if checkedOut[branch] {
-			continue
-		}
-
-		items = append(items, picker.Item{
-			Label: fmt.Sprintf("%s [%s]", branch, remote),
-			Value: remoteRef,
-		})
+	if len(items) == 0 {
+		return "", nil
 	}
 
 	result, err := picker.Run(picker.Config{
