@@ -592,8 +592,10 @@ func deleteRemoteBranch(branch, remote string) {
 
 func entriesToPickerItems(entries []worktree.Entry) []picker.Item {
 	items := make([]picker.Item, len(entries))
+	bareRoot, _ := worktree.BareRoot()
+	homeDir, _ := os.UserHomeDir()
 	for i, e := range entries {
-		workspace := pickerWorkspaceName(e.Path)
+		workspace := pickerWorkspaceNameWithBareRoot(e.Path, bareRoot)
 
 		label := workspace
 		switch {
@@ -603,7 +605,6 @@ func entriesToPickerItems(entries []worktree.Entry) []picker.Item {
 			label = fmt.Sprintf("%s [%s]", workspace, e.Branch)
 		}
 
-		homeDir, _ := os.UserHomeDir()
 		displayPath := e.Path
 		if homeDir != "" {
 			displayPath = strings.Replace(displayPath, homeDir, "~", 1)
@@ -620,8 +621,9 @@ func entriesToPickerItems(entries []worktree.Entry) []picker.Item {
 
 func removalCandidatesToPickerItems(items []removalItem) []picker.Item {
 	pickerItems := make([]picker.Item, 0, len(items))
+	bareRoot, _ := worktree.BareRoot()
 	for _, item := range items {
-		workspace := pickerWorkspaceName(item.Target.path)
+		workspace := pickerWorkspaceNameWithBareRoot(item.Target.path, bareRoot)
 		label := fmt.Sprintf("%s [%s]", workspace, item.Target.branchLabel())
 		desc := string(item.Action)
 		if item.Reason != "" {
@@ -638,6 +640,10 @@ func removalCandidatesToPickerItems(items []removalItem) []picker.Item {
 
 func pickerWorkspaceName(path string) string {
 	bareRoot, _ := worktree.BareRoot()
+	return pickerWorkspaceNameWithBareRoot(path, bareRoot)
+}
+
+func pickerWorkspaceNameWithBareRoot(path, bareRoot string) string {
 	if bareRoot != "" {
 		return strings.TrimPrefix(path, bareRoot+string(os.PathSeparator))
 	}

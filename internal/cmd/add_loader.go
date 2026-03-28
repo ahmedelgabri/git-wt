@@ -98,6 +98,18 @@ func parseRemoteBranchCandidates(output string, checkedOut map[string]bool) []re
 	return candidates
 }
 
+func remoteBranchCandidatesToPickerItems(candidates []remoteBranchCandidate) []picker.Item {
+	items := make([]picker.Item, 0, len(candidates)+1)
+	items = append(items, picker.Item{
+		Label: "➕ Create new branch",
+		Value: createNewBranchValue,
+	})
+	for _, candidate := range candidates {
+		items = append(items, candidate.pickerItem())
+	}
+	return items
+}
+
 func loadInteractiveAddItems(ctx context.Context) ([]picker.Item, error) {
 	if canUseAddPreloadUI() {
 		return runAddPreload(ctx)
@@ -120,14 +132,8 @@ func buildInteractiveAddItems(ctx context.Context) ([]picker.Item, error) {
 		return nil, fmt.Errorf("failed to list remote branches: %w", err)
 	}
 
-	items := []picker.Item{{
-		Label: "➕ Create new branch",
-		Value: createNewBranchValue,
-	}}
-	for _, candidate := range parseRemoteBranchCandidates(output, checkedOutBranches()) {
-		items = append(items, candidate.pickerItem())
-	}
-	return items, nil
+	candidates := parseRemoteBranchCandidates(output, checkedOutBranches())
+	return remoteBranchCandidatesToPickerItems(candidates), nil
 }
 
 func canUseAddPreloadUI() bool {
