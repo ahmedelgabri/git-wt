@@ -10,6 +10,37 @@ import (
 	fzf "github.com/junegunn/fzf/src"
 )
 
+func pickerNoColor() bool {
+	return os.Getenv("NO_COLOR") != ""
+}
+
+func buildArgs(cfg Config) []string {
+	args := []string{
+		"--delimiter", "\t",
+		"--with-nth", "2..",
+		"--height", "50%",
+		"--info", "inline",
+		"--pointer", "▸",
+	}
+	if !pickerNoColor() {
+		args = append([]string{"--ansi"}, args...)
+	}
+	if cfg.Multi {
+		args = append(args, "--multi", "--marker", "✓")
+	}
+	if cfg.Prompt != "" {
+		args = append(args, "--prompt", cfg.Prompt)
+	}
+	if cfg.Header != "" {
+		args = append(args, "--header", cfg.Header)
+	}
+	if cfg.PreviewCmd != "" {
+		args = append(args, "--preview", cfg.PreviewCmd)
+		args = append(args, "--preview-window", "right:50%:wrap")
+	}
+	return args
+}
+
 // formatFzfLine formats an Item as a tab-delimited line for fzf input.
 // Format: value\tlabel[ · desc]
 // The value is hidden via --with-nth=2.. but accessible as {1} in --preview.
@@ -32,27 +63,7 @@ func Run(cfg Config) (Result, error) {
 		return resolveEnvSelection(cfg, sel)
 	}
 
-	// Build fzf args
-	args := []string{
-		"--ansi",
-		"--delimiter", "\t",
-		"--with-nth", "2..",
-		"--height", "50%",
-	}
-
-	if cfg.Multi {
-		args = append(args, "--multi")
-	}
-	if cfg.Prompt != "" {
-		args = append(args, "--prompt", cfg.Prompt)
-	}
-	if cfg.Header != "" {
-		args = append(args, "--header", cfg.Header)
-	}
-	if cfg.PreviewCmd != "" {
-		args = append(args, "--preview", cfg.PreviewCmd)
-		args = append(args, "--preview-window", "right:50%:wrap")
-	}
+	args := buildArgs(cfg)
 
 	opts, err := fzf.ParseOptions(true, args)
 	if err != nil {

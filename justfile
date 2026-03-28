@@ -3,19 +3,19 @@ default:
     @just --list
 
 # Build the binary
-build:
+build: clean
     go build -o git-wt ./cmd/git-wt/
 
 # Run Go unit tests
-test *args:
+test *args: build
     go test {{ args }} ./...
 
 # Run Go unit tests with race detector
-test-race *args:
+test-race *args: build
     go test -race {{ args }} ./...
 
 # Run E2E tests (bats)
-test-e2e *args:
+test-e2e *args: build
     bats {{ args }} tests/
 
 # Run all tests (unit + E2E)

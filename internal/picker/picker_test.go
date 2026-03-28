@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -56,6 +57,28 @@ func TestFormatFzfLine(t *testing.T) {
 				t.Errorf("formatFzfLine() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildArgsIncludesThemeByDefault(t *testing.T) {
+	args := buildArgs(Config{Prompt: "Select: ", PreviewCmd: "echo preview", Multi: true})
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"--ansi", "--multi", "--marker", "--pointer", "--prompt", "Select:", "--preview", "echo preview"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("buildArgs() missing %q in %q", want, joined)
+		}
+	}
+}
+
+func TestBuildArgsRespectsNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	args := buildArgs(Config{})
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "--ansi") {
+		t.Fatalf("buildArgs() with NO_COLOR should not include --ansi: %q", joined)
+	}
+	if strings.Contains(joined, "--color") {
+		t.Fatalf("buildArgs() with NO_COLOR should not include --color: %q", joined)
 	}
 }
 
