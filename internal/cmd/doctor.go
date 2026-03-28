@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,6 +42,10 @@ repositories.`,
 		repoRoot, err := doctorRepoRoot()
 		if err != nil {
 			return err
+		}
+
+		if ui.StdoutTTY() {
+			return runDoctorAsync(repoRoot)
 		}
 
 		checks, hasErrors := runDoctorChecks(repoRoot)
@@ -88,6 +93,10 @@ func normalizeDoctorPath(path string) (string, error) {
 }
 
 func renderDoctorChecks(checks []doctorCheck) string {
+	return renderDoctorChecksWithFooter(checks, "")
+}
+
+func renderDoctorChecksWithFooter(checks []doctorCheck, footer string) string {
 	rows := make([][]string, 0, len(checks))
 	okCount, warnCount, errorCount := 0, 0, 0
 	for _, check := range checks {
@@ -117,7 +126,11 @@ func renderDoctorChecks(checks []doctorCheck) string {
 		ui.Yellow(fmt.Sprintf("%d warning(s)", warnCount)),
 		ui.Red(fmt.Sprintf("%d error(s)", errorCount)),
 	}, " • ")
-	return ui.Section("", body, "", summary)
+	parts := []string{body, "", summary}
+	if strings.TrimSpace(footer) != "" {
+		parts = append(parts, "", footer)
+	}
+	return ui.Section("", parts...)
 }
 
 func renderDoctorLevel(level doctorLevel) string {
@@ -132,79 +145,105 @@ func renderDoctorLevel(level doctorLevel) string {
 }
 
 func runDoctorChecks(repoRoot string) ([]doctorCheck, bool) {
-	checks := []doctorCheck{{Level: doctorOK, Name: "Repository", Detail: repoRoot}}
+	checks := make([]doctorCheck, 0, 8)
+	hasErrors := walkDoctorChecks(context.Background(), repoRoot, func(check doctorCheck) {
+		checks = append(checks, check)
+	})
+	return checks, hasErrors
+}
+
+func walkDoctorChecks(ctx context.Context, repoRoot string, emit func(doctorCheck)) bool {
 	hasErrors := false
+	emitCheck := func(check doctorCheck) {
+		emit(check)
+		if check.Level == doctorError {
+			hasErrors = true
+		}
+	}
+	checkCanceled := func() bool {
+		return ctx != nil && ctx.Err() != nil
+	}
+
+	emitCheck(doctorCheck{Level: doctorOK, Name: "Repository", Detail: repoRoot})
+	if checkCanceled() {
+		return hasErrors
+	}
 
 	gitPath := filepath.Join(repoRoot, ".git")
 	gitInfo, err := os.Stat(gitPath)
 	if err != nil {
-		return append(checks, doctorCheck{Level: doctorError, Name: "Repository layout", Detail: err.Error()}), true
+		emitCheck(doctorCheck{Level: doctorError, Name: "Repository layout", Detail: err.Error()})
+		return true
 	}
 
 	isBareLayout := false
 	if gitInfo.IsDir() {
-		checks = append(checks, doctorCheck{Level: doctorWarn, Name: "Repository layout", Detail: "standard git layout (.git directory)"})
+		emitCheck(doctorCheck{Level: doctorWarn, Name: "Repository layout", Detail: "standard git layout (.git directory)"})
 		if warnings, err := preflightMigrateRepo(repoRoot); err != nil {
-			checks = append(checks, doctorCheck{Level: doctorError, Name: "Migration readiness", Detail: err.Error()})
-			hasErrors = true
+			emitCheck(doctorCheck{Level: doctorError, Name: "Migration readiness", Detail: err.Error()})
 		} else if len(warnings) > 0 {
 			for _, warning := range warnings {
-				checks = append(checks, doctorCheck{Level: doctorWarn, Name: "Migration readiness", Detail: warning})
+				emitCheck(doctorCheck{Level: doctorWarn, Name: "Migration readiness", Detail: warning})
 			}
 		} else {
-			checks = append(checks, doctorCheck{Level: doctorOK, Name: "Migration readiness", Detail: "ready for migrate"})
+			emitCheck(doctorCheck{Level: doctorOK, Name: "Migration readiness", Detail: "ready for migrate"})
 		}
 	} else {
 		content, readErr := os.ReadFile(gitPath)
 		if readErr != nil {
-			checks = append(checks, doctorCheck{Level: doctorError, Name: "Repository layout", Detail: readErr.Error()})
-			return checks, true
+			emitCheck(doctorCheck{Level: doctorError, Name: "Repository layout", Detail: readErr.Error()})
+			return true
 		}
 		if strings.Contains(string(content), ".bare") {
 			isBareLayout = true
-			checks = append(checks, doctorCheck{Level: doctorOK, Name: "Repository layout", Detail: "bare worktree layout (.git file -> .bare)"})
+			emitCheck(doctorCheck{Level: doctorOK, Name: "Repository layout", Detail: "bare worktree layout (.git file -> .bare)"})
 		} else {
-			checks = append(checks, doctorCheck{Level: doctorError, Name: "Repository layout", Detail: "unexpected .git file; expected a .bare pointer"})
-			hasErrors = true
+			emitCheck(doctorCheck{Level: doctorError, Name: "Repository layout", Detail: "unexpected .git file; expected a .bare pointer"})
 		}
+	}
+	if checkCanceled() {
+		return hasErrors
 	}
 
 	if isBareLayout {
 		bareDir := filepath.Join(repoRoot, ".bare")
 		if info, err := os.Stat(bareDir); err != nil || !info.IsDir() {
-			checks = append(checks, doctorCheck{Level: doctorError, Name: ".bare directory", Detail: "missing or not a directory"})
-			hasErrors = true
+			emitCheck(doctorCheck{Level: doctorError, Name: ".bare directory", Detail: "missing or not a directory"})
 		} else {
-			checks = append(checks, doctorCheck{Level: doctorOK, Name: ".bare directory", Detail: bareDir})
+			emitCheck(doctorCheck{Level: doctorOK, Name: ".bare directory", Detail: bareDir})
 		}
+	}
+	if checkCanceled() {
+		return hasErrors
 	}
 
 	entries, err := worktree.List()
 	if err != nil {
-		checks = append(checks, doctorCheck{Level: doctorError, Name: "Worktree list", Detail: err.Error()})
-		hasErrors = true
+		emitCheck(doctorCheck{Level: doctorError, Name: "Worktree list", Detail: err.Error()})
 	} else {
-		checks = append(checks, doctorCheck{Level: doctorOK, Name: "Worktree list", Detail: fmt.Sprintf("%d worktree(s)", len(entries))})
+		emitCheck(doctorCheck{Level: doctorOK, Name: "Worktree list", Detail: fmt.Sprintf("%d worktree(s)", len(entries))})
 		for _, entry := range entries {
 			if _, err := os.Stat(entry.Path); err != nil {
-				checks = append(checks, doctorCheck{Level: doctorError, Name: "Worktree path", Detail: fmt.Sprintf("missing path: %s", entry.Path)})
-				hasErrors = true
+				emitCheck(doctorCheck{Level: doctorError, Name: "Worktree path", Detail: fmt.Sprintf("missing path: %s", entry.Path)})
 			}
 		}
+	}
+	if checkCanceled() {
+		return hasErrors
 	}
 
 	remote := worktree.DefaultRemote()
 	if remote == "" {
-		checks = append(checks, doctorCheck{Level: doctorWarn, Name: "Default remote", Detail: "no remote configured"})
+		emitCheck(doctorCheck{Level: doctorWarn, Name: "Default remote", Detail: "no remote configured"})
 	} else {
-		checks = append(checks, doctorCheck{Level: doctorOK, Name: "Default remote", Detail: remote})
+		emitCheck(doctorCheck{Level: doctorOK, Name: "Default remote", Detail: remote})
 		defaultBranch := worktree.DefaultBranch(remote)
 		if defaultBranch == "" {
-			checks = append(checks, doctorCheck{Level: doctorWarn, Name: "Default branch", Detail: fmt.Sprintf("could not determine default branch for %s", remote)})
+			emitCheck(doctorCheck{Level: doctorWarn, Name: "Default branch", Detail: fmt.Sprintf("could not determine default branch for %s", remote)})
 		} else {
-			checks = append(checks, doctorCheck{Level: doctorOK, Name: "Default branch", Detail: defaultBranch})
+			emitCheck(doctorCheck{Level: doctorOK, Name: "Default branch", Detail: defaultBranch})
 		}
 	}
 
-	return checks, hasErrors
+	return hasErrors
 }

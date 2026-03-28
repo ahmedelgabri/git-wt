@@ -240,6 +240,7 @@ type statusModel struct {
 	spinner spinner.Model
 	rows    []statusRow
 	pending int
+	phase   ui.AsyncPhase
 	err     error
 }
 
@@ -251,6 +252,7 @@ func runStatusAsync(rows []statusRow) error {
 		),
 		rows:    rows,
 		pending: len(rows),
+		phase:   ui.AsyncLoading,
 	}
 	p := ui.NewProgram(m, os.Stdout)
 	result, err := p.Run()
@@ -309,12 +311,15 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rows[msg.index].lastCommit = msg.lastCommit
 		}
 		if m.pending == 0 {
+			m.phase = ui.AsyncReady
 			return m, tea.Quit
 		}
+		m.phase = ui.AsyncPartial
 		return m, nil
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			m.err = fmt.Errorf("interrupted")
+			m.phase = ui.AsyncCanceled
 			return m, tea.Quit
 		}
 	case spinner.TickMsg:
@@ -341,7 +346,7 @@ func (m statusModel) View() string {
 
 	body := ui.RenderTable(statusColumns(), tableRows)
 
-	if m.pending == 0 {
+	if m.phase.Done() {
 		cleanCount, dirtyCount, errorCount := statusCounts(m.rows)
 		summary := statusSummaryLine(len(m.rows), cleanCount, dirtyCount, errorCount)
 		return ui.Section("", body, "", summary) + "\n"
