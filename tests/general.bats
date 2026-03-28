@@ -18,6 +18,7 @@ teardown() {
 	[[ "$output" == *"git-wt"* ]] || [[ "$output" == *"worktree"* ]]
 	[[ "$output" == *"Supported commands:"* ]]
 	[[ "$output" == *"Passthrough:"* ]]
+	[[ "$output" == *"Pass-through to git worktree list"* ]]
 	[[ "$output" != *"Available Commands:"* ]]
 	[[ "$output" != *"destroy"* ]]
 }
@@ -41,6 +42,7 @@ teardown() {
 	[[ "$output" == *"git-wt"* ]] || [[ "$output" == *"worktree"* ]]
 	[[ "$output" == *"Supported commands:"* ]]
 	[[ "$output" == *"Passthrough:"* ]]
+	[[ "$output" == *"Pass-through to git worktree list"* ]]
 }
 
 @test "general: unknown command shows error" {
@@ -82,10 +84,13 @@ teardown() {
 	init_bare_repo "repo with spaces"
 	cd "repo with spaces"
 
+	run command git worktree list
+	[ "$status" -eq 0 ]
+	expected="$output"
+
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"WORKTREE"* ]]
-	[[ "$output" == *".bare"* ]]
+	[ "$output" = "$expected" ]
 }
 
 @test "edge: worktree cache is populated correctly" {
@@ -95,12 +100,12 @@ teardown() {
 	create_worktree wt-two wt-two
 	create_worktree wt-three wt-three
 
-	run "$GIT_WT" list
+	run "$GIT_WT" status
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"wt-one"* ]]
 	[[ "$output" == *"wt-two"* ]]
 	[[ "$output" == *"wt-three"* ]]
-	[[ "$output" == *"3 linked worktree(s)"* ]]
+	[[ "$output" == *"3 worktree(s)"* ]]
 }
 
 @test "edge: detached HEAD worktree handling" {
@@ -110,7 +115,7 @@ teardown() {
 	sha=$(command git rev-parse HEAD)
 	command git worktree add --detach detached-wt "$sha" --quiet
 
-	run "$GIT_WT" list
+	run "$GIT_WT" status
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"detached"* ]]
+	[[ "$output" == *"detached HEAD"* ]]
 }

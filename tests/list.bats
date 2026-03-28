@@ -10,60 +10,35 @@ teardown() {
 	teardown_test_env
 }
 
-@test "list: shows single worktree in bare repo" {
-	init_bare_repo myrepo
-	cd myrepo
-
-	run "$GIT_WT" list
-	[ "$status" -eq 0 ]
-	[[ "$output" != *"Worktree list"* ]]
-	[[ "$output" == *"WORKTREE"* ]]
-	[[ "$output" == *".bare"* ]]
-	[[ "$output" == *"git database"* ]]
-}
-
-@test "list: shows multiple worktrees" {
+@test "list: passes through native output" {
 	init_bare_repo myrepo
 	cd myrepo
 	create_worktree feature-a feature-a
 	create_worktree feature-b feature-b
 
+	run command git worktree list
+	[ "$status" -eq 0 ]
+	expected="$output"
+
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *".bare"* ]]
-	[[ "$output" == *"feature-a"* ]]
-	[[ "$output" == *"feature-b"* ]]
+	[ "$output" = "$expected" ]
 }
 
-@test "list: shows bare directory in bare repo setup" {
-	# Use git-wt clone to create a proper bare repo structure
-	init_repo source-repo
-	cd source-repo
-	create_commit "file.txt"
-	cd "$TEST_DIR"
-
-	run "$GIT_WT" clone "$TEST_DIR/source-repo" bare-test
-	[ "$status" -eq 0 ]
-
-	cd bare-test
-	run "$GIT_WT" list
-	[ "$status" -eq 0 ]
-	# list is a passthrough to git worktree list, so .bare shows up
-	[[ "$output" == *".bare"* ]]
-	# The default branch could be main or master depending on git version
-	[[ "$output" == *"main"* ]] || [[ "$output" == *"master"* ]]
-}
-
-@test "list: shows detached HEAD worktrees" {
+@test "list: passes through detached worktrees" {
 	init_bare_repo myrepo
 	cd myrepo
 	local sha
 	sha=$(command git rev-parse HEAD)
 	command git worktree add --detach detached "$sha" --quiet
 
+	run command git worktree list
+	[ "$status" -eq 0 ]
+	expected="$output"
+
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"detached"* ]]
+	[ "$output" = "$expected" ]
 }
 
 @test "list: fails outside git repo" {
@@ -71,13 +46,13 @@ teardown() {
 	[ "$status" -ne 0 ]
 }
 
-@test "list: --help shows usage" {
+@test "list: --help shows passthrough usage" {
 	init_bare_repo myrepo
 	cd myrepo
 
 	run "$GIT_WT" list --help
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Usage"* ]]
+	[[ "$output" == *"Pass-through to git worktree list"* ]]
 }
 
 @test "list: works from worktree subdirectory" {
@@ -88,10 +63,13 @@ teardown() {
 	mkdir -p main/src
 	cd main/src
 
+	run command git worktree list
+	[ "$status" -eq 0 ]
+	expected="$output"
+
 	run "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"main"* ]]
-	[[ "$output" == *"feature-list"* ]]
+	[ "$output" = "$expected" ]
 }
 
 @test "list: still lists worktrees in DEBUG mode" {
@@ -99,41 +77,36 @@ teardown() {
 	cd myrepo
 	create_worktree feature-debug feature-debug
 
+	run command git worktree list
+	[ "$status" -eq 0 ]
+	expected="$output"
+
 	run env DEBUG=1 "$GIT_WT" list
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"feature-debug"* ]]
-	[[ "$output" != *"git worktree list"* ]]
+	[ "$output" = "$expected" ]
 }
 
-@test "list: supports --json output" {
-	init_bare_repo myrepo
-	cd myrepo
-	create_worktree feature-json feature-json
-
-	run "$GIT_WT" list --json
-	[ "$status" -eq 0 ]
-	[[ "$output" == *'"Path"'* ]]
-	[[ "$output" == *'"feature-json"'* ]]
-}
-
-@test "list: passes through native git flags" {
+@test "list: passes through native flags" {
 	init_bare_repo myrepo
 	cd myrepo
 	create_worktree feature-porcelain feature-porcelain
 
+	run command git worktree list --porcelain
+	[ "$status" -eq 0 ]
+	expected="$output"
+
 	run "$GIT_WT" list --porcelain
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"worktree "* ]]
-	[[ "$output" == *"branch refs/heads/feature-porcelain"* ]]
+	[ "$output" = "$expected" ]
 }
 
-@test "list: preserves long nested relative paths" {
+@test "list: old --json flag is no longer supported" {
 	init_bare_repo myrepo
 	cd myrepo
-	long_path="feature/this-is-a-very-long-worktree-path-for-list-rendering"
-	create_worktree "$long_path" "$long_path"
 
-	run env NO_COLOR=1 "$GIT_WT" list
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"./$long_path"* ]]
+	run "$GIT_WT" list --json
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"unknown option"* ]]
+	[[ "$output" == *"json"* ]]
+	[[ "$output" == *"usage: git worktree list"* ]]
 }

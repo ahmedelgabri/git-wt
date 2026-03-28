@@ -20,8 +20,8 @@ const (
 
 var (
 	configureRootCommandOnce sync.Once
-	supportedCommandNames    = []string{"add", "clone", "doctor", "list", "migrate", "remove", "status", "switch", "update"}
-	passthroughCommandNames  = []string{"lock", "unlock", "move", "prune", "repair"}
+	supportedCommandNames    = []string{"add", "clone", "doctor", "migrate", "remove", "status", "switch", "update"}
+	passthroughCommandNames  = []string{"list", "lock", "unlock", "move", "prune", "repair"}
 )
 
 var rootCmd = &cobra.Command{
@@ -32,8 +32,8 @@ var rootCmd = &cobra.Command{
 Uses a .bare/ directory for git data with each branch in its own worktree
 directory. Run 'git-wt <command> --help' for details on any command.
 
-Native git worktree commands (lock, unlock, move, prune, repair) are also
-supported as pass-throughs.`,
+Native git worktree commands (list, lock, unlock, move, prune, repair) are
+also supported as pass-throughs.`,
 	// Don't show usage on errors from subcommands
 	SilenceUsage: true,
 	// We handle error formatting ourselves
@@ -60,11 +60,22 @@ func init() {
 			SilenceUsage:       true,
 			SilenceErrors:      true,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				fullArgs := append([]string{"worktree", name}, args...)
-				return git.Run(fullArgs...)
+				return runWorktreePassthrough(name, args)
 			},
 		})
 	}
+}
+
+func runWorktreePassthrough(name string, args []string) error {
+	rawArgs := args
+	if len(os.Args) > 2 {
+		rawArgs = os.Args[2:]
+	}
+	fullArgs := append([]string{"worktree", name}, rawArgs...)
+	if name == "list" {
+		return git.QueryRun(fullArgs...)
+	}
+	return git.Run(fullArgs...)
 }
 
 func configureRootCommand() {
