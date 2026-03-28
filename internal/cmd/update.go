@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -22,8 +23,8 @@ in its worktree.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := ui.SpinWithOutput("Fetching from all remotes", func(w io.Writer) error {
-			return git.RunTo(w, "fetch", "--all", "--prune", "--prune-tags")
+		if err := ui.SpinWithOutputContext("Fetching from all remotes", func(ctx context.Context, w io.Writer) error {
+			return git.RunToContext(ctx, w, "fetch", "--all", "--prune", "--prune-tags")
 		}); err != nil {
 			return err
 		}

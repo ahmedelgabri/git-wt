@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -373,8 +374,8 @@ func buildMigratedStructure(plan migratePlan, newStructure string) error {
 	}
 
 	// Clone existing repo as bare into .bare.
-	if err := ui.SpinWithOutput("Converting to bare repository", func(w io.Writer) error {
-		return git.RunTo(w, "clone", "--bare", plan.repoRoot, filepath.Join(newStructure, ".bare"))
+	if err := ui.SpinWithOutputContext("Converting to bare repository", func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, "clone", "--bare", plan.repoRoot, filepath.Join(newStructure, ".bare"))
 	}); err != nil {
 		return err
 	}
@@ -398,8 +399,8 @@ func buildMigratedStructure(plan migratePlan, newStructure string) error {
 
 	// Fetch from preserved remotes if available.
 	if len(plan.remotes) > 0 {
-		if err := ui.SpinWithOutput("Fetching all branches from preserved remotes", func(w io.Writer) error {
-			return git.RunInTo(newStructure, w, "fetch", "--all")
+		if err := ui.SpinWithOutputContext("Fetching all branches from preserved remotes", func(ctx context.Context, w io.Writer) error {
+			return git.RunInToContext(ctx, newStructure, w, "fetch", "--all")
 		}); err != nil {
 			ui.Warn("Could not fetch from remote (remote may be unreachable) - continuing with local data")
 		}
@@ -475,11 +476,11 @@ func buildMigratedStructure(plan migratePlan, newStructure string) error {
 
 func createMigrationWorktree(repoDir, branch, preferredRemote string) error {
 	sourceRef := migrationBranchSourceRef(repoDir, branch, preferredRemote)
-	return ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(w io.Writer) error {
+	return ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(ctx context.Context, w io.Writer) error {
 		if sourceRef == branch {
-			return git.RunInTo(repoDir, w, "worktree", "add", branch, branch)
+			return git.RunInToContext(ctx, repoDir, w, "worktree", "add", branch, branch)
 		}
-		return git.RunInTo(repoDir, w, "worktree", "add", "-b", branch, branch, sourceRef)
+		return git.RunInToContext(ctx, repoDir, w, "worktree", "add", "-b", branch, branch, sourceRef)
 	})
 }
 

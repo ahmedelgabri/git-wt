@@ -265,3 +265,41 @@ func TestRunInToNonDebug(t *testing.T) {
 		t.Error("RunInTo() returned empty output")
 	}
 }
+
+func TestRunContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := RunContext(ctx, "--version"); err == nil {
+		t.Fatal("RunContext() with canceled context should return error")
+	}
+}
+
+func TestRunToContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var buf bytes.Buffer
+	if err := RunToContext(ctx, &buf, "--version"); err == nil {
+		t.Fatal("RunToContext() with canceled context should return error")
+	}
+}
+
+func TestQueryContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := QueryContext(ctx, "--version"); err == nil {
+		t.Fatal("QueryContext() with canceled context should return error")
+	}
+}
+
+func TestQueryInContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	repo := initGitRepo(t)
+	if _, err := QueryInContext(ctx, repo, "status", "--short"); err == nil {
+		t.Fatal("QueryInContext() with canceled context should return error")
+	}
+}

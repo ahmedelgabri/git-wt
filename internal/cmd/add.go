@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -75,8 +76,8 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	remote := worktree.DefaultRemote()
 	if remote != "" {
-		if err := ui.SpinWithOutput(fmt.Sprintf("Fetching from %s", remote), func(w io.Writer) error {
-			return git.RunTo(w, "fetch", remote, "--prune")
+		if err := ui.SpinWithOutputContext(fmt.Sprintf("Fetching from %s", remote), func(ctx context.Context, w io.Writer) error {
+			return git.RunToContext(ctx, w, "fetch", remote, "--prune")
 		}); err != nil {
 			return err
 		}
@@ -96,8 +97,8 @@ func fetchInteractiveBranches() error {
 		return nil
 	}
 
-	return ui.SpinWithOutput("Fetching from all remotes", func(w io.Writer) error {
-		return git.RunTo(w, "fetch", "--all", "--prune")
+	return ui.SpinWithOutputContext("Fetching from all remotes", func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, "fetch", "--all", "--prune")
 	})
 }
 
@@ -171,15 +172,15 @@ func runAddInteractive() (string, error) {
 	wtPath := promptWorktreePath(branch)
 
 	// Create worktree from selected remote branch.
-	if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(w io.Writer) error {
-		return git.RunTo(w, "worktree", "add", "-b", branch, wtPath, selected.Value)
+	if err := ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, "worktree", "add", "-b", branch, wtPath, selected.Value)
 	}); err != nil {
 		return "", err
 	}
 
 	// Set upstream tracking.
-	if err := ui.SpinWithOutput(fmt.Sprintf("Setting upstream to %s", ui.Accent(selected.Value)), func(w io.Writer) error {
-		return git.RunTo(w, "branch", "--set-upstream-to="+selected.Value, branch)
+	if err := ui.SpinWithOutputContext(fmt.Sprintf("Setting upstream to %s", ui.Accent(selected.Value)), func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, "branch", "--set-upstream-to="+selected.Value, branch)
 	}); err != nil {
 		return "", err
 	}
@@ -197,8 +198,8 @@ func createNewBranch() (string, error) {
 
 	wtPath := promptWorktreePath(branchName)
 
-	if err := ui.SpinWithOutput(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func(w io.Writer) error {
-		return git.RunTo(w, "worktree", "add", "-b", branchName, wtPath)
+	if err := ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, "worktree", "add", "-b", branchName, wtPath)
 	}); err != nil {
 		return "", err
 	}
@@ -244,8 +245,8 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) (string, err
 
 	// Create the worktree.
 	fullArgs := append([]string{"worktree", "add"}, gitArgs...)
-	if err := ui.SpinWithOutput("Creating worktree", func(w io.Writer) error {
-		return git.RunTo(w, fullArgs...)
+	if err := ui.SpinWithOutputContext("Creating worktree", func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, fullArgs...)
 	}); err != nil {
 		return "", err
 	}
@@ -257,8 +258,8 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) (string, err
 	}
 	if trackBranch != "" && remote != "" {
 		if _, err := git.Query("rev-parse", "--verify", remote+"/"+trackBranch); err == nil {
-			if err := ui.SpinWithOutput(fmt.Sprintf("Setting upstream to %s", ui.Accent(remote+"/"+trackBranch)), func(w io.Writer) error {
-				return git.RunTo(w, "branch", "--set-upstream-to="+remote+"/"+trackBranch, trackBranch)
+			if err := ui.SpinWithOutputContext(fmt.Sprintf("Setting upstream to %s", ui.Accent(remote+"/"+trackBranch)), func(ctx context.Context, w io.Writer) error {
+				return git.RunToContext(ctx, w, "branch", "--set-upstream-to="+remote+"/"+trackBranch, trackBranch)
 			}); err != nil {
 				return "", err
 			}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -486,16 +487,16 @@ func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) 
 
 func pruneStaleWorktree(target removalTarget) error {
 	name := filepath.Base(target.path)
-	return ui.SpinWithOutput(fmt.Sprintf("Pruning stale metadata for %s", ui.Accent(name)), func(w io.Writer) error {
-		return git.RunTo(w, "worktree", "remove", "--force", target.path)
+	return ui.SpinWithOutputContext(fmt.Sprintf("Pruning stale metadata for %s", ui.Accent(name)), func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, "worktree", "remove", "--force", target.path)
 	})
 }
 
 func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string) error {
 	name := filepath.Base(target.path)
 
-	if err := ui.SpinWithOutput(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(w io.Writer) error {
-		return git.RunTo(w, "worktree", "remove", "-f", target.path)
+	if err := ui.SpinWithOutputContext(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, "worktree", "remove", "-f", target.path)
 	}); err != nil {
 		return err
 	}
@@ -533,8 +534,8 @@ func deleteRemoteBranch(branch, remote string) {
 		return
 	}
 
-	if err := ui.SpinWithOutput(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(w io.Writer) error {
-		return git.RunTo(w, "push", remote, "--delete", branch)
+	if err := ui.SpinWithOutputContext(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(ctx context.Context, w io.Writer) error {
+		return git.RunToContext(ctx, w, "push", remote, "--delete", branch)
 	}); err != nil {
 		ui.Warnf("Failed to delete remote branch %s: %s", remoteBranch, err)
 	}

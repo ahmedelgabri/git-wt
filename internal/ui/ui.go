@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -208,40 +209,20 @@ func PromptDangerous(msg, expect string) bool {
 	return normalizeInputValue(result.(inputModel).Value()) == expect
 }
 
-// Spin shows an animated spinner while running fn. On TTYs, renders a
-// bubbletea spinner; otherwise prints a static message.
+// Spin shows a task UI while running fn. On TTYs, it uses the shared Bubble
+// Tea task runner; otherwise it prints plain stderr status lines.
 // The callback must NOT write to stdout (use git.RunWithOutput or
 // git.Query instead of git.Run).
 func Spin(msg string, fn func() error) error {
-	if useSimpleIO() {
-		fmt.Fprintf(os.Stderr, "%s %s...\n", Accent("●"), msg)
-		if err := fn(); err != nil {
-			fmt.Fprintf(os.Stderr, "%s %s\n", Red("●"), msg)
-			return err
-		}
-		fmt.Fprintf(os.Stderr, "%s %s\n", Green("●"), msg)
-		return nil
-	}
-
-	m := newSpinnerModel(msg, fn)
-	p := NewProgram(m, os.Stderr)
-	result, err := p.Run()
-	if err != nil {
-		return err
-	}
-	return result.(spinnerModel).err
+	return SpinContext(msg, func(context.Context) error {
+		return fn()
+	})
 }
 
-// SpinWithOutput prints a status message to stderr, runs fn with an io.Writer
-// connected to stderr so subprocess output is visible, then prints the result.
-// Stderr is used so that stdout remains clean for machine-readable output and
-// test assertions.
+// SpinWithOutput runs fn with a writer connected to the shared task runner so
+// subprocess output is visible without polluting stdout.
 func SpinWithOutput(msg string, fn func(w io.Writer) error) error {
-	fmt.Fprintf(os.Stderr, "%s %s\n", Accent("●"), msg)
-	if err := fn(os.Stderr); err != nil {
-		fmt.Fprintf(os.Stderr, "%s %s\n", Red("●"), msg)
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "%s %s\n", Green("●"), msg)
-	return nil
+	return SpinWithOutputContext(msg, func(_ context.Context, w io.Writer) error {
+		return fn(w)
+	})
 }
