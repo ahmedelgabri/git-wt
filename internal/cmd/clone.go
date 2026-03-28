@@ -57,6 +57,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 	if err := ui.RunSteps([]ui.Step{{
 		Message:    "Cloning repository",
 		ShowOutput: true,
+		FullOutput: true,
 		Run: func(ctx context.Context, w io.Writer) error {
 			return git.RunToContext(ctx, w, "clone", "--bare", repoURL, ".bare")
 		},
@@ -71,6 +72,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}, {
 		Message:    "Fetching all branches",
 		ShowOutput: true,
+		FullOutput: true,
 		Run: func(ctx context.Context, w io.Writer) error {
 			if err := git.RunToContext(ctx, w, "fetch", "--all"); err != nil {
 				ui.Warn("Failed to fetch all branches")
@@ -102,6 +104,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 		if err := ui.RunSteps([]ui.Step{{
 			Message:    fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)),
 			ShowOutput: true,
+			FullOutput: true,
 			Run: func(ctx context.Context, w io.Writer) error {
 				if err := git.RunToContext(ctx, w, "worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch); err != nil {
 					ui.Warn("Failed to create worktree for default branch")

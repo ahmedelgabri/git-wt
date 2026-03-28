@@ -68,6 +68,26 @@ func TestTaskModelStreamedOutput(t *testing.T) {
 	if !strings.Contains(view, "line one") || !strings.Contains(view, "line two") {
 		t.Fatalf("taskModel view missing streamed output: %q", view)
 	}
+	if strings.Contains(view, "line two\n\n\n") {
+		t.Fatalf("taskModel short output should not be padded with viewport blanks: %q", view)
+	}
+}
+
+func TestTaskModelFullOutputShowsAllLines(t *testing.T) {
+	m := newTaskModel(TaskConfig{Message: "Loading", ShowOutput: true, FullOutput: true}, func(context.Context, io.Writer) error {
+		return nil
+	})
+
+	var lines []string
+	for i := 0; i < 20; i++ {
+		lines = append(lines, fmt.Sprintf("line %02d", i))
+	}
+	updated, _ := m.Update(taskLogMsg{text: strings.Join(lines, "\n") + "\n"})
+	result := updated.(*taskModel)
+	view := result.View()
+	if !strings.Contains(view, "line 00") || !strings.Contains(view, "line 19") {
+		t.Fatalf("taskModel full output should contain first and last lines: %q", view)
+	}
 }
 
 func TestTaskProgramSuccess(t *testing.T) {

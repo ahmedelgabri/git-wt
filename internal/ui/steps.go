@@ -9,6 +9,7 @@ import (
 type Step struct {
 	Message    string
 	ShowOutput bool
+	FullOutput bool
 	Run        func(ctx context.Context, w io.Writer) error
 }
 
@@ -17,7 +18,13 @@ type Step struct {
 func RunSteps(steps []Step) error {
 	for _, step := range steps {
 		if step.ShowOutput {
-			if err := SpinWithOutputContext(step.Message, step.Run); err != nil {
+			var err error
+			if step.FullOutput {
+				err = SpinWithOutputFullContext(step.Message, step.Run)
+			} else {
+				err = SpinWithOutputContext(step.Message, step.Run)
+			}
+			if err != nil {
 				return err
 			}
 			continue

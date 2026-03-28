@@ -20,6 +20,7 @@ type TaskFunc func(ctx context.Context, w io.Writer) error
 type TaskConfig struct {
 	Message    string
 	ShowOutput bool
+	FullOutput bool
 }
 
 type taskLogMsg struct {
@@ -35,6 +36,7 @@ type taskModel struct {
 	viewport   viewport.Model
 	message    string
 	showOutput bool
+	fullOutput bool
 	output     strings.Builder
 	phase      AsyncPhase
 	fn         TaskFunc
@@ -54,6 +56,7 @@ func newTaskModel(cfg TaskConfig, fn TaskFunc) *taskModel {
 		viewport:   viewport.New(0, 0),
 		message:    cfg.Message,
 		showOutput: cfg.ShowOutput,
+		fullOutput: cfg.FullOutput,
 		phase:      AsyncLoading,
 		fn:         fn,
 		ctx:        ctx,
@@ -145,7 +148,7 @@ func (m *taskModel) View() string {
 	if !m.showOutput || m.output.Len() == 0 {
 		return status + "\n"
 	}
-	return status + "\n\n" + m.viewport.View() + "\n"
+	return status + "\n\n" + m.renderOutput() + "\n"
 }
 
 func (m *taskModel) statusLine() string {
@@ -157,6 +160,24 @@ func (m *taskModel) statusLine() string {
 	default:
 		return fmt.Sprintf("%s %s", m.spinner.View(), m.message)
 	}
+}
+
+func (m *taskModel) renderOutput() string {
+	content := strings.TrimRight(m.output.String(), "\n")
+	if content == "" {
+		return ""
+	}
+	if m.fullOutput || outputLineCount(content) <= m.viewport.Height {
+		return content
+	}
+	return m.viewport.View()
+}
+
+func outputLineCount(content string) int {
+	if content == "" {
+		return 0
+	}
+	return strings.Count(content, "\n") + 1
 }
 
 func (m *taskModel) setSize(width, height int) {
@@ -241,4 +262,10 @@ func SpinContext(msg string, fn func(ctx context.Context) error) error {
 // SpinWithOutputContext runs a task with streamed output.
 func SpinWithOutputContext(msg string, fn func(ctx context.Context, w io.Writer) error) error {
 	return RunTask(TaskConfig{Message: msg, ShowOutput: true}, fn)
+}
+
+// SpinWithOutputFullContext runs a task with streamed output and renders the
+// full accumulated output instead of a viewport-clipped window.
+func SpinWithOutputFullContext(msg string, fn func(ctx context.Context, w io.Writer) error) error {
+	return RunTask(TaskConfig{Message: msg, ShowOutput: true, FullOutput: true}, fn)
 }
