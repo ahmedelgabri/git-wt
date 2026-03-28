@@ -73,20 +73,26 @@ func TestTaskModelStreamedOutput(t *testing.T) {
 	}
 }
 
-func TestTaskModelFullOutputShowsAllLines(t *testing.T) {
-	m := newTaskModel(TaskConfig{Message: "Loading", ShowOutput: true, FullOutput: true}, func(context.Context, io.Writer) error {
+func TestRunTaskRawPreservesOutput(t *testing.T) {
+	var buf strings.Builder
+	err := runTaskRaw(TaskConfig{Message: "Fetching", ShowOutput: true, RawOutput: true}, func(_ context.Context, w io.Writer) error {
+		_, _ = io.WriteString(w, "Counting objects: 10%\rCounting objects: 20%\r")
 		return nil
-	})
-
-	var lines []string
-	for i := 0; i < 20; i++ {
-		lines = append(lines, fmt.Sprintf("line %02d", i))
+	}, &buf)
+	if err != nil {
+		t.Fatalf("runTaskRaw() = %v, want nil", err)
 	}
-	updated, _ := m.Update(taskLogMsg{text: strings.Join(lines, "\n") + "\n"})
-	result := updated.(*taskModel)
-	view := result.View()
-	if !strings.Contains(view, "line 00") || !strings.Contains(view, "line 19") {
-		t.Fatalf("taskModel full output should contain first and last lines: %q", view)
+	got := buf.String()
+	if !strings.Contains(got, "Counting objects: 10%\rCounting objects: 20%\r") {
+		t.Fatalf("runTaskRaw() should preserve raw carriage returns, got %q", got)
+	}
+}
+
+func TestNormalizeTaskLogChunk(t *testing.T) {
+	got := normalizeTaskLogChunk("Counting objects: 10%\rCounting objects: 20%\r\nDone\n")
+	want := "Counting objects: 10%\nCounting objects: 20%\nDone\n"
+	if got != want {
+		t.Fatalf("normalizeTaskLogChunk() = %q, want %q", got, want)
 	}
 }
 

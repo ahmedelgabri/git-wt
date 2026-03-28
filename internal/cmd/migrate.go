@@ -379,6 +379,7 @@ func buildMigratedStructure(plan migratePlan, newStructure string) error {
 	if err := ui.RunSteps([]ui.Step{{
 		Message:    "Converting to bare repository",
 		ShowOutput: true,
+		RawOutput:  true,
 		Run: func(ctx context.Context, w io.Writer) error {
 			return git.RunToContext(ctx, w, "clone", "--bare", plan.repoRoot, filepath.Join(newStructure, ".bare"))
 		},
@@ -399,6 +400,7 @@ func buildMigratedStructure(plan migratePlan, newStructure string) error {
 	}, {
 		Message:    "Fetching all branches from preserved remotes",
 		ShowOutput: true,
+		RawOutput:  true,
 		Run: func(ctx context.Context, w io.Writer) error {
 			if len(plan.remotes) == 0 {
 				return nil

@@ -20,11 +20,17 @@ type TaskFunc func(ctx context.Context, w io.Writer) error
 type TaskConfig struct {
 	Message    string
 	ShowOutput bool
-	FullOutput bool
+	RawOutput  bool
 }
 
 type taskLogMsg struct {
 	text string
+}
+
+func normalizeTaskLogChunk(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	return text
 }
 
 type taskFinishedMsg struct {
@@ -36,7 +42,6 @@ type taskModel struct {
 	viewport   viewport.Model
 	message    string
 	showOutput bool
-	fullOutput bool
 	output     strings.Builder
 	phase      AsyncPhase
 	fn         TaskFunc
@@ -56,7 +61,6 @@ func newTaskModel(cfg TaskConfig, fn TaskFunc) *taskModel {
 		viewport:   viewport.New(0, 0),
 		message:    cfg.Message,
 		showOutput: cfg.ShowOutput,
-		fullOutput: cfg.FullOutput,
 		phase:      AsyncLoading,
 		fn:         fn,
 		ctx:        ctx,
@@ -167,7 +171,7 @@ func (m *taskModel) renderOutput() string {
 	if content == "" {
 		return ""
 	}
-	if m.fullOutput || outputLineCount(content) <= m.viewport.Height {
+	if outputLineCount(content) <= m.viewport.Height {
 		return content
 	}
 	return m.viewport.View()
@@ -212,7 +216,7 @@ func (w *taskLogWriter) Write(p []byte) (int, error) {
 		return 0, nil
 	}
 	if w.send != nil {
-		w.send(taskLogMsg{text: string(p)})
+		w.send(taskLogMsg{text: normalizeTaskLogChunk(string(p))})
 	}
 	return len(p), nil
 }
@@ -220,6 +224,9 @@ func (w *taskLogWriter) Write(p []byte) (int, error) {
 // RunTask runs a task using the shared task UI on TTYs and a plain stderr
 // fallback otherwise.
 func RunTask(cfg TaskConfig, fn TaskFunc) error {
+	if cfg.RawOutput {
+		return runTaskRaw(cfg, fn, os.Stderr)
+	}
 	if useSimpleIO() {
 		return runTaskSimple(cfg, fn)
 	}
@@ -235,21 +242,25 @@ func RunTask(cfg TaskConfig, fn TaskFunc) error {
 	return result.(*taskModel).err
 }
 
-func runTaskSimple(cfg TaskConfig, fn TaskFunc) error {
+func runTaskRaw(cfg TaskConfig, fn TaskFunc, out io.Writer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fmt.Fprintf(os.Stderr, "%s %s\n", Accent("●"), cfg.Message)
+	fmt.Fprintf(out, "%s %s\n", Accent("●"), cfg.Message)
 	writer := io.Discard
 	if cfg.ShowOutput {
-		writer = os.Stderr
+		writer = out
 	}
 	if err := fn(ctx, writer); err != nil {
-		fmt.Fprintf(os.Stderr, "%s %s\n", Red("●"), cfg.Message)
+		fmt.Fprintf(out, "%s %s\n", Red("●"), cfg.Message)
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "%s %s\n", Green("●"), cfg.Message)
+	fmt.Fprintf(out, "%s %s\n", Green("●"), cfg.Message)
 	return nil
+}
+
+func runTaskSimple(cfg TaskConfig, fn TaskFunc) error {
+	return runTaskRaw(cfg, fn, os.Stderr)
 }
 
 // SpinContext runs a task without streamed output.
@@ -264,8 +275,9 @@ func SpinWithOutputContext(msg string, fn func(ctx context.Context, w io.Writer)
 	return RunTask(TaskConfig{Message: msg, ShowOutput: true}, fn)
 }
 
-// SpinWithOutputFullContext runs a task with streamed output and renders the
-// full accumulated output instead of a viewport-clipped window.
-func SpinWithOutputFullContext(msg string, fn func(ctx context.Context, w io.Writer) error) error {
-	return RunTask(TaskConfig{Message: msg, ShowOutput: true, FullOutput: true}, fn)
+// SpinWithOutputRawContext streams raw command output directly to stderr
+// without Bubble Tea processing. Useful for commands like git clone/fetch whose
+// native progress rendering relies on carriage returns.
+func SpinWithOutputRawContext(msg string, fn func(ctx context.Context, w io.Writer) error) error {
+	return RunTask(TaskConfig{Message: msg, ShowOutput: true, RawOutput: true}, fn)
 }

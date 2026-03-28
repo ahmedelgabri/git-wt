@@ -29,6 +29,7 @@ in its worktree.`,
 		if err := ui.RunSteps([]ui.Step{{
 			Message:    "Fetching from all remotes",
 			ShowOutput: true,
+			RawOutput:  true,
 			Run: func(ctx context.Context, w io.Writer) error {
 				return git.RunToContext(ctx, w, "fetch", "--all", "--prune", "--prune-tags")
 			},
