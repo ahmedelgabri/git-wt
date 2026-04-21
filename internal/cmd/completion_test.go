@@ -87,3 +87,32 @@ func TestGenZshCompletion_preservesCompdef(t *testing.T) {
 		t.Error("missing compdef registration")
 	}
 }
+
+func TestGenZshGitSubcommandCompletion_containsBridge(t *testing.T) {
+	var buf bytes.Buffer
+	if err := genZshGitSubcommandCompletion(&buf); err != nil {
+		t.Fatalf("genZshGitSubcommandCompletion returned error: %v", err)
+	}
+
+	output := buf.String()
+
+	if !strings.HasPrefix(output, "#autoload\n") {
+		t.Error("missing #autoload header")
+	}
+
+	if count := strings.Count(output, "_git_wt() {"); count != 1 {
+		t.Errorf("expected _git_wt bridge to appear once, got %d", count)
+	}
+
+	if !strings.Contains(output, `words[1]="git-wt"`) {
+		t.Error("missing words normalization in _git_wt bridge")
+	}
+
+	if !strings.Contains(output, "autoload -Uz +X _git-wt") {
+		t.Error("missing autoload bridge to _git-wt")
+	}
+
+	if !strings.Contains(output, `_git-wt "$@"`) {
+		t.Error("missing delegation to _git-wt")
+	}
+}

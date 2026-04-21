@@ -26,7 +26,15 @@ The formula:
 3. Installs shell completions (bundled in the release archive) to:
    - Bash: `$(brew --prefix)/etc/bash_completion.d/git-wt`
    - Zsh: `$(brew --prefix)/share/zsh/site-functions/_git-wt`
+   - Zsh git-subcommand bridge: `$(brew --prefix)/share/zsh/site-functions/_git_wt`
    - Fish: `$(brew --prefix)/share/fish/vendor_completions.d/git-wt.fish`
+
+The two zsh files serve different entry points:
+
+- `_git-wt` completes the standalone `git-wt` binary
+- `_git_wt` is a compatibility bridge for `git wt ...` in environments that
+  dispatch git subcommand completions using the underscore form (for example,
+  some git/oh-my-zsh completion wrappers)
 
 ## Dependencies
 

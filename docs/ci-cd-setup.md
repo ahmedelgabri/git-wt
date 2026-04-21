@@ -86,7 +86,8 @@ Jobs:
      `linux/amd64`, `linux/arm64`
    - Passes ldflags to inject the version string
    - Packages each target into `git-wt-VERSION-OS-ARCH.tar.gz` containing
-     the binary, `completions/`, and `man/`
+     the binary, `completions/` (including both `_git-wt` and `_git_wt` for
+     zsh), and `man/`
    - Generates `git-wt-VERSION-checksums.txt` (sha256)
    - Uploads all archives and checksums as artifacts
 

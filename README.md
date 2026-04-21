@@ -98,10 +98,17 @@ cp completions/git-wt.bash ~/.local/share/bash-completion/completions/git-wt
 
 # Zsh
 cp completions/_git-wt ~/.local/share/zsh/site-functions/_git-wt
+cp completions/_git_wt ~/.local/share/zsh/site-functions/_git_wt # enables `git wt` completion
 
 # Fish
 cp completions/git-wt.fish ~/.config/fish/completions/git-wt.fish
 ```
+
+For zsh, both completion files are needed:
+
+- `_git-wt` completes the standalone `git-wt` command
+- `_git_wt` bridges `git wt ...` when git/oh-my-zsh-style completion wrappers
+  dispatch to the underscore form
 
 ## Usage
 

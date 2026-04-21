@@ -53,6 +53,7 @@ jobs:
           mkdir -p dist/completions dist/man
           ./git-wt-native completion bash > dist/completions/git-wt.bash
           ./git-wt-native completion zsh > dist/completions/_git-wt
+          ./git-wt-native completion zsh-git > dist/completions/_git_wt
           ./git-wt-native completion fish > dist/completions/git-wt.fish
           ./git-wt-native man dist/man
           rm git-wt-native
@@ -215,6 +216,22 @@ jobs:
           }
           { print }
           ' Formula/git-wt.rb > tmp && mv tmp Formula/git-wt.rb
+
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("Formula/git-wt.rb")
+          text = path.read_text()
+          bridge = '    zsh_completion.install "completions/_git_wt"\n'
+
+          if bridge not in text:
+              text = text.replace(
+                  '    zsh_completion.install "completions/_git-wt"\n',
+                  '    zsh_completion.install "completions/_git-wt"\n' + bridge,
+              )
+
+          path.write_text(text)
+          PY
 
       - name: Commit and push
         env:

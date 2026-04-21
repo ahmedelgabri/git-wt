@@ -31,7 +31,7 @@
           default = self'.packages.git-wt;
           git-wt = pkgs.buildGoModule {
             pname = "git-wt";
-            version = "2.0.1";
+            version = "2.0.2";
 
             src = lib.cleanSource ./.;
 
@@ -54,9 +54,11 @@
               # Generate shell completions before wrapping
               $out/bin/git-wt completion bash > git-wt.bash
               $out/bin/git-wt completion zsh > _git-wt
+              $out/bin/git-wt completion zsh-git > _git_wt
               $out/bin/git-wt completion fish > git-wt.fish
               installShellCompletion --bash git-wt.bash
               installShellCompletion --zsh _git-wt
+              installShellCompletion --zsh _git_wt
               installShellCompletion --fish git-wt.fish
 
               # Generate and install man pages
