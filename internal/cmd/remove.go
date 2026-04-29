@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
+	"github.com/ahmedelgabri/git-wt/internal/hook"
 	"github.com/ahmedelgabri/git-wt/internal/picker"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
@@ -519,6 +520,14 @@ func pruneStaleWorktree(target removalTarget) error {
 
 func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string) error {
 	name := filepath.Base(target.path)
+
+	if hooks, err := hook.LoadConfig("wt.deletehook"); err != nil {
+		return err
+	} else if len(hooks) > 0 {
+		if err := hook.Run(context.Background(), hooks, target.path, os.Stderr); err != nil {
+			return fmt.Errorf("delete hook failed for worktree %q: %w", name, err)
+		}
+	}
 
 	if err := ui.SpinWithOutputContext(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(ctx context.Context, w io.Writer) error {
 		return git.RunToContext(ctx, w, "worktree", "remove", "-f", target.path)

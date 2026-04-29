@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
+	"github.com/ahmedelgabri/git-wt/internal/hook"
 	"github.com/ahmedelgabri/git-wt/internal/picker"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
@@ -63,28 +64,35 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to change to bare root: %w", err)
 	}
 
+	var createdPath string
+
 	interactive := len(args) == 0 && !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("force-branch")
 	if interactive {
-		createdPath, err := runAddInteractive()
+		createdPath, err = runAddInteractive()
 		if err != nil {
 			return err
 		}
-		return printCreatedWorktreePath(createdPath)
-	}
+	} else {
+		remote := worktree.DefaultRemote()
+		if remote != "" {
+			if err := ui.SpinWithOutputRawContext(fmt.Sprintf("Fetching from %s", remote), func(ctx context.Context, w io.Writer) error {
+				return git.RunToContext(ctx, w, "fetch", remote, "--prune")
+			}); err != nil {
+				return err
+			}
+		}
 
-	remote := worktree.DefaultRemote()
-	if remote != "" {
-		if err := ui.SpinWithOutputRawContext(fmt.Sprintf("Fetching from %s", remote), func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "fetch", remote, "--prune")
-		}); err != nil {
+		createdPath, err = runAddDirect(cmd, args, remote)
+		if err != nil {
 			return err
 		}
 	}
 
-	// Non-interactive: build git args from parsed flags.
-	createdPath, err := runAddDirect(cmd, args, remote)
-	if err != nil {
-		return err
+	if createdPath != "" {
+		if err := runAddHooks(createdPath); err != nil {
+			fmt.Println(createdPath)
+			return err
+		}
 	}
 	return printCreatedWorktreePath(createdPath)
 }
@@ -245,6 +253,21 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) (string, err
 func splitRemoteBranchRef(remoteRef string) (remote string, branch string) {
 	remote, branch, _ = strings.Cut(remoteRef, "/")
 	return remote, branch
+}
+
+func runAddHooks(wtPath string) error {
+	hooks, err := hook.LoadConfig("wt.hook")
+	if err != nil {
+		return err
+	}
+	if len(hooks) == 0 {
+		return nil
+	}
+	absPath, err := filepath.Abs(wtPath)
+	if err != nil {
+		return err
+	}
+	return hook.Run(context.Background(), hooks, absPath, os.Stderr)
 }
 
 func printCreatedWorktreePath(path string) error {
