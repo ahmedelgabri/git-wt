@@ -97,6 +97,44 @@ repo/
 
 Native `git worktree` commands (`lock`, `unlock`, `move`, `prune`, `repair`) are also supported as pass-through commands.
 
+## Claude Code Integration
+
+[Claude Code](https://claude.ai/code) can create and remove worktrees
+automatically during agentic sessions. Configure the `WorktreeCreate` and
+`WorktreeRemove` hooks in your project or user `settings.json` to delegate
+those operations to `git wt`, keeping every worktree consistent with the bare
+repository layout:
+
+```json
+{
+  "WorktreeCreate": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "git wt add \"$(cat /dev/stdin | jq -r '.name')\""
+        }
+      ]
+    }
+  ],
+  "WorktreeRemove": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo y | git wt rm \"$(cat /dev/stdin | jq -r '.worktree_path')\""
+        }
+      ]
+    }
+  ]
+}
+```
+
+The hooks receive a JSON payload on stdin. `WorktreeCreate` reads the `.name`
+field (the branch name) and passes it to `git wt add`. `WorktreeRemove` reads
+`.worktree_path` and passes it to `git wt rm`; the leading `echo y |` confirms
+the interactive prompt non-interactively.
+
 ## Dependencies
 
 - `git` (`2.48.0+` for relative worktree support)
