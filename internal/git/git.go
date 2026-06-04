@@ -24,6 +24,9 @@ type ExecOptions struct {
 // debug returns whether mutation commands should be echoed instead of executed.
 func debug() bool { return os.Getenv("DEBUG") != "" }
 
+// Debug reports whether DEBUG mode is enabled, for callers outside this package.
+func Debug() bool { return debug() }
+
 func execGit(opts ExecOptions, args ...string) (string, error) {
 	if opts.Mutating && debug() {
 		msg := formatDebugCommand(opts.Dir, args)

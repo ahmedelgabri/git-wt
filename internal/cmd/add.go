@@ -90,7 +90,10 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	if createdPath != "" {
 		if err := runAddHooks(createdPath); err != nil {
-			fmt.Println(createdPath)
+			// Keep stdout for the success path only; hint goes to stderr.
+			if abs, pErr := resolveCreatedPath(createdPath); pErr == nil {
+				fmt.Fprintf(os.Stderr, "Worktree was created at %s, but hook failed\n", abs)
+			}
 			return err
 		}
 	}
@@ -256,7 +259,7 @@ func splitRemoteBranchRef(remoteRef string) (remote string, branch string) {
 }
 
 func runAddHooks(wtPath string) error {
-	hooks, err := hook.LoadConfig("wt.hook")
+	hooks, err := hook.LoadConfig("wt.addhook")
 	if err != nil {
 		return err
 	}
@@ -270,16 +273,24 @@ func runAddHooks(wtPath string) error {
 	return hook.Run(context.Background(), hooks, absPath, os.Stderr)
 }
 
+func resolveCreatedPath(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if resolvedPath, err := filepath.EvalSymlinks(absPath); err == nil {
+		absPath = resolvedPath
+	}
+	return absPath, nil
+}
+
 func printCreatedWorktreePath(path string) error {
 	if path == "" {
 		return nil
 	}
-	absPath, err := filepath.Abs(path)
+	absPath, err := resolveCreatedPath(path)
 	if err != nil {
 		return err
-	}
-	if resolvedPath, err := filepath.EvalSymlinks(absPath); err == nil {
-		absPath = resolvedPath
 	}
 	fmt.Println(absPath)
 	return nil

@@ -26,6 +26,10 @@ func LoadConfig(key string) ([]string, error) {
 
 func Run(ctx context.Context, hooks []string, dir string, w io.Writer) error {
 	for _, h := range hooks {
+		if git.Debug() {
+			fmt.Fprintf(w, "[in %s] sh -c %s\n", dir, h)
+			continue
+		}
 		cmd := exec.CommandContext(ctx, "sh", "-c", h)
 		cmd.Dir = dir
 		cmd.Stdout = w

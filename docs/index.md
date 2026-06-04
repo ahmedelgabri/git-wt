@@ -84,6 +84,25 @@ repo/
 └── main/           # Worktree for default branch
 ```
 
+## Hooks
+
+Run shell commands when worktrees are created or removed, configured through Git config so they can be scoped per-repository or globally with `--global`. Useful for expensive per-worktree setup, such as copying a generated `compile_commands.json` from your main checkout into every new worktree.
+
+```bash
+# Runs after `git wt add`, in the new worktree directory
+git config --add wt.addhook 'cp ../main/compile_commands.json .'
+
+# Runs before `git wt remove`, in the worktree being removed
+git config --add wt.removehook './scripts/cleanup.sh'
+```
+
+- Each hook runs with `sh -c` in the worktree directory
+- Repeated `--add` registers multiple hooks; they run in order and stop on the first failure
+- Hook output goes to stderr, keeping the path that `git wt add` prints on stdout clean
+- A failing `wt.removehook` aborts the removal; a failing `wt.addhook` exits non-zero without printing the path
+- `wt.removehook` is skipped for the current worktree, locked worktrees, and stale or prunable entries
+- `DEBUG=1` echoes hooks instead of running them
+
 ## Commands
 
 | Command             | Description                                                |

@@ -332,18 +332,32 @@ func confirmRemoval(items []removalItem, opts removeOptions, remote string, clea
 }
 
 type removalTarget struct {
-	path     string
-	branch   string
-	detached bool
+	path           string
+	branch         string
+	detached       bool
+	locked         bool
+	lockedReason   string
+	prunable       bool
+	prunableReason string
+}
+
+func newRemovalTargetFromEntry(entry worktree.Entry) removalTarget {
+	return removalTarget{
+		path:           entry.Path,
+		branch:         entry.Branch,
+		detached:       entry.Detached,
+		locked:         entry.Locked,
+		lockedReason:   entry.LockedReason,
+		prunable:       entry.Prunable,
+		prunableReason: entry.PrunableReason,
+	}
 }
 
 func newRemovalTarget(entries []worktree.Entry, path string) removalTarget {
-	t := removalTarget{path: path}
 	if entry := worktree.FindByPath(entries, path); entry != nil {
-		t.branch = entry.Branch
-		t.detached = entry.Detached
+		return newRemovalTargetFromEntry(*entry)
 	}
-	return t
+	return removalTarget{path: path}
 }
 
 func (t removalTarget) hasBranch() bool {
@@ -518,14 +532,46 @@ func pruneStaleWorktree(target removalTarget) error {
 	})
 }
 
+func preflightRemoveHook(target removalTarget) (bool, error) {
+	if currentRoot, err := currentWorktreeRoot(); err == nil && samePath(target.path, currentRoot) {
+		return false, fmt.Errorf("cannot remove current worktree %q", target.path)
+	}
+
+	if target.locked {
+		if target.lockedReason != "" {
+			return false, fmt.Errorf("cannot remove locked worktree %q: %s", target.path, target.lockedReason)
+		}
+		return false, fmt.Errorf("cannot remove locked worktree %q", target.path)
+	}
+
+	if target.prunable {
+		return false, nil
+	}
+
+	if _, err := os.Stat(target.path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
 func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string) error {
 	name := filepath.Base(target.path)
 
-	if hooks, err := hook.LoadConfig("wt.deletehook"); err != nil {
+	runHooks, err := preflightRemoveHook(target)
+	if err != nil {
 		return err
-	} else if len(hooks) > 0 {
-		if err := hook.Run(context.Background(), hooks, target.path, os.Stderr); err != nil {
-			return fmt.Errorf("delete hook failed for worktree %q: %w", name, err)
+	}
+	if runHooks {
+		if hooks, err := hook.LoadConfig("wt.removehook"); err != nil {
+			return err
+		} else if len(hooks) > 0 {
+			if err := hook.Run(context.Background(), hooks, target.path, os.Stderr); err != nil {
+				return fmt.Errorf("remove hook failed for worktree %q: %w", name, err)
+			}
 		}
 	}
 
