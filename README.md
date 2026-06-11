@@ -176,6 +176,29 @@ git wt add --quiet -b feature feature
 cd "$(git wt switch)"
 ```
 
+### Shell integration (automatic cd)
+
+A subprocess can never change its parent shell's directory, so by default
+`switch` and `add` print the worktree path. The `init` command emits a small
+shell script that wraps the binary and runs the `cd` for you:
+
+```bash
+# bash (~/.bashrc)
+eval "$(git-wt init bash)"
+
+# zsh (~/.zshrc)
+eval "$(git-wt init zsh)"
+
+# fish (~/.config/fish/config.fish)
+git-wt init fish | source
+```
+
+After sourcing, `git wt switch` and `git wt add` change directory directly.
+The script also defines a thin `git()` wrapper so the `git wt` spelling
+works; if another tool already wraps `git`, use
+`eval "$(git-wt init zsh --no-git-wrapper)"` and invoke `git-wt switch`
+instead.
+
 ### Remove a worktree and local branch
 
 ```bash
@@ -271,6 +294,7 @@ Hooks apply to `git wt add` and `git wt remove`; the initial worktree created by
 | `remove` / `rm`     | Remove worktrees directly or by safe cleanup filters       |
 | `doctor`            | Run repository diagnostics                                 |
 | `agent-skill`       | Install the git-wt agent skill                             |
+| `init <shell>`      | Print shell integration for automatic directory switching  |
 | `status`            | Show a compact dashboard for linked worktrees              |
 | `list`              | List worktrees with table, JSON, or passthrough Git output |
 | `switch`            | Interactively select a worktree                            |
