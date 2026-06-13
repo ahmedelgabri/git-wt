@@ -35,8 +35,7 @@ worktree directory.
 **Homebrew**
 
 ```bash
-brew tap ahmedelgabri/git-wt
-brew install git-wt
+brew install ahmedelgabri/tap/git-wt
 ```
 
 **Nix Flakes**

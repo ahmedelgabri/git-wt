@@ -96,6 +96,12 @@ Jobs:
    - Generates changelog from commits since the previous tag
    - Creates a GitHub release with all archives and checksums attached
 
+3. **Update Homebrew Formula** (needs build and release)
+   - Checks out the shared [homebrew-tap](https://github.com/ahmedelgabri/homebrew-tap) repository
+   - Downloads release checksums
+   - Updates `Formula/git-wt.rb` for the new version
+   - Commits and pushes the formula update to `ahmedelgabri/tap`
+
 To skip release creation, include `[skip release]` in the commit message.
 
 ## Pre-commit Hooks (lefthook)
@@ -153,6 +159,7 @@ lefthook run pre-push
    - Cross-compile binaries for macOS and Linux (amd64 + arm64)
    - Create a git tag `v2.0.0`
    - Create a GitHub release with changelog and binary archives
+   - Update the Homebrew formula in `ahmedelgabri/tap`
 
 ## Code Style
 

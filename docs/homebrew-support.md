@@ -6,15 +6,14 @@ for bash, zsh, and fish.
 ## Installation
 
 ```bash
-brew tap ahmedelgabri/git-wt
-brew install git-wt
+brew install ahmedelgabri/tap/git-wt
 ```
 
 ## Updating
 
 ```bash
 brew update
-brew upgrade git-wt
+brew upgrade ahmedelgabri/tap/git-wt
 ```
 
 ## How It Works
@@ -42,5 +41,5 @@ The two zsh files serve different entry points:
 
 ## Tap Repository
 
-The Homebrew formula is maintained in a separate repository:
-[ahmedelgabri/homebrew-git-wt](https://github.com/ahmedelgabri/homebrew-git-wt)
+The Homebrew formula is maintained in the shared tap repository:
+[ahmedelgabri/homebrew-tap](https://github.com/ahmedelgabri/homebrew-tap)

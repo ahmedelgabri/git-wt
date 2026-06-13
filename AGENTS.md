@@ -134,7 +134,7 @@ The test helper auto-builds the Go binary if it's missing or stale. You can also
 ## Distribution
 
 - **Nix Flakes**: `flake.nix` in this repo (uses `buildGoModule`)
-- **Homebrew**: separate tap repo at [ahmedelgabri/homebrew-git-wt](https://github.com/ahmedelgabri/homebrew-git-wt)
+- **Homebrew**: shared tap repo at [ahmedelgabri/homebrew-tap](https://github.com/ahmedelgabri/homebrew-tap)
 
 ## Shell Completions
 

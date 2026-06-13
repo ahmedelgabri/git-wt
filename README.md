@@ -47,8 +47,7 @@ separate directories. They are useful for:
 ### Homebrew
 
 ```bash
-brew tap ahmedelgabri/git-wt
-brew install git-wt
+brew install ahmedelgabri/tap/git-wt
 ```
 
 Shell completions are installed automatically for bash, zsh, and fish.

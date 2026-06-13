@@ -144,7 +144,7 @@ jobs:
             ### Using Homebrew
 
             ```bash
-            brew install ahmedelgabri/git-wt/git-wt
+            brew install ahmedelgabri/tap/git-wt
             ```
 
             ### Using Nix Flakes
@@ -179,7 +179,7 @@ jobs:
       - name: Checkout Homebrew tap
         uses: actions/checkout@v4
         with:
-          repository: ahmedelgabri/homebrew-git-wt
+          repository: ahmedelgabri/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Download checksums
