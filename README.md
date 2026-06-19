@@ -35,6 +35,7 @@ separate directories. They are useful for:
 - **Repository diagnostics** with `git wt doctor`
 - **Status dashboard** with `git wt status`
 - **Structured output** with `git wt list --json`
+- **Agent skill installer** with `git wt agent-skill`
 - **Dry-run support** for destructive operations
 - **Preserves uncommitted changes, stashes, remotes, and repo-local config** during migration
 
@@ -108,6 +109,19 @@ For zsh, both completion files are needed:
 - `_git-wt` completes the standalone `git-wt` command
 - `_git_wt` bridges `git wt ...` when git/oh-my-zsh-style completion wrappers
   dispatch to the underscore form
+
+### Agent skill
+
+Install an [Agent Skills](https://agentskills.io/)-compatible skill so coding
+agents can discover and use `git-wt` workflows:
+
+```bash
+git wt agent-skill
+```
+
+By default this writes `~/.agents/skills/git-wt/SKILL.md`. Use
+`git wt agent-skill --dir ~/.claude/skills` for a different skill root,
+`--print` to review the skill, or `--force` to overwrite an existing copy.
 
 ## Usage
 
@@ -218,6 +232,7 @@ git wt update # or: git wt u
 | `add [options] ...` | Create a new worktree                                      |
 | `remove` / `rm`     | Remove worktrees directly or by safe cleanup filters       |
 | `doctor`            | Run repository diagnostics                                 |
+| `agent-skill`       | Install the git-wt agent skill                             |
 | `status`            | Show a compact dashboard for linked worktrees              |
 | `list`              | List worktrees with table, JSON, or passthrough Git output |
 | `switch`            | Interactively select a worktree                            |

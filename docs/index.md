@@ -26,6 +26,7 @@ worktree directory.
 - **Repository diagnostics** with `git wt doctor`
 - **Status dashboard** with `git wt status`
 - **Structured output** with `git wt list --json`
+- **Agent skill installer** with `git wt agent-skill`
 - **Dry-run support** for destructive operations
 
 ## Quick Start
@@ -65,6 +66,9 @@ git wt doctor
 # Show status for all worktrees
 git wt status
 
+# Install the agent skill
+git wt agent-skill
+
 # Sweep safe cleanup candidates
 git wt remove --sweep --dry-run
 ```
@@ -89,12 +93,26 @@ repo/
 | `add [options] ...` | Create a new worktree                                      |
 | `remove [worktree]` | Remove worktrees directly or by safe cleanup filters       |
 | `doctor`            | Run repository diagnostics                                 |
+| `agent-skill`       | Install the git-wt agent skill                             |
 | `status`            | Show a compact dashboard for linked worktrees              |
 | `list`              | List worktrees with table, JSON, or passthrough Git output |
 | `switch`            | Interactive worktree selection                             |
 | `update`            | Fetch remotes and update the default branch                |
 
 Native `git worktree` commands (`lock`, `unlock`, `move`, `prune`, `repair`) are also supported as pass-through commands.
+
+## Agent Skill
+
+Install an [Agent Skills](https://agentskills.io/)-compatible skill so coding
+agents can discover and use `git-wt` workflows:
+
+```bash
+git wt agent-skill
+```
+
+By default this writes `~/.agents/skills/git-wt/SKILL.md`. Use
+`git wt agent-skill --dir ~/.claude/skills` for a different skill root,
+`--print` to review the skill, or `--force` to overwrite an existing copy.
 
 ## Claude Code Integration
 

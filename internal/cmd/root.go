@@ -20,7 +20,7 @@ const (
 
 var (
 	configureRootCommandOnce sync.Once
-	supportedCommandNames    = []string{"add", "clone", "doctor", "migrate", "remove", "status", "switch", "update"}
+	supportedCommandNames    = []string{"add", "agent-skill", "clone", "doctor", "migrate", "remove", "status", "switch", "update"}
 	passthroughCommandNames  = []string{"list", "lock", "unlock", "move", "prune", "repair"}
 )
 
