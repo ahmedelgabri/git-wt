@@ -122,7 +122,8 @@ func loadInteractiveAddItems(ctx context.Context) ([]picker.Item, error) {
 }
 
 func buildInteractiveAddItems(ctx context.Context) ([]picker.Item, error) {
-	output, err := git.QueryContext(ctx,
+	output, err := git.QueryContext(
+		ctx,
 		"for-each-ref",
 		"--sort=-committerdate",
 		"--format=%(refname:short)\t%(committerdate:unix)\t%(authorname)\t%(contents:subject)",

@@ -25,7 +25,8 @@ func runModel(t *testing.T, m tea.Model, timeout time.Duration) tea.Model {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	p := tea.NewProgram(m,
+	p := tea.NewProgram(
+		m,
 		tea.WithInput(nil),
 		tea.WithOutput(io.Discard),
 		tea.WithContext(ctx),
