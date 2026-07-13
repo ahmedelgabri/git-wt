@@ -471,7 +471,16 @@ func buildMigratedStructure(plan migratePlan, newStructure string) error {
 			// Restore git index (staged changes).
 			oldIndex := filepath.Join(plan.repoRoot, ".git", "index")
 			if _, err := os.Stat(oldIndex); err == nil {
-				newIndex := filepath.Join(newStructure, ".bare", "worktrees", plan.currentBranch, "index")
+				newIndex, err := git.QueryIn(destDir, "rev-parse", "--git-path", "index")
+				if err != nil {
+					return fmt.Errorf("failed to resolve migrated git index: %w", err)
+				}
+				if newIndex == "" {
+					return fmt.Errorf("failed to resolve migrated git index")
+				}
+				if !filepath.IsAbs(newIndex) {
+					newIndex = filepath.Join(destDir, newIndex)
+				}
 				if err := copyFileSimple(oldIndex, newIndex); err != nil {
 					return fmt.Errorf("failed to restore git index: %w", err)
 				}
