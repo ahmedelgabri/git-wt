@@ -71,6 +71,40 @@ teardown() {
 	[[ $(cat "$wt_dir/file.txt") == "modified content" ]]
 }
 
+@test "migrate: handles slash-containing current branch names" {
+	init_repo myrepo
+	cd myrepo
+	command git checkout --quiet -b feature/foo
+	create_commit "feature.txt"
+	echo "staged content" > staged.txt
+	command git add staged.txt
+
+	run bash -c 'echo "y" | "$1" migrate 2>&1' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Migration complete"* ]]
+	[ -d "$TEST_DIR/myrepo/feature/foo" ]
+
+	cd "$TEST_DIR/myrepo/feature/foo"
+	[[ $(command git branch --show-current) == "feature/foo" ]]
+	[[ $(command git diff --cached --name-only) == "staged.txt" ]]
+	[[ $(cat staged.txt) == "staged content" ]]
+}
+
+@test "migrate: restores the repository index when GIT_INDEX_FILE is set" {
+	init_repo myrepo
+	cd myrepo
+	echo "staged content" > staged.txt
+	command git add staged.txt
+
+	run env GIT_INDEX_FILE="$TEST_DIR/alternate-index" bash -c 'echo "y" | "$1" migrate 2>&1' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Migration complete"* ]]
+
+	cd "$TEST_DIR/myrepo/main"
+	[[ $(command git diff --cached --name-only) == "staged.txt" ]]
+	[[ $(command git show :staged.txt) == "staged content" ]]
+}
+
 @test "migrate: creates separate worktrees for default and current branch" {
 	init_repo_with_remote myrepo
 	cd myrepo
