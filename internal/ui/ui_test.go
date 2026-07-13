@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -649,4 +650,133 @@ func TestRenderTableRespectsMaxWidth(t *testing.T) {
 	if !strings.Contains(plain, "this shou…") {
 		t.Fatalf("RenderTable() should truncate detail column, got %q", plain)
 	}
+}
+
+func TestRenderTableFitsNarrowTerminal(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	mockStdoutTerminalWidth(t, 80)
+
+	got := Section("", RenderTable(
+		[]TableColumn{
+			{Title: "ACTION", MinWidth: 8},
+			{Title: "WORKTREE", MinWidth: 18},
+			{Title: "BRANCH", MinWidth: 14},
+			{Title: "EFFECT", MinWidth: 28},
+			{Title: "REASON", MinWidth: 18, MaxWidth: 64},
+		},
+		[][]string{{
+			"remove",
+			"/a/very/long/worktree/path",
+			"feature-with-a-long-name",
+			"remove and delete the local branch",
+			"selected target with additional context",
+		}},
+	))
+	plain := ansi.Strip(got)
+	if !strings.Contains(plain, "…") {
+		t.Fatalf("RenderTable() should truncate cells to fit a narrow terminal, got %q", plain)
+	}
+	for i, line := range strings.Split(plain, "\n") {
+		if width := ansi.StringWidth(line); width > 80 {
+			t.Fatalf("line %d width = %d, want <= 80: %q", i+1, width, line)
+		}
+	}
+}
+
+func TestRenderTableStacksWhenHeadersCannotFit(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	mockStdoutTerminalWidth(t, 27)
+
+	got := Section("", RenderTable(
+		[]TableColumn{{Title: "FIRST"}, {Title: "SECOND"}, {Title: "THIRD"}},
+		[][]string{{"one", "two", "a third value that wraps"}},
+	))
+	plain := ansi.Strip(got)
+	for _, want := range []string{"FIRST: one", "SECOND: two", "THIRD:"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("stacked RenderTable() missing %q in %q", want, plain)
+		}
+	}
+	for i, line := range strings.Split(plain, "\n") {
+		if width := ansi.StringWidth(line); width > 27 {
+			t.Fatalf("line %d width = %d, want <= 27: %q", i+1, width, line)
+		}
+	}
+}
+
+func TestSectionHardWrapsBreakpointAtTerminalWidth(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	mockStdoutTerminalWidth(t, 77)
+
+	got := Section("", "Safe candidates only: merged branches, gone upstreams, and stale metadata.")
+	for i, line := range strings.Split(got, "\n") {
+		if width := ansi.StringWidth(line); width > 77 {
+			t.Fatalf("line %d width = %d, want <= 77: %q", i+1, width, line)
+		}
+	}
+}
+
+func TestSectionOmitsBoxWhenContentCannotFitInterior(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	mockStdoutTerminalWidth(t, 5)
+
+	got := Section("", "🙂")
+	if strings.Contains(got, "╭") {
+		t.Fatalf("Section() should omit a box that cannot fit: %q", got)
+	}
+	if width := ansi.StringWidth(got); width > 5 {
+		t.Fatalf("Section() width = %d, want <= 5: %q", width, got)
+	}
+}
+
+func TestWrapTextPreservesANSIStylesAcrossLines(t *testing.T) {
+	const red = "\x1b[31m"
+	got := wrapText(red+"abcdefghij\x1b[0m", 5)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("wrapText() produced %d lines, want 2: %q", len(lines), got)
+	}
+	if !strings.HasSuffix(lines[0], ansi.ResetStyle) {
+		t.Fatalf("wrapText() did not reset style before newline: %q", got)
+	}
+	if !strings.HasPrefix(lines[1], red) {
+		t.Fatalf("wrapText() did not restore style after newline: %q", got)
+	}
+}
+
+func TestTableRenderingUsesDestinationTerminal(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	mockTerminalWidth(t, os.Stderr, 27)
+
+	got := SectionFor(os.Stderr, "", RenderTableFor(
+		os.Stderr,
+		[]TableColumn{{Title: "FIRST"}, {Title: "SECOND"}, {Title: "THIRD"}},
+		[][]string{{"one", "two", "a third value that wraps"}},
+	))
+	plain := ansi.Strip(got)
+	if !strings.Contains(plain, "FIRST: one") {
+		t.Fatalf("RenderTableFor() did not use stderr width: %q", plain)
+	}
+	for i, line := range strings.Split(plain, "\n") {
+		if width := ansi.StringWidth(line); width > 27 {
+			t.Fatalf("line %d width = %d, want <= 27: %q", i+1, width, line)
+		}
+	}
+}
+
+func mockStdoutTerminalWidth(t *testing.T, width int) {
+	t.Helper()
+	mockTerminalWidth(t, os.Stdout, width)
+}
+
+func mockTerminalWidth(t *testing.T, output *os.File, width int) {
+	t.Helper()
+	oldIsTerminal := isTerminal
+	oldGetTerminalSize := getTerminalSize
+	isTerminal = func(f *os.File) bool { return f == output }
+	getTerminalSize = func(f *os.File) (int, int, error) { return width, 24, nil }
+	t.Cleanup(func() {
+		isTerminal = oldIsTerminal
+		getTerminalSize = oldGetTerminalSize
+	})
 }

@@ -232,7 +232,7 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) (string, err
 			}
 		} else {
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, renderCommandHintsSection([]commandHint{{
+			fmt.Fprintln(os.Stderr, renderCommandHintsSectionFor(os.Stderr, []commandHint{{
 				Action:  fmt.Sprintf("Push %s and set upstream", ui.Accent(trackBranch)),
 				Command: "git push -u " + remote + " " + trackBranch,
 			}}))
