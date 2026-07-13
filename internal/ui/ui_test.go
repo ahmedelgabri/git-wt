@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -649,4 +650,68 @@ func TestRenderTableRespectsMaxWidth(t *testing.T) {
 	if !strings.Contains(plain, "this shou…") {
 		t.Fatalf("RenderTable() should truncate detail column, got %q", plain)
 	}
+}
+
+func TestRenderTableFitsNarrowTerminal(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	mockStdoutTerminalWidth(t, 80)
+
+	got := Section("", RenderTable(
+		[]TableColumn{
+			{Title: "ACTION", MinWidth: 8},
+			{Title: "WORKTREE", MinWidth: 18},
+			{Title: "BRANCH", MinWidth: 14},
+			{Title: "EFFECT", MinWidth: 28},
+			{Title: "REASON", MinWidth: 18, MaxWidth: 64},
+		},
+		[][]string{{
+			"remove",
+			"/a/very/long/worktree/path",
+			"feature-with-a-long-name",
+			"remove and delete the local branch",
+			"selected target with additional context",
+		}},
+	))
+	plain := ansi.Strip(got)
+	if !strings.Contains(plain, "…") {
+		t.Fatalf("RenderTable() should truncate cells to fit a narrow terminal, got %q", plain)
+	}
+	for i, line := range strings.Split(plain, "\n") {
+		if width := ansi.StringWidth(line); width > 80 {
+			t.Fatalf("line %d width = %d, want <= 80: %q", i+1, width, line)
+		}
+	}
+}
+
+func TestRenderTableStacksWhenHeadersCannotFit(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	mockStdoutTerminalWidth(t, 27)
+
+	got := Section("", RenderTable(
+		[]TableColumn{{Title: "FIRST"}, {Title: "SECOND"}, {Title: "THIRD"}},
+		[][]string{{"one", "two", "a third value that wraps"}},
+	))
+	plain := ansi.Strip(got)
+	for _, want := range []string{"FIRST: one", "SECOND: two", "THIRD:"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("stacked RenderTable() missing %q in %q", want, plain)
+		}
+	}
+	for i, line := range strings.Split(plain, "\n") {
+		if width := ansi.StringWidth(line); width > 27 {
+			t.Fatalf("line %d width = %d, want <= 27: %q", i+1, width, line)
+		}
+	}
+}
+
+func mockStdoutTerminalWidth(t *testing.T, width int) {
+	t.Helper()
+	oldIsTerminal := isTerminal
+	oldGetTerminalSize := getTerminalSize
+	isTerminal = func(f *os.File) bool { return f == os.Stdout }
+	getTerminalSize = func(f *os.File) (int, int, error) { return width, 24, nil }
+	t.Cleanup(func() {
+		isTerminal = oldIsTerminal
+		getTerminalSize = oldGetTerminalSize
+	})
 }

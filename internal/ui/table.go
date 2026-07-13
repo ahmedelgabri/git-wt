@@ -49,17 +49,36 @@ func Section(title string, body ...string) string {
 	if !outputIsTTY() {
 		return content
 	}
-	return sectionBoxStyle().Render(content)
+
+	style := sectionBoxStyle()
+	if width, _, ok := StdoutSize(); ok {
+		contentWidth := width - style.GetHorizontalFrameSize()
+		if contentWidth <= 0 {
+			return wrapText(content, width)
+		}
+		content = wrapText(content, contentWidth)
+	}
+	return style.Render(content)
 }
 
-// RenderTable renders a static table using lipgloss so ANSI-colored content is
-// measured and truncated correctly.
+// RenderTable renders a responsive static table using lipgloss so ANSI-colored
+// content is measured and truncated correctly. On narrow terminals, columns
+// shrink below their preferred minimums; if even the headers cannot fit, rows
+// are rendered as stacked fields instead.
 func RenderTable(columns []TableColumn, rows [][]string) string {
 	if len(columns) == 0 {
 		return ""
 	}
 
 	widths := tableColumnWidths(columns, rows)
+	if maxWidth, ok := tableContentWidth(); ok {
+		var fits bool
+		widths, fits = fitTableWidths(columns, widths, maxWidth)
+		if !fits {
+			return renderStackedTable(columns, rows, maxWidth)
+		}
+	}
+
 	header := tableLine(columns, widths, func(col int, value string) string {
 		return render(tableHeaderStyle, value)
 	})
@@ -68,6 +87,99 @@ func RenderTable(columns []TableColumn, rows [][]string) string {
 		lines = append(lines, tableLineValues(row, widths, nil))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func tableContentWidth() (int, bool) {
+	width, _, ok := StdoutSize()
+	if !ok {
+		return 0, false
+	}
+	return width - sectionBoxStyle().GetHorizontalFrameSize(), true
+}
+
+func fitTableWidths(columns []TableColumn, preferred []int, maxWidth int) ([]int, bool) {
+	cellSpacing := 3*len(columns) - 1
+	available := maxWidth - cellSpacing
+	if available < len(columns) {
+		return nil, false
+	}
+
+	minimums := make([]int, len(columns))
+	minimumTotal := 0
+	preferredTotal := 0
+	for i, col := range columns {
+		minimums[i] = ansi.StringWidth(col.Title)
+		if minimums[i] < 1 {
+			minimums[i] = 1
+		}
+		if minimums[i] > preferred[i] && preferred[i] > 0 {
+			minimums[i] = preferred[i]
+		}
+		minimumTotal += minimums[i]
+		preferredTotal += preferred[i]
+	}
+	if minimumTotal > available {
+		return nil, false
+	}
+	if preferredTotal <= available {
+		return preferred, true
+	}
+
+	widths := append([]int(nil), minimums...)
+	remaining := available - minimumTotal
+	for remaining > 0 {
+		grew := false
+		for i := range widths {
+			if widths[i] >= preferred[i] {
+				continue
+			}
+			widths[i]++
+			remaining--
+			grew = true
+			if remaining == 0 {
+				break
+			}
+		}
+		if !grew {
+			break
+		}
+	}
+	return widths, true
+}
+
+func renderStackedTable(columns []TableColumn, rows [][]string, maxWidth int) string {
+	lines := make([]string, 0, len(rows)*(len(columns)+1))
+	if len(rows) == 0 {
+		for _, col := range columns {
+			lines = append(lines, render(tableHeaderStyle, col.Title))
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	for rowIndex, row := range rows {
+		if rowIndex > 0 {
+			lines = append(lines, "")
+		}
+		for colIndex, col := range columns {
+			value := ""
+			if colIndex < len(row) {
+				value = row[colIndex]
+			}
+			line := render(tableHeaderStyle, col.Title+":")
+			if value != "" {
+				line += " " + value
+			}
+			lines = append(lines, wrapText(line, maxWidth))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func wrapText(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	return ansi.Wrap(s, width, " /._")
 }
 
 func tableColumnWidths(columns []TableColumn, rows [][]string) []int {
