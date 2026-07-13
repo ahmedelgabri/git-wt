@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,11 +15,19 @@ type commandHint struct {
 }
 
 func renderTableSection(columns []ui.TableColumn, rows [][]string, notes []string, summary string) string {
-	return renderTableSectionWithFooter(columns, rows, notes, summary, "")
+	return renderTableSectionFor(os.Stdout, columns, rows, notes, summary)
+}
+
+func renderTableSectionFor(output *os.File, columns []ui.TableColumn, rows [][]string, notes []string, summary string) string {
+	return renderTableSectionWithFooterFor(output, columns, rows, notes, summary, "")
 }
 
 func renderTableSectionWithFooter(columns []ui.TableColumn, rows [][]string, notes []string, summary string, footer string) string {
-	parts := []string{ui.RenderTable(columns, rows)}
+	return renderTableSectionWithFooterFor(os.Stdout, columns, rows, notes, summary, footer)
+}
+
+func renderTableSectionWithFooterFor(output *os.File, columns []ui.TableColumn, rows [][]string, notes []string, summary string, footer string) string {
+	parts := []string{ui.RenderTableFor(output, columns, rows)}
 	if len(notes) > 0 {
 		parts = append(parts, "", strings.Join(notes, "\n"))
 	}
@@ -28,7 +37,7 @@ func renderTableSectionWithFooter(columns []ui.TableColumn, rows [][]string, not
 	if strings.TrimSpace(footer) != "" {
 		parts = append(parts, "", footer)
 	}
-	return ui.Section("", parts...)
+	return ui.SectionFor(output, "", parts...)
 }
 
 func renderRepoLayoutSection(rootDir string, branches []treeBranch) string {
@@ -51,12 +60,16 @@ func renderRepoLayoutSection(rootDir string, branches []treeBranch) string {
 }
 
 func renderCommandHintsSection(hints []commandHint) string {
+	return renderCommandHintsSectionFor(os.Stdout, hints)
+}
+
+func renderCommandHintsSectionFor(output *os.File, hints []commandHint) string {
 	rows := make([][]string, 0, len(hints))
 	for _, hint := range hints {
 		rows = append(rows, []string{hint.Action, ui.Muted(hint.Command)})
 	}
 
-	return renderTableSection([]ui.TableColumn{
+	return renderTableSectionFor(output, []ui.TableColumn{
 		{Title: "NEXT", MinWidth: 18, MaxWidth: 28},
 		{Title: "COMMAND", MinWidth: 24},
 	}, rows, nil, "")
