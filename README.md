@@ -201,6 +201,10 @@ can rely on it. The script also defines a thin `git()` wrapper so the
 `eval "$(git-wt init zsh --no-git-wrapper)"` and invoke `git-wt switch`
 instead.
 
+Known limitation: the wrapper keys on the first argument, so global git
+flags before the subcommand (e.g. `git -C <path> wt switch`) bypass it
+and print the path instead of changing directory.
+
 ### Remove a worktree and local branch
 
 ```bash
