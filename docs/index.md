@@ -60,6 +60,10 @@ git wt add
 # Switch between worktrees
 cd "$(git wt switch)"
 
+# Or source the shell integration once (bash/zsh/fish) so
+# `git wt switch` changes directory by itself
+eval "$(git-wt init zsh)"
+
 # Show repository health
 git wt doctor
 
@@ -132,6 +136,7 @@ Hooks apply to `git wt add` and `git wt remove`; the initial worktree created by
 | `remove [worktree]` | Remove worktrees directly or by safe cleanup filters       |
 | `doctor`            | Run repository diagnostics                                 |
 | `agent-skill`       | Install the git-wt agent skill                             |
+| `init <shell>`      | Print shell integration for automatic directory switching  |
 | `status`            | Show a compact dashboard for linked worktrees              |
 | `list`              | List worktrees with table, JSON, or passthrough Git output |
 | `switch`            | Interactive worktree selection                             |
