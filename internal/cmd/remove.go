@@ -569,7 +569,15 @@ func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string
 		if hooks, err := hook.LoadConfig("wt.removehook"); err != nil {
 			return err
 		} else if len(hooks) > 0 {
-			if err := hook.Run(context.Background(), hooks, target.path, os.Stderr); err != nil {
+			bareRoot, _ := worktree.BareRoot()
+			invocation := hook.Invocation{
+				Event:        hook.BeforeRemove,
+				Dir:          target.path,
+				WorktreePath: target.path,
+				Branch:       target.branch,
+				BareRoot:     bareRoot,
+			}
+			if err := hook.Run(context.Background(), hooks, invocation, os.Stderr); err != nil {
 				return fmt.Errorf("remove hook failed for worktree %q: %w", name, err)
 			}
 		}

@@ -4,11 +4,33 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 )
+
+type Event string
+
+const (
+	BeforeAdd    Event = "beforeadd"
+	AfterAdd     Event = "afteradd"
+	BeforeRemove Event = "beforeremove"
+	AfterRemove  Event = "afterremove"
+)
+
+type Invocation struct {
+	Event        Event
+	Dir          string
+	WorktreePath string
+	Branch       string
+	BareRoot     string
+}
+
+func Load(event Event) ([]string, error) {
+	return LoadConfig("wt." + string(event))
+}
 
 func LoadConfig(key string) ([]string, error) {
 	out, err := git.QueryRaw("config", "--null", "--get-all", key)
@@ -25,19 +47,30 @@ func LoadConfig(key string) ([]string, error) {
 	return strings.Split(out, "\x00"), nil
 }
 
-func Run(ctx context.Context, hooks []string, dir string, w io.Writer) error {
+func Run(ctx context.Context, hooks []string, invocation Invocation, w io.Writer) error {
 	for _, h := range hooks {
 		if git.Debug() {
-			fmt.Fprintf(w, "[in %s] sh -c %s\n", dir, h)
+			fmt.Fprintf(w, "[%s in %s] sh -c %s\n", configKey(invocation.Event), invocation.Dir, h)
 			continue
 		}
 		cmd := exec.CommandContext(ctx, "sh", "-c", h)
-		cmd.Dir = dir
+		cmd.Dir = invocation.Dir
+		cmd.Env = append(
+			os.Environ(),
+			"GIT_WT_EVENT="+string(invocation.Event),
+			"GIT_WT_PATH="+invocation.WorktreePath,
+			"GIT_WT_BRANCH="+invocation.Branch,
+			"GIT_WT_BARE_ROOT="+invocation.BareRoot,
+		)
 		cmd.Stdout = w
 		cmd.Stderr = w
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("hook %q failed: %w", h, err)
+			return fmt.Errorf("%s hook %q failed: %w", configKey(invocation.Event), h, err)
 		}
 	}
 	return nil
+}
+
+func configKey(event Event) string {
+	return "wt." + string(event)
 }

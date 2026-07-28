@@ -10,34 +10,60 @@ teardown() {
 	teardown_test_env
 }
 
-# --- Post-creation hooks (wt.addhook) ---
+# --- Add lifecycle hooks ---
 
-@test "hooks: wt.addhook runs after creating worktree" {
+@test "hooks: wt.beforeadd runs from bare root before creating worktree" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git config --add wt.addhook 'touch .hook-ran'
+	command git config --add wt.beforeadd '[ ! -e "$GIT_WT_PATH" ] && printf "%s\\n%s\\n%s\\n%s\\n" "$PWD" "$GIT_WT_EVENT" "$GIT_WT_BRANCH" "$GIT_WT_PATH" > .beforeadd-context'
+
+	run "$GIT_WT" add -b before-add before-add
+	[ "$status" -eq 0 ]
+	local context
+	context=$(cat "$TEST_DIR/myrepo/.beforeadd-context")
+	[[ "$context" == "$TEST_DIR/myrepo"$'\n'"beforeadd"$'\n'"before-add"$'\n'"$TEST_DIR/myrepo/before-add" ]]
+}
+
+@test "hooks: wt.beforeadd failure prevents worktree creation and later hooks" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	command git config --add wt.beforeadd 'exit 1'
+	command git config --add wt.beforeadd 'touch .second-ran'
+	command git config --add wt.afteradd 'touch .after-ran'
+
+	run "$GIT_WT" add -b before-fail before-fail
+	[ "$status" -ne 0 ]
+	[ ! -e "$TEST_DIR/myrepo/before-fail" ]
+	[ ! -e "$TEST_DIR/myrepo/.second-ran" ]
+	[ ! -e "$TEST_DIR/myrepo/before-fail/.after-ran" ]
+}
+
+@test "hooks: wt.afteradd runs after creating worktree" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	command git config --add wt.afteradd 'touch .hook-ran'
 
 	run "$GIT_WT" add -b hook-test hook-test
 	[ "$status" -eq 0 ]
 	[ -f "$TEST_DIR/myrepo/hook-test/.hook-ran" ]
 }
 
-@test "hooks: wt.addhook runs in the new worktree directory" {
+@test "hooks: wt.afteradd runs in the new worktree with lifecycle environment" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git config --add wt.addhook 'pwd > .hook-pwd'
+	command git config --add wt.afteradd 'printf "%s\\n%s\\n%s\\n%s\\n%s\\n" "$PWD" "$GIT_WT_EVENT" "$GIT_WT_PATH" "$GIT_WT_BRANCH" "$GIT_WT_BARE_ROOT" > .hook-context'
 
 	"$GIT_WT" add -b hook-dir hook-dir
-	local hook_pwd
-	hook_pwd=$(cat "$TEST_DIR/myrepo/hook-dir/.hook-pwd")
-	[ "$hook_pwd" = "$TEST_DIR/myrepo/hook-dir" ]
+	local context
+	context=$(cat "$TEST_DIR/myrepo/hook-dir/.hook-context")
+	[[ "$context" == "$TEST_DIR/myrepo/hook-dir"$'\n'"afteradd"$'\n'"$TEST_DIR/myrepo/hook-dir"$'\n'"hook-dir"$'\n'"$TEST_DIR/myrepo" ]]
 }
 
-@test "hooks: multiple wt.addhook values run sequentially" {
+@test "hooks: multiple wt.afteradd values run sequentially" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git config --add wt.addhook 'echo first >> .hook-order'
-	command git config --add wt.addhook 'echo second >> .hook-order'
+	command git config --add wt.afteradd 'echo first >> .hook-order'
+	command git config --add wt.afteradd 'echo second >> .hook-order'
 
 	"$GIT_WT" add -b multi-hook multi-hook
 
@@ -49,11 +75,21 @@ teardown() {
 	[ "$(head -1 "$TEST_DIR/myrepo/multi-hook/.hook-order")" = "first" ]
 }
 
-@test "hooks: wt.addhook failure stops execution and returns error" {
+@test "hooks: multiline wt.afteradd remains a single command" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git config --add wt.addhook 'exit 1'
-	command git config --add wt.addhook 'touch .second-ran'
+	command git config --add wt.afteradd $'if true; then\n\ttouch .multiline-ran\nfi'
+
+	run "$GIT_WT" add -b multiline-hook multiline-hook
+	[ "$status" -eq 0 ]
+	[ -f "$TEST_DIR/myrepo/multiline-hook/.multiline-ran" ]
+}
+
+@test "hooks: wt.afteradd failure stops execution and returns error" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	command git config --add wt.afteradd 'exit 1'
+	command git config --add wt.afteradd 'touch .second-ran'
 
 	run "$GIT_WT" add -b fail-hook fail-hook
 	[ "$status" -ne 0 ]
@@ -61,10 +97,10 @@ teardown() {
 	[ ! -f "$TEST_DIR/myrepo/fail-hook/.second-ran" ]
 }
 
-@test "hooks: wt.addhook failure does not print success path to stdout" {
+@test "hooks: wt.afteradd failure does not print success path to stdout" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git config --add wt.addhook 'exit 1'
+	command git config --add wt.afteradd 'exit 1'
 
 	local stdout_file stderr_file
 	stdout_file="$TEST_DIR/stdout.txt"
@@ -81,7 +117,7 @@ teardown() {
 	[[ "$(cat "$stderr_file")" == *"$TEST_DIR/myrepo/fail-stdout"* ]]
 }
 
-@test "hooks: wt.addhook does not run when no hooks configured" {
+@test "hooks: wt.afteradd does not run when no hooks configured" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 
@@ -90,10 +126,10 @@ teardown() {
 	assert_worktree_exists "$TEST_DIR/myrepo/no-hook"
 }
 
-@test "hooks: wt.addhook output goes to stderr" {
+@test "hooks: wt.afteradd output goes to stderr" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git config --add wt.addhook 'echo hook-output'
+	command git config --add wt.afteradd 'echo hook-output'
 
 	local stdout_file stderr_file
 	stdout_file="$TEST_DIR/stdout.txt"
@@ -107,10 +143,10 @@ teardown() {
 	[[ "$(cat "$stderr_file")" == *"hook-output"* ]]
 }
 
-@test "hooks: wt.addhook is echoed, not executed, under DEBUG=1" {
+@test "hooks: wt.afteradd is echoed, not executed, under DEBUG=1" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git config --add wt.addhook 'touch .should-not-run'
+	command git config --add wt.afteradd 'touch .should-not-run'
 
 	run env DEBUG=1 "$GIT_WT" add -b dbg-hook dbg-hook
 	[ "$status" -eq 0 ]
@@ -120,10 +156,10 @@ teardown() {
 	[ ! -f "$TEST_DIR/myrepo/dbg-hook/.should-not-run" ]
 }
 
-@test "hooks: wt.addhook runs in interactive mode" {
+@test "hooks: wt.afteradd runs in interactive mode" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git config --add wt.addhook 'touch .hook-ran'
+	command git config --add wt.afteradd 'touch .hook-ran'
 	command git checkout -b interactive-hook --quiet
 	create_commit "interactive-hook.txt"
 	command git push --quiet -u origin interactive-hook
@@ -135,7 +171,7 @@ teardown() {
 	[ -f "$TEST_DIR/myrepo/interactive-hook/.hook-ran" ]
 }
 
-# --- Delete hooks (wt.removehook) ---
+# --- Remove lifecycle hooks ---
 
 @test "hooks: wt.removehook runs before removing worktree" {
 	init_bare_repo myrepo
