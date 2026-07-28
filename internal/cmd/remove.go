@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
+	"github.com/ahmedelgabri/git-wt/internal/hook"
 	"github.com/ahmedelgabri/git-wt/internal/picker"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
@@ -331,18 +332,30 @@ func confirmRemoval(items []removalItem, opts removeOptions, remote string, clea
 }
 
 type removalTarget struct {
-	path     string
-	branch   string
-	detached bool
+	path         string
+	branch       string
+	detached     bool
+	locked       bool
+	lockedReason string
+	prunable     bool
+}
+
+func newRemovalTargetFromEntry(entry worktree.Entry) removalTarget {
+	return removalTarget{
+		path:         entry.Path,
+		branch:       entry.Branch,
+		detached:     entry.Detached,
+		locked:       entry.Locked,
+		lockedReason: entry.LockedReason,
+		prunable:     entry.Prunable,
+	}
 }
 
 func newRemovalTarget(entries []worktree.Entry, path string) removalTarget {
-	t := removalTarget{path: path}
 	if entry := worktree.FindByPath(entries, path); entry != nil {
-		t.branch = entry.Branch
-		t.detached = entry.Detached
+		return newRemovalTargetFromEntry(*entry)
 	}
-	return t
+	return removalTarget{path: path}
 }
 
 func (t removalTarget) hasBranch() bool {
@@ -474,6 +487,7 @@ func removalReason(item removalItem) string {
 func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) error {
 	successCount := 0
 	failedCount := 0
+	var singleErr error
 
 	for i, item := range items {
 		if len(items) > 1 {
@@ -490,6 +504,11 @@ func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) 
 		}
 		if err != nil {
 			failedCount++
+			if len(items) == 1 {
+				singleErr = err
+			} else {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", item.Target.path, err)
+			}
 		} else {
 			successCount++
 		}
@@ -504,6 +523,9 @@ func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) 
 		fmt.Println(summary)
 	}
 
+	if singleErr != nil {
+		return singleErr
+	}
 	if failedCount > 0 {
 		return fmt.Errorf("%d removal(s) failed", failedCount)
 	}
@@ -517,8 +539,72 @@ func pruneStaleWorktree(target removalTarget) error {
 	})
 }
 
+func preflightRemoveHook(target removalTarget) (bool, error) {
+	if currentRoot, err := currentWorktreeRoot(); err == nil && samePath(target.path, currentRoot) {
+		return false, fmt.Errorf("cannot remove current worktree %q", target.path)
+	}
+
+	if target.locked {
+		if target.lockedReason != "" {
+			return false, fmt.Errorf("cannot remove locked worktree %q: %s", target.path, target.lockedReason)
+		}
+		return false, fmt.Errorf("cannot remove locked worktree %q", target.path)
+	}
+
+	if target.prunable {
+		return false, nil
+	}
+
+	if _, err := os.Stat(target.path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
 func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string) error {
 	name := filepath.Base(target.path)
+
+	runHooks, err := preflightRemoveHook(target)
+	if err != nil {
+		return err
+	}
+
+	var beforeHooks, afterHooks []string
+	if runHooks {
+		beforeHooks, err = hook.Load(hook.BeforeRemove)
+		if err != nil {
+			return err
+		}
+		afterHooks, err = hook.Load(hook.AfterRemove)
+		if err != nil {
+			return err
+		}
+		runHooks = len(beforeHooks) > 0 || len(afterHooks) > 0
+	}
+
+	var bareRoot string
+	if runHooks {
+		bareRoot, err = worktree.BareRoot()
+		if err != nil {
+			return err
+		}
+	}
+	invocation := hook.Invocation{
+		Event:        hook.BeforeRemove,
+		Dir:          target.path,
+		WorktreePath: target.path,
+		Branch:       target.branch,
+		BareRoot:     bareRoot,
+	}
+	if runHooks {
+		if err := hook.Run(context.Background(), beforeHooks, invocation, os.Stderr); err != nil {
+			return fmt.Errorf("before removing worktree %q: %w", name, err)
+		}
+	}
 
 	if err := ui.SpinWithOutputContext(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(ctx context.Context, w io.Writer) error {
 		return git.RunToContext(ctx, w, "worktree", "remove", "-f", target.path)
@@ -526,23 +612,28 @@ func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string
 		return err
 	}
 
-	if !target.hasBranch() {
-		return nil
-	}
-
-	out, err := git.RunWithOutput("branch", "-D", target.branch)
-	if err != nil {
-		if out != "" {
-			return fmt.Errorf("%s", strings.TrimSpace(out))
+	if target.hasBranch() {
+		out, err := git.RunWithOutput("branch", "-D", target.branch)
+		if err != nil {
+			if out != "" {
+				return fmt.Errorf("%s", strings.TrimSpace(out))
+			}
+			return err
 		}
-		return err
-	}
-	ui.Successf("Deleted local branch %s", ui.Accent(target.branch))
+		ui.Successf("Deleted local branch %s", ui.Accent(target.branch))
 
-	if deleteRemote {
-		deleteRemoteBranch(target.branch, remote)
+		if deleteRemote {
+			deleteRemoteBranch(target.branch, remote)
+		}
 	}
 
+	if runHooks {
+		invocation.Event = hook.AfterRemove
+		invocation.Dir = bareRoot
+		if err := hook.Run(context.Background(), afterHooks, invocation, os.Stderr); err != nil {
+			return fmt.Errorf("worktree %q was removed, but %w", name, err)
+		}
+	}
 	return nil
 }
 

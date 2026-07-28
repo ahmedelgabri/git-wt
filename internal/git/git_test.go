@@ -18,6 +18,16 @@ func TestQueryVersion(t *testing.T) {
 	}
 }
 
+func TestQueryRawPreservesWhitespace(t *testing.T) {
+	out, err := QueryRaw("-c", "raw.value=  value  ", "config", "--null", "--get-regexp", "^raw\\.")
+	if err != nil {
+		t.Fatalf("QueryRaw(config) error: %v", err)
+	}
+	if out != "raw.value\n  value  \x00" {
+		t.Errorf("QueryRaw(config) = %q, want untrimmed output", out)
+	}
+}
+
 func TestQueryRun(t *testing.T) {
 	if err := QueryRun("--version"); err != nil {
 		t.Fatalf("QueryRun(--version) error: %v", err)
