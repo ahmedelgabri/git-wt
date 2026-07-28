@@ -196,7 +196,8 @@ jobs:
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          sed -i "s/version \"[^\"]*\"/version \"${VERSION}\"/" Formula/git-wt.rb
+          OLD_VERSION=$(sed -nE 's|.*/releases/download/v([^/]+)/.*|\1|p' Formula/git-wt.rb | head -n1)
+          sed -i "s/${OLD_VERSION//./\\.}/${VERSION}/g" Formula/git-wt.rb
 
           DARWIN_AMD64=$(grep "darwin-amd64" "git-wt-${VERSION}-checksums.txt" | awk '{print $1}')
           DARWIN_ARM64=$(grep "darwin-arm64" "git-wt-${VERSION}-checksums.txt" | awk '{print $1}')
