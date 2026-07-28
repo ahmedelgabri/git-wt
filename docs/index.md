@@ -21,6 +21,8 @@ worktree directory.
 
 - **Bare clone structure** with `.bare/` for Git data
 - **Interactive add / switch / remove** flows with fzf
+- **Shell integration** with `git wt init` so `git wt switch` changes directory automatically
+- **Lifecycle hooks** around worktree creation and removal (`wt.beforeadd`, `wt.afteradd`, `wt.beforeremove`, `wt.afterremove`)
 - **Repository migration** from a standard repo to the bare worktree layout
 - **Safe cleanup filters** with `git wt remove --sweep`
 - **Repository diagnostics** with `git wt doctor`
