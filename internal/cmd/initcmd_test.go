@@ -13,10 +13,13 @@ func TestRunInitSupportedShells(t *testing.T) {
 				t.Fatalf("runInit(%q) returned error: %v", shell, err)
 			}
 			out := sb.String()
-			for _, want := range []string{"git-wt", "switch", "add", "cd "} {
+			for _, want := range []string{"git-wt", "switch", "cd "} {
 				if !strings.Contains(out, want) {
 					t.Errorf("runInit(%q) output missing %q", shell, want)
 				}
+			}
+			if strings.Contains(out, "add") {
+				t.Errorf("runInit(%q) output should not intercept add", shell)
 			}
 		})
 	}
@@ -34,7 +37,11 @@ func TestRunInitGitWrapper(t *testing.T) {
 		if !strings.Contains(with.String(), "command git ") {
 			t.Errorf("runInit(%q, true) output missing git() wrapper", shell)
 		}
-		if strings.Contains(without.String(), "command git $argv\n    end\nend") && shell == "fish" {
+		gitFunc := "\ngit() {"
+		if shell == "fish" {
+			gitFunc = "function git "
+		}
+		if strings.Contains(without.String(), gitFunc) {
 			t.Errorf("runInit(%q, false) output should omit git() wrapper", shell)
 		}
 		if len(without.String()) >= len(with.String()) {

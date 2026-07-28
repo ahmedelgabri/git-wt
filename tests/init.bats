@@ -50,9 +50,10 @@ teardown() {
 	[ "$status" -ne 0 ]
 }
 
-@test "init: sourced bash integration cds on add" {
+@test "init: sourced bash integration cds on switch" {
 	init_bare_repo myrepo
 	cd myrepo
+	create_worktree feature-x feature-x
 
 	# Make the binary under test reachable as `git-wt` for the wrapper
 	mkdir -p "$TEST_DIR/bin"
@@ -61,11 +62,26 @@ teardown() {
 
 	eval "$("$GIT_WT" init bash)"
 
-	git-wt add --quiet -b feature-x feature-x </dev/null
+	GIT_WT_SELECT="$TEST_DIR/myrepo/feature-x" git-wt switch </dev/null
 	[ "$PWD" = "$TEST_DIR/myrepo/feature-x" ]
 }
 
-@test "init: sourced git() wrapper routes git wt add and cds" {
+@test "init: sourced git() wrapper routes git wt switch and cds" {
+	init_bare_repo myrepo
+	cd myrepo
+	create_worktree feature-y feature-y
+
+	mkdir -p "$TEST_DIR/bin"
+	ln -s "$GIT_WT" "$TEST_DIR/bin/git-wt"
+	PATH="$TEST_DIR/bin:$PATH"
+
+	eval "$("$GIT_WT" init bash)"
+
+	GIT_WT_SELECT="$TEST_DIR/myrepo/feature-y" git wt switch </dev/null
+	[ "$PWD" = "$TEST_DIR/myrepo/feature-y" ]
+}
+
+@test "init: sourced integration leaves add scriptable" {
 	init_bare_repo myrepo
 	cd myrepo
 
@@ -75,8 +91,10 @@ teardown() {
 
 	eval "$("$GIT_WT" init bash)"
 
-	git wt add --quiet -b feature-y feature-y </dev/null
-	[ "$PWD" = "$TEST_DIR/myrepo/feature-y" ]
+	local path
+	path="$(git wt add --quiet -b feature-z feature-z </dev/null)"
+	[ "$path" = "$TEST_DIR/myrepo/feature-z" ]
+	[ "$PWD" = "$TEST_DIR/myrepo" ]
 }
 
 @test "init: sourced wrapper passes other commands through" {

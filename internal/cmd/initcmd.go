@@ -9,13 +9,15 @@ import (
 )
 
 // posixIntegration is shared by bash and zsh. It defines a git-wt function
-// that shadows the binary so switch/add can change the current shell's
+// that shadows the binary so switch can change the current shell's
 // directory, plus an optional git() wrapper so `git wt` reaches the function.
+// Only switch is intercepted: add's stdout (the created worktree path) is a
+// contract that scripts and the Claude Code WorktreeCreate hook rely on.
 const posixIntegration = `# git-wt shell integration
-# Wraps git-wt so 'switch' and 'add' change directory in the current shell.
+# Wraps git-wt so 'switch' changes directory in the current shell.
 git-wt() {
 	case "$1" in
-	switch | add)
+	switch)
 		local dir
 		dir="$(command git-wt "$@")" || return $?
 		if [ -n "$dir" ] && [ -d "$dir" ]; then
@@ -45,9 +47,9 @@ git() {
 `
 
 const fishIntegration = `# git-wt shell integration
-# Wraps git-wt so 'switch' and 'add' change directory in the current shell.
+# Wraps git-wt so 'switch' changes directory in the current shell.
 function git-wt --wraps git-wt
-    if contains -- "$argv[1]" switch add
+    if test "$argv[1]" = switch
         set -l dir (command git-wt $argv)
         set -l code $status
         test $code -ne 0; and return $code
@@ -79,8 +81,11 @@ var initNoGitWrapper bool
 var initCmd = &cobra.Command{
 	Use:   "init [bash|zsh|fish]",
 	Short: "Print shell integration for automatic directory switching",
-	Long: `Print a shell script that makes 'git wt switch' and 'git wt add' change
-the current shell's directory instead of printing a path.
+	Long: `Print a shell script that makes 'git wt switch' change the current
+shell's directory instead of printing a path.
+
+Only switch is intercepted; add keeps printing the created worktree path
+to stdout so scripts and hooks can rely on it.
 
 A subprocess can never change its parent shell's working directory, so the
 script defines a git-wt shell function (and a thin git wrapper) that runs

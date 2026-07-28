@@ -179,7 +179,7 @@ cd "$(git wt switch)"
 ### Shell integration (automatic cd)
 
 A subprocess can never change its parent shell's directory, so by default
-`switch` and `add` print the worktree path. The `init` command emits a small
+`switch` prints the worktree path. The `init` command emits a small
 shell script that wraps the binary and runs the `cd` for you:
 
 ```bash
@@ -193,9 +193,11 @@ eval "$(git-wt init zsh)"
 git-wt init fish | source
 ```
 
-After sourcing, `git wt switch` and `git wt add` change directory directly.
-The script also defines a thin `git()` wrapper so the `git wt` spelling
-works; if another tool already wraps `git`, use
+After sourcing, `git wt switch` changes directory directly. Only `switch`
+is intercepted: `add` keeps printing the created worktree path to stdout
+so scripts and hooks (like the Claude Code `WorktreeCreate` hook below)
+can rely on it. The script also defines a thin `git()` wrapper so the
+`git wt` spelling works; if another tool already wraps `git`, use
 `eval "$(git-wt init zsh --no-git-wrapper)"` and invoke `git-wt switch`
 instead.
 
