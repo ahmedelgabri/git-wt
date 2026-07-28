@@ -30,7 +30,7 @@
           default = self'.packages.git-wt;
           git-wt = pkgs.buildGoModule {
             pname = "git-wt";
-            version = "2.0.4";
+            version = "2.1.0";
 
             src = lib.cleanSource ./.;
 
