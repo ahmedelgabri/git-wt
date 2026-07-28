@@ -332,24 +332,22 @@ func confirmRemoval(items []removalItem, opts removeOptions, remote string, clea
 }
 
 type removalTarget struct {
-	path           string
-	branch         string
-	detached       bool
-	locked         bool
-	lockedReason   string
-	prunable       bool
-	prunableReason string
+	path         string
+	branch       string
+	detached     bool
+	locked       bool
+	lockedReason string
+	prunable     bool
 }
 
 func newRemovalTargetFromEntry(entry worktree.Entry) removalTarget {
 	return removalTarget{
-		path:           entry.Path,
-		branch:         entry.Branch,
-		detached:       entry.Detached,
-		locked:         entry.Locked,
-		lockedReason:   entry.LockedReason,
-		prunable:       entry.Prunable,
-		prunableReason: entry.PrunableReason,
+		path:         entry.Path,
+		branch:       entry.Branch,
+		detached:     entry.Detached,
+		locked:       entry.Locked,
+		lockedReason: entry.LockedReason,
+		prunable:     entry.Prunable,
 	}
 }
 
@@ -489,6 +487,7 @@ func removalReason(item removalItem) string {
 func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) error {
 	successCount := 0
 	failedCount := 0
+	var singleErr error
 
 	for i, item := range items {
 		if len(items) > 1 {
@@ -505,6 +504,11 @@ func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) 
 		}
 		if err != nil {
 			failedCount++
+			if len(items) == 1 {
+				singleErr = err
+			} else {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", item.Target.path, err)
+			}
 		} else {
 			successCount++
 		}
@@ -519,6 +523,9 @@ func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) 
 		fmt.Println(summary)
 	}
 
+	if singleErr != nil {
+		return singleErr
+	}
 	if failedCount > 0 {
 		return fmt.Errorf("%d removal(s) failed", failedCount)
 	}
@@ -565,21 +572,37 @@ func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string
 	if err != nil {
 		return err
 	}
+
+	var beforeHooks, afterHooks []string
 	if runHooks {
-		if hooks, err := hook.LoadConfig("wt.removehook"); err != nil {
+		beforeHooks, err = hook.Load(hook.BeforeRemove)
+		if err != nil {
 			return err
-		} else if len(hooks) > 0 {
-			bareRoot, _ := worktree.BareRoot()
-			invocation := hook.Invocation{
-				Event:        hook.BeforeRemove,
-				Dir:          target.path,
-				WorktreePath: target.path,
-				Branch:       target.branch,
-				BareRoot:     bareRoot,
-			}
-			if err := hook.Run(context.Background(), hooks, invocation, os.Stderr); err != nil {
-				return fmt.Errorf("remove hook failed for worktree %q: %w", name, err)
-			}
+		}
+		afterHooks, err = hook.Load(hook.AfterRemove)
+		if err != nil {
+			return err
+		}
+		runHooks = len(beforeHooks) > 0 || len(afterHooks) > 0
+	}
+
+	var bareRoot string
+	if runHooks {
+		bareRoot, err = worktree.BareRoot()
+		if err != nil {
+			return err
+		}
+	}
+	invocation := hook.Invocation{
+		Event:        hook.BeforeRemove,
+		Dir:          target.path,
+		WorktreePath: target.path,
+		Branch:       target.branch,
+		BareRoot:     bareRoot,
+	}
+	if runHooks {
+		if err := hook.Run(context.Background(), beforeHooks, invocation, os.Stderr); err != nil {
+			return fmt.Errorf("before removing worktree %q: %w", name, err)
 		}
 	}
 
@@ -589,23 +612,28 @@ func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string
 		return err
 	}
 
-	if !target.hasBranch() {
-		return nil
-	}
-
-	out, err := git.RunWithOutput("branch", "-D", target.branch)
-	if err != nil {
-		if out != "" {
-			return fmt.Errorf("%s", strings.TrimSpace(out))
+	if target.hasBranch() {
+		out, err := git.RunWithOutput("branch", "-D", target.branch)
+		if err != nil {
+			if out != "" {
+				return fmt.Errorf("%s", strings.TrimSpace(out))
+			}
+			return err
 		}
-		return err
-	}
-	ui.Successf("Deleted local branch %s", ui.Accent(target.branch))
+		ui.Successf("Deleted local branch %s", ui.Accent(target.branch))
 
-	if deleteRemote {
-		deleteRemoteBranch(target.branch, remote)
+		if deleteRemote {
+			deleteRemoteBranch(target.branch, remote)
+		}
 	}
 
+	if runHooks {
+		invocation.Event = hook.AfterRemove
+		invocation.Dir = bareRoot
+		if err := hook.Run(context.Background(), afterHooks, invocation, os.Stderr); err != nil {
+			return fmt.Errorf("worktree %q was removed, but %w", name, err)
+		}
+	}
 	return nil
 }
 
