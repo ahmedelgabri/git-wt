@@ -86,22 +86,41 @@ repo/
 
 ## Hooks
 
-Run shell commands when worktrees are created or removed, configured through Git config so they can be scoped per-repository or globally with `--global`. Useful for expensive per-worktree setup, such as copying a generated `compile_commands.json` from your main checkout into every new worktree.
+Run shell commands around worktree creation and removal. Hooks are configured through Git config, so they can be scoped per repository or globally with `--global`.
 
 ```bash
-# Runs after `git wt add`, in the new worktree directory
-git config --add wt.addhook 'cp ../main/compile_commands.json .'
+# Validate the repository before creating a worktree
+git config --add wt.beforeadd './scripts/check-worktree.sh'
 
-# Runs before `git wt remove`, in the worktree being removed
-git config --add wt.removehook './scripts/cleanup.sh'
+# Copy generated files into each new worktree
+git config --add wt.afteradd 'cp ../main/compile_commands.json .'
+
+# Clean up files while the worktree still exists
+git config --add wt.beforeremove './scripts/cleanup-worktree.sh'
+
+# Notify another tool after removal is complete
+git config --add wt.afterremove 'workspace-registry remove "$GIT_WT_PATH"'
 ```
 
-- Each hook runs with `sh -c` in the worktree directory
-- Repeated `--add` registers multiple hooks; they run in order and stop on the first failure
-- Hook output goes to stderr, keeping the path that `git wt add` prints on stdout clean
-- A failing `wt.removehook` aborts the removal; a failing `wt.addhook` exits non-zero without printing the path
-- `wt.removehook` is skipped for the current worktree, locked worktrees, and stale or prunable entries
-- `DEBUG=1` echoes hooks instead of running them
+| Hook              | When it runs                                                               | Working directory      | Failure behavior                                        |
+| ----------------- | -------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------- |
+| `wt.beforeadd`    | After add arguments and fetching are complete, immediately before creation | Bare repository root   | Prevents worktree creation                              |
+| `wt.afteradd`     | After creation and upstream configuration                                  | New worktree           | Leaves the worktree in place and exits non-zero         |
+| `wt.beforeremove` | Immediately before removal                                                 | Worktree being removed | Preserves the worktree and exits non-zero               |
+| `wt.afterremove`  | After worktree and branch cleanup                                          | Bare repository root   | Removal remains complete and the command exits non-zero |
+
+Every hook receives the lifecycle context through environment variables:
+
+- `GIT_WT_EVENT`: `beforeadd`, `afteradd`, `beforeremove`, or `afterremove`
+- `GIT_WT_PATH`: absolute worktree path
+- `GIT_WT_BRANCH`: branch name, or empty for detached or unresolved cases
+- `GIT_WT_BARE_ROOT`: absolute bare repository root
+
+Each configured value runs with `sh -c`. Repeated `git config --add` values run in order and stop at the first failure for that event; multiline values are supported. Hook output goes to stderr so successful `git wt add` output remains machine-readable.
+
+Before-hooks are not transactional: the subsequent Git operation can still fail after a hook succeeds, so side effects should be idempotent. After-hook failures cannot roll back an operation that already completed. Removing the current worktree or a locked worktree is rejected before any hook runs; for stale, missing, or prunable worktrees the removal proceeds with the hooks skipped. `DEBUG=1` echoes hooks instead of running them.
+
+Hooks apply to `git wt add` and `git wt remove`; the initial worktree created by `git wt clone` does not trigger add hooks.
 
 ## Commands
 
