@@ -16,6 +16,7 @@ type ExecOptions struct {
 	StreamTo io.Writer
 	Capture  bool
 	Combined bool
+	Raw      bool
 	Env      []string
 	Context  context.Context
 	Stdin    io.Reader
@@ -63,6 +64,9 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 			out, err = cmd.CombinedOutput()
 		} else {
 			out, err = cmd.Output()
+		}
+		if opts.Raw {
+			return string(out), err
 		}
 		return strings.TrimSpace(string(out)), err
 	}
@@ -169,6 +173,16 @@ func Query(args ...string) (string, error) {
 // QueryContext executes a read-only git command with an optional context.
 func QueryContext(ctx context.Context, args ...string) (string, error) {
 	return execGit(ExecOptions{Capture: true, Context: ctx}, args...)
+}
+
+// QueryRaw executes a read-only git command without trimming its output.
+func QueryRaw(args ...string) (string, error) {
+	return QueryRawContext(context.Background(), args...)
+}
+
+// QueryRawContext executes a read-only git command without trimming its output.
+func QueryRawContext(ctx context.Context, args ...string) (string, error) {
+	return execGit(ExecOptions{Capture: true, Raw: true, Context: ctx}, args...)
 }
 
 // QueryRun executes a read-only git command, streaming stdout/stderr directly.

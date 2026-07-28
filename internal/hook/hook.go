@@ -11,17 +11,18 @@ import (
 )
 
 func LoadConfig(key string) ([]string, error) {
-	out, err := git.Query("config", "--get-all", key)
+	out, err := git.QueryRaw("config", "--null", "--get-all", key)
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
 			return nil, nil
 		}
 		return nil, err
 	}
+	out = strings.TrimSuffix(out, "\x00")
 	if out == "" {
 		return nil, nil
 	}
-	return strings.Split(out, "\n"), nil
+	return strings.Split(out, "\x00"), nil
 }
 
 func Run(ctx context.Context, hooks []string, dir string, w io.Writer) error {
