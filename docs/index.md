@@ -41,6 +41,12 @@ worktree directory.
 brew install ahmedelgabri/tap/git-wt
 ```
 
+**mise**
+
+```bash
+mise use "github:ahmedelgabri/git-wt"
+```
+
 **Nix Flakes**
 
 ```bash

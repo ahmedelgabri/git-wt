@@ -55,6 +55,12 @@ brew install ahmedelgabri/tap/git-wt
 
 Shell completions are installed automatically for bash, zsh, and fish.
 
+### mise
+
+```bash
+mise use "github:ahmedelgabri/git-wt"
+```
+
 ### Nix Flakes
 
 Add to your flake inputs:
