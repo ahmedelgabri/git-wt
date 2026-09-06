@@ -74,7 +74,7 @@ git wt add -b new-feature new-feature
 git wt add --detach hotfix HEAD~5
 ```
 
-Update the default branch worktree with a fast-forward-only pull. Local-only tags are preserved:
+Update the default branch worktree using the user's Git configuration. Tag pruning follows `fetch.pruneTags`, `remote.<name>.pruneTags`, and fetch refspecs; it may delete local-only tags. Pull follows `pull.rebase`, `branch.<name>.rebase`, and `pull.ff`. Do not assume updates are fast-forward-only or override the user's settings without authorization:
 
 ```shell
 git wt update

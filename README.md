@@ -270,7 +270,7 @@ git wt list --porcelain -z
 git wt update # or: git wt u
 ```
 
-Updates are fast-forward-only. Fetching prunes stale remote-tracking branches, not local-only tags.
+`update` runs `git fetch --all --prune`, then plain `git pull` in the default branch's worktree. Tag pruning follows `fetch.pruneTags`, `remote.<name>.pruneTags`, and your fetch refspecs; enabling it can delete local-only tags. The pull strategy follows `pull.rebase`, `branch.<name>.rebase`, and `pull.ff`. Repository/global configuration and one-off overrides such as `git -c fetch.pruneTags=true -c pull.rebase=true wt update` are respected.
 
 ## Hooks
 

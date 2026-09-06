@@ -31,7 +31,15 @@ As with native Git, separate worktree and remote operations are not one atomic t
 
 ## Updates and scripting
 
-`git wt update` fetches remotes and fast-forwards the default branch. It does not merge divergent histories or prune local-only tags.
+`git wt update` runs `git fetch --all --prune`, then plain `git pull` in the default branch's worktree. It does not force a tag-pruning or pull policy. Tag pruning follows `fetch.pruneTags`, `remote.<name>.pruneTags`, and explicit tag refspecs; it can delete local-only tags when enabled. The pull strategy follows `pull.rebase`, `branch.<name>.rebase`, and `pull.ff`. Configure these globally, per repository, or for one invocation:
+
+```sh
+git -c fetch.pruneTags=true wt update
+git -c pull.rebase=true wt update
+git -c pull.ff=only wt update
+```
+
+Git's normal configuration precedence applies. For example, a per-remote pruning setting takes precedence over the generic `fetch.pruneTags` setting. To override that setting for one invocation, use `git -c remote.origin.pruneTags=false wt update`. Explicit tag refspecs remain subject to `--prune` even when automatic tag pruning is disabled.
 
 `git wt ls` is an alias for `git wt list`. Without `--json`, both commands pass native Git options and output through unchanged. For native machine-readable records, use `git wt list --porcelain -z` and parse NUL-delimited records rather than splitting paths on whitespace or newlines.
 

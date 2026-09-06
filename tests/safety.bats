@@ -190,12 +190,11 @@ teardown() { teardown_test_env; }
 	[ -d "$path" ]
 }
 
-@test "update: preserves local-only tags even when pruning tags is configured" {
+@test "update: preserves local-only tags by default" {
 	init_bare_repo_with_remote repo
 	cd repo
 	command git worktree add main main --quiet
 	command git tag local-only
-	command git config fetch.pruneTags true
 	run "$GIT_WT" update
 	[ "$status" -eq 0 ]
 	command git show-ref --verify refs/tags/local-only
