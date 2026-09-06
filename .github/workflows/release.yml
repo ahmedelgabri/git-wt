@@ -49,11 +49,17 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Read Go minor version from go.mod
+        if: steps.check_tag.outputs.exists == 'false'
+        id: go-version
+        run: |
+          awk '$1 == "go" { split($2, v, "."); print "version=" v[1] "." v[2] ".x" }' go.mod >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
         if: steps.check_tag.outputs.exists == 'false'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: ${{ steps.go-version.outputs.version }}
           check-latest: true
 
       - name: Build native binary for completions and man pages
