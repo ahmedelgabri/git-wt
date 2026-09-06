@@ -47,26 +47,27 @@ func ParsePorcelain(output string) []Entry {
 	}
 
 	for line := range strings.SplitSeq(output, separator) {
-		switch {
-		case strings.HasPrefix(line, "worktree "):
-			current.Path = strings.TrimPrefix(line, "worktree ")
-		case strings.HasPrefix(line, "HEAD "):
-			current.Head = strings.TrimPrefix(line, "HEAD ")
-		case strings.HasPrefix(line, "branch "):
-			current.Branch = strings.TrimPrefix(line, "branch refs/heads/")
+		key, value, _ := strings.Cut(line, " ")
+		switch key {
+		case "worktree":
+			current.Path = value
+		case "HEAD":
+			current.Head = value
+		case "branch":
+			current.Branch = strings.TrimPrefix(value, "refs/heads/")
 			current.Detached = false
-		case line == "bare":
+		case "bare":
 			bare = true
-		case line == "detached":
+		case "detached":
 			current.Branch = ""
 			current.Detached = true
-		case line == "locked" || strings.HasPrefix(line, "locked "):
+		case "locked":
 			current.Locked = true
-			current.LockedReason = strings.TrimPrefix(strings.TrimPrefix(line, "locked"), " ")
-		case line == "prunable" || strings.HasPrefix(line, "prunable "):
+			current.LockedReason = value
+		case "prunable":
 			current.Prunable = true
-			current.PrunableReason = strings.TrimPrefix(strings.TrimPrefix(line, "prunable"), " ")
-		case line == "":
+			current.PrunableReason = value
+		case "":
 			if !bare && current.Path != "" {
 				entries = append(entries, current)
 			}

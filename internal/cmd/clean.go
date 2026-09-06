@@ -96,9 +96,7 @@ func pruneReason(entry worktree.Entry) (string, bool) {
 	if entry.Locked || entry.Detached || entry.Branch == "" {
 		return "", false
 	}
-	if _, err := os.Stat(entry.Path); err == nil {
-		return "", false
-	} else if !os.IsNotExist(err) {
+	if _, err := os.Stat(entry.Path); !os.IsNotExist(err) {
 		return "", false
 	}
 	if entry.Prunable {
@@ -108,10 +106,7 @@ func pruneReason(entry worktree.Entry) (string, bool) {
 		}
 		return reason, true
 	}
-	if _, err := os.Stat(entry.Path); os.IsNotExist(err) {
-		return "missing worktree path", true
-	}
-	return "", false
+	return "missing worktree path", true
 }
 
 func worktreeDirty(path string) (bool, error) {

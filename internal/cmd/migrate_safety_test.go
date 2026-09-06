@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestRestoreBackupRetainsFailedEntries(t *testing.T) {
+func TestMigrationRestoreRetainsFailedEntries(t *testing.T) {
 	root, backup := t.TempDir(), t.TempDir()
 	if err := os.Mkdir(filepath.Join(backup, ".git"), 0o700); err != nil {
 		t.Fatal(err)
@@ -21,7 +21,7 @@ func TestRestoreBackupRetainsFailedEntries(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: ./.bare\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := restoreBackup(backup, root); err == nil {
+	if err := (migrationMoves{rename: renameEntry}).restore(backup, root, []string{".git"}); err == nil {
 		t.Fatal("expected restore failure")
 	}
 	if data, err := os.ReadFile(marker); err != nil || string(data) != "database" {
@@ -60,7 +60,7 @@ func TestMigrationRollbackAtEveryRename(t *testing.T) {
 				}
 				return renameEntry(src, dst)
 			}}
-			err := finalizeMigrationUsing(root, stage, backup, []string{".bare", ".git", "main"}, moves, func() error { return nil })
+			err := finalizeMigration(root, stage, backup, []string{".bare", ".git", "main"}, moves, func() error { return nil })
 			if err == nil {
 				t.Fatal("expected injected failure")
 			}
@@ -90,7 +90,7 @@ func TestMigrationRepositoryVerificationRollsBack(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(stage, ".git"), []byte("gitdir: ./.bare\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := finalizeMigrationUsing(root, stage, backup, []string{".bare", ".git", "main"}, migrationMoves{rename: renameEntry}, func() error { return errors.New("invalid migrated index") })
+	err := finalizeMigration(root, stage, backup, []string{".bare", ".git", "main"}, migrationMoves{rename: renameEntry}, func() error { return errors.New("invalid migrated index") })
 	if err == nil {
 		t.Fatal("expected verification failure")
 	}

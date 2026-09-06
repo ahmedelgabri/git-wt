@@ -172,14 +172,12 @@ func statusCounts(rows []statusRow) (clean, dirty, errors int) {
 
 func runStatusSync(rows []statusRow) error {
 	for i := range rows {
-		fetchStatusInto(&rows[i])
+		fetchStatusInto(context.Background(), &rows[i])
 	}
 	return printStatusTable(rows)
 }
 
-func fetchStatusInto(row *statusRow) { fetchStatusIntoContext(context.Background(), row) }
-
-func fetchStatusIntoContext(ctx context.Context, row *statusRow) {
+func fetchStatusInto(ctx context.Context, row *statusRow) {
 	statusOut, err := git.QueryInContext(ctx, row.entryPath, "status", "--porcelain=v2", "--branch")
 	if err != nil {
 		row.loaded = true
@@ -293,7 +291,7 @@ func fetchWorktreeStatusCmd(ctx context.Context, slots chan struct{}, index int,
 		}
 		defer func() { <-slots }()
 		row := statusRow{entryPath: path}
-		fetchStatusIntoContext(ctx, &row)
+		fetchStatusInto(ctx, &row)
 		return statusResultMsg{index: index, dirty: row.dirty, upstream: row.upstream, ahead: row.ahead, behind: row.behind, lastCommit: row.lastCommit, err: row.fetchErr}
 	}
 }

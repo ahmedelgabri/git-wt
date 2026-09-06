@@ -117,23 +117,21 @@ func runRemoveWithDefaults(cmd *cobra.Command, args []string, defaultDeleteRemot
 	if opts.force && filters.any() {
 		return fmt.Errorf("--force cannot be combined with safe cleanup filters")
 	}
-	remote := worktree.DefaultRemote()
-
 	switch {
 	case filters.any():
-		return removeByFilterPreloaded(filters, opts, remote)
+		return removeByFilterPreloaded(filters, opts)
 	case len(args) == 0:
-		return removeInteractivePreloaded(opts, remote)
+		return removeInteractivePreloaded(opts)
 	default:
 		entries, err := worktree.List()
 		if err != nil {
 			return err
 		}
-		return removeNonInteractive(entries, args, opts, remote)
+		return removeNonInteractive(entries, args, opts)
 	}
 }
 
-func removeInteractivePreloaded(opts removeOptions, remote string) error {
+func removeInteractivePreloaded(opts removeOptions) error {
 	entries, err := runPreload(context.Background(), "Loading worktrees…", func(ctx context.Context, update func(phase ui.AsyncPhase, message string)) ([]worktree.Entry, error) {
 		update(ui.AsyncLoading, "Loading worktrees…")
 		return worktree.ListContext(ctx)
@@ -144,10 +142,10 @@ func removeInteractivePreloaded(opts removeOptions, remote string) error {
 	if err != nil {
 		return err
 	}
-	return removeInteractive(entries, opts, remote)
+	return removeInteractive(entries, opts)
 }
 
-func removeInteractive(entries []worktree.Entry, opts removeOptions, remote string) error {
+func removeInteractive(entries []worktree.Entry, opts removeOptions) error {
 	if len(entries) == 0 {
 		fmt.Println(ui.Subtle("No worktrees to remove"))
 		return nil
@@ -182,15 +180,15 @@ func removeInteractive(entries []worktree.Entry, opts removeOptions, remote stri
 		})
 	}
 
-	return runRemovalPlan(items, opts, remote, false)
+	return runRemovalPlan(items, opts, false)
 }
 
-func removeNonInteractive(entries []worktree.Entry, args []string, opts removeOptions, remote string) error {
+func removeNonInteractive(entries []worktree.Entry, args []string, opts removeOptions) error {
 	items, err := explicitRemovalItems(entries, args)
 	if err != nil {
 		return err
 	}
-	return runRemovalPlan(items, opts, remote, false)
+	return runRemovalPlan(items, opts, false)
 }
 
 func explicitRemovalItems(entries []worktree.Entry, args []string) ([]removalItem, error) {
@@ -208,7 +206,7 @@ func explicitRemovalItems(entries []worktree.Entry, args []string) ([]removalIte
 	return items, nil
 }
 
-func removeByFilterPreloaded(filters removeFilters, opts removeOptions, remote string) error {
+func removeByFilterPreloaded(filters removeFilters, opts removeOptions) error {
 	items, err := runPreload(context.Background(), "Scanning cleanup candidates…", func(ctx context.Context, update func(phase ui.AsyncPhase, message string)) ([]removalItem, error) {
 		update(ui.AsyncLoading, "Loading worktrees…")
 		entries, err := worktree.ListContext(ctx)
@@ -240,7 +238,7 @@ func removeByFilterPreloaded(filters removeFilters, opts removeOptions, remote s
 		}
 	}
 
-	return runRemovalPlan(selected, opts, remote, true)
+	return runRemovalPlan(selected, opts, true)
 }
 
 func shouldUseInteractiveCleanupSelection() bool {
@@ -285,8 +283,8 @@ func selectRemovalCandidates(items []removalItem, deleteRemote bool) ([]removalI
 	return selected, nil
 }
 
-func runRemovalPlan(items []removalItem, opts removeOptions, remote string, cleanup bool) error {
-	fmt.Println(renderRemovalPlan(items, opts, remote, cleanup))
+func runRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) error {
+	fmt.Println(renderRemovalPlan(items, opts, cleanup))
 	fmt.Println()
 
 	if opts.dryRun {
@@ -294,16 +292,16 @@ func runRemovalPlan(items []removalItem, opts removeOptions, remote string, clea
 		return nil
 	}
 
-	if !confirmRemoval(items, opts, remote, cleanup) {
+	if !confirmRemoval(items, opts, cleanup) {
 		fmt.Println("Cancelled")
 		return nil
 	}
 
 	fmt.Println()
-	return executeRemovalItems(items, opts, remote, cleanup)
+	return executeRemovalItems(items, opts, cleanup)
 }
 
-func confirmRemoval(items []removalItem, opts removeOptions, remote string, cleanup bool) bool {
+func confirmRemoval(items []removalItem, opts removeOptions, cleanup bool) bool {
 	if cleanup {
 		fmt.Println(ui.Red("Bulk cleanup is destructive."))
 		fmt.Println(ui.Subtle("Selected worktrees will be removed, local branches deleted when applicable, and stale metadata pruned."))
@@ -384,7 +382,7 @@ func (t removalTarget) branchLabel() string {
 	}
 }
 
-func renderRemovalPlan(items []removalItem, opts removeOptions, remote string, cleanup bool) string {
+func renderRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) string {
 	rows := make([][]string, 0, len(items))
 	removeCount, pruneCount := 0, 0
 	localDeletes := 0
@@ -407,7 +405,7 @@ func renderRemovalPlan(items []removalItem, opts removeOptions, remote string, c
 			renderRemovalAction(item.Action),
 			displayWorktreePath(item.Target.path),
 			item.Target.branchLabel(),
-			removalEffect(item, opts.deleteRemote, remote),
+			removalEffect(item, opts.deleteRemote),
 			removalReason(item),
 		})
 	}
@@ -448,8 +446,8 @@ func renderRemovalPlan(items []removalItem, opts removeOptions, remote string, c
 	if opts.deleteRemote {
 		if remoteDeletes > 0 {
 			summaryParts = append(summaryParts, ui.Red(fmt.Sprintf("%d remote branch delete(s)", remoteDeletes)))
-		} else if remote == "" {
-			summaryParts = append(summaryParts, ui.Yellow("no remote configured"))
+		} else {
+			summaryParts = append(summaryParts, ui.Yellow("no remote upstreams to delete"))
 		}
 	}
 
@@ -471,7 +469,7 @@ func renderRemovalAction(action removalAction) string {
 	}
 }
 
-func removalEffect(item removalItem, deleteRemote bool, remote string) string {
+func removalEffect(item removalItem, deleteRemote bool) string {
 	if item.Action == removalActionPrune {
 		return ui.Yellow("prune stale metadata")
 	}
@@ -491,7 +489,7 @@ func removalReason(item removalItem) string {
 	return item.Reason
 }
 
-func executeRemovalItems(items []removalItem, opts removeOptions, remote string, cleanup bool) error {
+func executeRemovalItems(items []removalItem, opts removeOptions, cleanup bool) error {
 	successCount := 0
 	failedCount := 0
 	var singleErr error

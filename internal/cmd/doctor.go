@@ -174,12 +174,8 @@ func walkDoctorChecks(ctx context.Context, repoRoot string, emit func(doctorChec
 	isBareLayout := false
 	if gitInfo.IsDir() {
 		emitCheck(doctorCheck{Level: doctorWarn, Name: "Repository layout", Detail: "standard git layout (.git directory)"})
-		if warnings, err := preflightMigrateRepo(repoRoot); err != nil {
+		if err := preflightMigrateRepo(repoRoot); err != nil {
 			emitCheck(doctorCheck{Level: doctorError, Name: "Migration readiness", Detail: err.Error()})
-		} else if len(warnings) > 0 {
-			for _, warning := range warnings {
-				emitCheck(doctorCheck{Level: doctorWarn, Name: "Migration readiness", Detail: warning})
-			}
 		} else {
 			emitCheck(doctorCheck{Level: doctorOK, Name: "Migration readiness", Detail: "ready for migrate"})
 		}

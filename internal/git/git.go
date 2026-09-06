@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
@@ -89,17 +90,15 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 // RepositoryEnv removes inherited repository selectors before changing repos.
 // Explicit ExecOptions.Env overrides are applied afterward.
 func RepositoryEnv() []string {
-	env := os.Environ()
-	for _, key := range []string{"GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX"} {
-		filtered := env[:0]
-		for _, value := range env {
-			if !strings.HasPrefix(value, key+"=") {
-				filtered = append(filtered, value)
-			}
+	return slices.DeleteFunc(os.Environ(), func(value string) bool {
+		key, _, _ := strings.Cut(value, "=")
+		switch key {
+		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX":
+			return true
+		default:
+			return false
 		}
-		env = filtered
-	}
-	return env
+	})
 }
 
 // QueryPath removes Git's record terminator without trimming path characters.
