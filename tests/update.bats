@@ -57,8 +57,6 @@ teardown() {
 	cd myrepo
 	# Use absolute path for remote (relative paths break from subdirs)
 	command git remote set-url origin "$TEST_DIR/myrepo-origin"
-	# Detach .bare HEAD so main branch can be checked out in a worktree
-	command git checkout --detach --quiet
 	command git worktree add main main --quiet 2>/dev/null
 	mkdir -p main/src
 	cd main/src

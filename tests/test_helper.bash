@@ -16,6 +16,8 @@ fi
 
 # Create a temporary directory for test repos
 setup_test_env() {
+	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 GIT_DEFAULT_HASH=sha1 GIT_DEFAULT_REF_FORMAT=files
+	unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG_PARAMETERS GIT_TEMPLATE_DIR DEBUG GIT_WT_SELECT FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS_FILE
 	# Use realpath to resolve symlinks (macOS /tmp -> /private/tmp)
 	TEST_DIR=$(cd "$(mktemp -d)" && pwd -P)
 	export TEST_DIR
@@ -80,10 +82,10 @@ init_bare_repo() {
 		cd "$dirname" || exit 1
 		command git init --quiet --bare .bare -b main
 		echo "gitdir: ./.bare" >.git
-		command git config core.bare false
+		command git config worktree.useRelativePaths true
 		command git config user.email "test@test.com"
 		command git config user.name "Test User"
-		command git commit --quiet --allow-empty -m "initial commit"
+		command git update-ref refs/heads/main "$(command git commit-tree "$(command git mktree </dev/null)" -m 'initial commit')"
 	)
 }
 
@@ -106,11 +108,11 @@ init_bare_repo_with_remote() {
 		cd "$dirname" || exit 1
 		command git init --quiet --bare .bare -b main
 		echo "gitdir: ./.bare" >.git
-		command git config core.bare false
+		command git config worktree.useRelativePaths true
 		command git config user.email "test@test.com"
 		command git config user.name "Test User"
-		command git remote add origin "../${dirname}-origin"
-		command git commit --quiet --allow-empty -m "initial commit"
+		command git remote add origin "$TEST_DIR/${dirname}-origin"
+		command git update-ref refs/heads/main "$(command git commit-tree "$(command git mktree </dev/null)" -m 'initial commit')"
 		command git push --quiet -u origin HEAD 2>/dev/null || true
 	)
 }
@@ -135,11 +137,11 @@ init_bare_repo_with_custom_remote() {
 		cd "$dirname" || exit 1
 		command git init --quiet --bare .bare -b main
 		echo "gitdir: ./.bare" >.git
-		command git config core.bare false
+		command git config worktree.useRelativePaths true
 		command git config user.email "test@test.com"
 		command git config user.name "Test User"
-		command git remote add "$remote_name" "../${dirname}-${remote_name}"
-		command git commit --quiet --allow-empty -m "initial commit"
+		command git remote add "$remote_name" "$TEST_DIR/${dirname}-${remote_name}"
+		command git update-ref refs/heads/main "$(command git commit-tree "$(command git mktree </dev/null)" -m 'initial commit')"
 		command git push --quiet -u "$remote_name" HEAD 2>/dev/null || true
 	)
 }
@@ -168,6 +170,23 @@ create_commit() {
 	echo "content of $filename" >"$filename"
 	command git add "$filename"
 	command git commit --quiet -m "$message"
+}
+
+# Create and push a branch using a real linked worktree, leaving the local ref.
+create_remote_branch() {
+	local branch="$1" remote="${2:-origin}" scratch
+	scratch="$TEST_DIR/fixture-worktree-$RANDOM"
+	command git worktree add --quiet -b "$branch" "$scratch"
+	(
+		cd "$scratch" || exit 1
+		create_commit fixture.txt
+		command git push --quiet -u "$remote" "$branch"
+	)
+	command git worktree remove "$scratch"
+}
+
+select_remote_branch() {
+	printf '\n' | env GIT_WT_SELECT="$1" "$GIT_WT" add
 }
 
 # Get the current branch name

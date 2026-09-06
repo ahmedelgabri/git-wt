@@ -100,6 +100,8 @@ teardown() {
 @test "init: sourced wrapper passes other commands through" {
 	init_bare_repo myrepo
 	cd myrepo
+	command git worktree add main main --quiet
+	cd main
 
 	mkdir -p "$TEST_DIR/bin"
 	ln -s "$GIT_WT" "$TEST_DIR/bin/git-wt"

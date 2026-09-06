@@ -20,7 +20,7 @@ teardown() {
 	command git -C "$TEST_DIR/myrepo/feature-clean" add work.txt
 	command git -C "$TEST_DIR/myrepo/feature-clean" commit --quiet -m "feature work"
 	command git -C "$TEST_DIR/myrepo/feature-clean" push --quiet -u origin feature-clean
-	command git merge --quiet feature-clean
+	command git update-ref refs/heads/main refs/heads/feature-clean
 
 	run bash -c 'printf "cleanup\n" | env GIT_WT_SELECT="$2" "$1" remove --sweep' _ "$GIT_WT" "$TEST_DIR/myrepo/feature-clean"
 	[ "$status" -eq 0 ]
@@ -50,6 +50,7 @@ teardown() {
 	command git -C "$TEST_DIR/myrepo/feature-gone" commit --quiet -m "gone"
 	command git -C "$TEST_DIR/myrepo/feature-gone" push --quiet -u origin feature-gone
 	command git push --quiet origin --delete feature-gone
+	command git update-ref refs/heads/main refs/heads/feature-gone
 
 	run bash -c 'printf "cleanup\n" | env GIT_WT_SELECT="$2" "$1" remove --gone' _ "$GIT_WT" "$TEST_DIR/myrepo/feature-gone"
 	[ "$status" -eq 0 ]
@@ -79,7 +80,7 @@ teardown() {
 	command git -C "$TEST_DIR/myrepo/dry-run-clean" add work.txt
 	command git -C "$TEST_DIR/myrepo/dry-run-clean" commit --quiet -m "work"
 	command git -C "$TEST_DIR/myrepo/dry-run-clean" push --quiet -u origin dry-run-clean
-	command git merge --quiet dry-run-clean
+	command git update-ref refs/heads/main refs/heads/dry-run-clean
 
 	run env GIT_WT_SELECT="$TEST_DIR/myrepo/dry-run-clean" "$GIT_WT" remove --sweep --dry-run
 	[ "$status" -eq 0 ]

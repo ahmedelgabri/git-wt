@@ -31,7 +31,7 @@ in its worktree.`,
 			ShowOutput: true,
 			RawOutput:  true,
 			Run: func(ctx context.Context, w io.Writer) error {
-				return git.RunToContext(ctx, w, "fetch", "--all", "--prune", "--prune-tags")
+				return git.RunToContext(ctx, w, "-c", "fetch.pruneTags=false", "fetch", "--all", "--prune", "--no-prune-tags")
 			},
 		}, {
 			Message: "Resolving default branch worktree",
@@ -66,7 +66,7 @@ in its worktree.`,
 			Message:    fmt.Sprintf("Updating %s in %s", ui.Accent(defaultBranch), ui.Muted(entryPath)),
 			ShowOutput: true,
 			Run: func(ctx context.Context, w io.Writer) error {
-				return git.RunInToContext(ctx, entryPath, w, "pull")
+				return git.RunInToContext(ctx, entryPath, w, "pull", "--ff-only")
 			},
 		}})
 	},

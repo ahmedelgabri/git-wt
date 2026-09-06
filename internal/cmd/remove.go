@@ -33,6 +33,7 @@ type removalItem struct {
 type removeOptions struct {
 	dryRun       bool
 	deleteRemote bool
+	force        bool
 }
 
 type removeFilters struct {
@@ -51,12 +52,14 @@ var removeCmd = &cobra.Command{
 	Short:   "Remove worktrees directly or by safe cleanup filters",
 	Long: `Remove worktrees directly or by safe cleanup filters.
 
-By default, removing a worktree also deletes its local branch. Use
-'--delete-remote' to also delete the remote branch when possible.
+By default, removing a worktree also deletes its local branch, provided its
+commits are preserved by another branch or tag. Dirty worktrees and unique
+commits require --force with explicit targets. Current and locked worktrees
+remain protected. Use --delete-remote to delete the target's configured upstream.
 
 Cleanup filters let you select safe bulk candidates:
   --merged  branches fully merged into the default branch
-  --gone    branches whose upstream is gone
+  --gone    branches whose upstream is gone and which are fully merged
   --stale   missing or prunable worktree metadata
   --sweep   shorthand for --merged --gone --stale
 
@@ -73,9 +76,10 @@ With no arguments and no cleanup filters, an interactive picker is shown.`,
 
 func init() {
 	removeCmd.Flags().BoolP("dry-run", "n", false, "Preview what would be removed without making changes")
-	removeCmd.Flags().Bool("delete-remote", false, "Also delete matching remote branches when possible")
+	removeCmd.Flags().Bool("delete-remote", false, "Also delete each worktree branch's configured upstream branch")
+	removeCmd.Flags().Bool("force", false, "Allow explicit removal of dirty worktrees and commits without another retained ref")
 	removeCmd.Flags().Bool("merged", false, "Select worktrees whose branches are fully merged into the default branch")
-	removeCmd.Flags().Bool("gone", false, "Select worktrees whose upstream is gone")
+	removeCmd.Flags().Bool("gone", false, "Select fully merged worktrees whose upstream is gone")
 	removeCmd.Flags().Bool("stale", false, "Select stale or prunable worktree metadata")
 	removeCmd.Flags().Bool("sweep", false, "Select merged, gone, and stale cleanup candidates")
 	rootCmd.AddCommand(removeCmd)
@@ -89,6 +93,7 @@ func runRemoveWithDefaults(cmd *cobra.Command, args []string, defaultDeleteRemot
 	opts := removeOptions{
 		dryRun:       boolFlag(cmd, "dry-run"),
 		deleteRemote: defaultDeleteRemote || boolFlag(cmd, "delete-remote"),
+		force:        boolFlag(cmd, "force"),
 	}
 
 	filters := removeFilters{}
@@ -109,6 +114,9 @@ func runRemoveWithDefaults(cmd *cobra.Command, args []string, defaultDeleteRemot
 		return fmt.Errorf("cleanup filters cannot be combined with explicit worktree arguments")
 	}
 
+	if opts.force && filters.any() {
+		return fmt.Errorf("--force cannot be combined with safe cleanup filters")
+	}
 	remote := worktree.DefaultRemote()
 
 	switch {
@@ -128,7 +136,7 @@ func runRemoveWithDefaults(cmd *cobra.Command, args []string, defaultDeleteRemot
 func removeInteractivePreloaded(opts removeOptions, remote string) error {
 	entries, err := runPreload(context.Background(), "Loading worktrees…", func(ctx context.Context, update func(phase ui.AsyncPhase, message string)) ([]worktree.Entry, error) {
 		update(ui.AsyncLoading, "Loading worktrees…")
-		return worktree.List()
+		return worktree.ListContext(ctx)
 	})
 	if errors.Is(err, context.Canceled) {
 		return nil
@@ -203,12 +211,12 @@ func explicitRemovalItems(entries []worktree.Entry, args []string) ([]removalIte
 func removeByFilterPreloaded(filters removeFilters, opts removeOptions, remote string) error {
 	items, err := runPreload(context.Background(), "Scanning cleanup candidates…", func(ctx context.Context, update func(phase ui.AsyncPhase, message string)) ([]removalItem, error) {
 		update(ui.AsyncLoading, "Loading worktrees…")
-		entries, err := worktree.List()
+		entries, err := worktree.ListContext(ctx)
 		if err != nil {
 			return nil, err
 		}
 		update(ui.AsyncPartial, "Scanning cleanup candidates…")
-		return findRemovalCandidates(entries, filters)
+		return findRemovalCandidates(ctx, entries, filters)
 	})
 	if errors.Is(err, context.Canceled) {
 		return nil
@@ -244,7 +252,7 @@ func shouldUseInteractiveCleanupSelection() bool {
 
 func selectRemovalCandidates(items []removalItem, deleteRemote bool) ([]removalItem, error) {
 	prompt := "Select cleanup candidate(s) to remove (TAB to select multiple): "
-	header := "TAB: select/deselect | ENTER: confirm | ESC: cancel\nSafe candidates only: merged branches, gone upstreams, and stale metadata"
+	header := "TAB: select/deselect | ENTER: confirm | ESC: cancel\nSafe candidates only: fully merged branches and missing, unlocked metadata"
 	if deleteRemote {
 		header = "WARNING: Matching remote branches will also be deleted when possible\nTAB: select/deselect | ENTER: confirm | ESC: cancel"
 	}
@@ -292,7 +300,7 @@ func runRemovalPlan(items []removalItem, opts removeOptions, remote string, clea
 	}
 
 	fmt.Println()
-	return executeRemovalItems(items, opts.deleteRemote, remote)
+	return executeRemovalItems(items, opts, remote, cleanup)
 }
 
 func confirmRemoval(items []removalItem, opts removeOptions, remote string, cleanup bool) bool {
@@ -300,11 +308,7 @@ func confirmRemoval(items []removalItem, opts removeOptions, remote string, clea
 		fmt.Println(ui.Red("Bulk cleanup is destructive."))
 		fmt.Println(ui.Subtle("Selected worktrees will be removed, local branches deleted when applicable, and stale metadata pruned."))
 		if opts.deleteRemote {
-			if remote != "" {
-				fmt.Println(ui.Red(fmt.Sprintf("Matching remote branches on %s will also be deleted when possible.", remote)))
-			} else {
-				fmt.Println(ui.Yellow("No remote configured; remote branch deletion will be skipped."))
-			}
+			fmt.Println(ui.Red("The configured upstream branches shown in the plan will also be deleted."))
 		}
 		fmt.Println()
 		return ui.PromptDangerous(fmt.Sprintf("Type %s to confirm:", ui.Bold("cleanup")), "cleanup")
@@ -338,9 +342,13 @@ type removalTarget struct {
 	locked       bool
 	lockedReason string
 	prunable     bool
+	remote       string
+	remoteBranch string
+	upstreamRef  string
 }
 
 func newRemovalTargetFromEntry(entry worktree.Entry) removalTarget {
+	remote, remoteBranch, upstreamRef := removalUpstream(entry.Branch)
 	return removalTarget{
 		path:         entry.Path,
 		branch:       entry.Branch,
@@ -348,6 +356,9 @@ func newRemovalTargetFromEntry(entry worktree.Entry) removalTarget {
 		locked:       entry.Locked,
 		lockedReason: entry.LockedReason,
 		prunable:     entry.Prunable,
+		remote:       remote,
+		remoteBranch: remoteBranch,
+		upstreamRef:  upstreamRef,
 	}
 }
 
@@ -387,7 +398,7 @@ func renderRemovalPlan(items []removalItem, opts removeOptions, remote string, c
 		}
 		if item.Action == removalActionRemove && item.Target.hasBranch() {
 			localDeletes++
-			if opts.deleteRemote && remote != "" {
+			if opts.deleteRemote && item.Target.remote != "" {
 				remoteDeletes++
 			}
 		}
@@ -406,14 +417,13 @@ func renderRemovalPlan(items []removalItem, opts removeOptions, remote string, c
 		notes = append(notes, ui.Yellow("[DRY RUN] Preview only"))
 	}
 	if cleanup {
-		notes = append(notes, ui.Subtle("Safe candidates only: merged branches, gone upstreams, and stale metadata."))
+		notes = append(notes, ui.Subtle("Safe candidates only: fully merged branches and missing, unlocked metadata."))
+	}
+	if opts.force {
+		notes = append(notes, ui.Red("FORCE: dirty files and commits without another retained ref may be lost."))
 	}
 	if opts.deleteRemote {
-		if remote != "" {
-			notes = append(notes, ui.Red(fmt.Sprintf("Matching remote branches on %s will be deleted when possible.", remote)))
-		} else {
-			notes = append(notes, ui.Yellow("No remote configured; remote branch deletion will be skipped."))
-		}
+		notes = append(notes, ui.Red("Only configured upstream branches shown in the plan will be deleted."))
 	} else {
 		notes = append(notes, ui.Subtle("Remote branches are preserved."))
 	}
@@ -468,11 +478,8 @@ func removalEffect(item removalItem, deleteRemote bool, remote string) string {
 	if !item.Target.hasBranch() {
 		return ui.Yellow("remove worktree only")
 	}
-	if deleteRemote {
-		if remote != "" {
-			return ui.Red("remove + delete local + remote")
-		}
-		return ui.Red("remove + delete local")
+	if deleteRemote && item.Target.remote != "" {
+		return ui.Red("remove + delete local + " + item.Target.remote + "/" + item.Target.remoteBranch)
 	}
 	return ui.Red("remove + delete local")
 }
@@ -484,7 +491,7 @@ func removalReason(item removalItem) string {
 	return item.Reason
 }
 
-func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) error {
+func executeRemovalItems(items []removalItem, opts removeOptions, remote string, cleanup bool) error {
 	successCount := 0
 	failedCount := 0
 	var singleErr error
@@ -500,7 +507,7 @@ func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) 
 		case removalActionPrune:
 			err = pruneStaleWorktree(item.Target)
 		default:
-			err = removeSingleWorktree(item.Target, deleteRemote, remote)
+			err = removeSingleWorktree(item.Target, opts, cleanup)
 		}
 		if err != nil {
 			failedCount++
@@ -533,9 +540,20 @@ func executeRemovalItems(items []removalItem, deleteRemote bool, remote string) 
 }
 
 func pruneStaleWorktree(target removalTarget) error {
+	entries, err := worktree.List()
+	if err != nil {
+		return err
+	}
+	entry := worktree.FindByPath(entries, target.path)
+	if entry == nil {
+		return fmt.Errorf("stale worktree no longer exists: %s", target.path)
+	}
+	if _, stale := pruneReason(*entry); !stale {
+		return fmt.Errorf("worktree is no longer a missing, unlocked prune candidate: %s", target.path)
+	}
 	name := filepath.Base(target.path)
 	return ui.SpinWithOutputContext(fmt.Sprintf("Pruning stale metadata for %s", ui.Accent(name)), func(ctx context.Context, w io.Writer) error {
-		return git.RunToContext(ctx, w, "worktree", "remove", "--force", target.path)
+		return git.RunToContext(ctx, w, "worktree", "remove", "--", target.path)
 	})
 }
 
@@ -565,7 +583,7 @@ func preflightRemoveHook(target removalTarget) (bool, error) {
 	return true, nil
 }
 
-func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string) error {
+func removeSingleWorktree(target removalTarget, opts removeOptions, cleanup bool) error {
 	name := filepath.Base(target.path)
 
 	runHooks, err := preflightRemoveHook(target)
@@ -606,14 +624,65 @@ func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string
 		}
 	}
 
+	// Hooks and interactive selection may have taken time. Re-read identity and
+	// safety immediately before removing anything.
+	entries, err := worktree.List()
+	if err != nil {
+		return err
+	}
+	entry := worktree.FindByPath(entries, target.path)
+	if entry == nil || entry.Branch != target.branch || entry.Detached != target.detached {
+		return fmt.Errorf("worktree changed since selection: %s", target.path)
+	}
+	fresh := newRemovalTargetFromEntry(*entry)
+	for _, other := range entries {
+		if target.hasBranch() && other.Branch == target.branch && other.Path != target.path {
+			return fmt.Errorf("branch %s is also checked out at %s", target.branch, other.Path)
+		}
+	}
+	if _, err := preflightRemoveHook(fresh); err != nil {
+		return err
+	}
+	if fresh.remote != target.remote || fresh.remoteBranch != target.remoteBranch {
+		return fmt.Errorf("upstream changed since selection: %s", target.path)
+	}
+	branchHead := ""
+	if target.hasBranch() {
+		branchHead, err = git.Query("rev-parse", "--verify", "refs/heads/"+target.branch)
+		if err != nil {
+			return err
+		}
+	}
+	if !opts.force {
+		if err := validateRemovalSafety(fresh, opts.deleteRemote, cleanup); err != nil {
+			return err
+		}
+	}
+	remoteHead := ""
+	if opts.deleteRemote && target.remote != "" {
+		out, err := git.Query("ls-remote", "--heads", target.remote, "refs/heads/"+target.remoteBranch)
+		if err != nil {
+			return fmt.Errorf("check remote branch %s/%s: %w", target.remote, target.remoteBranch, err)
+		}
+		remoteHead, _, _ = strings.Cut(out, "\t")
+		if remoteHead != "" && !opts.force {
+			if _, err := git.Query("merge-base", "--is-ancestor", remoteHead, "refs/heads/"+target.branch); err != nil {
+				return fmt.Errorf("remote branch has commits not preserved by the selected local branch; fetch and review before removal")
+			}
+		}
+	}
 	if err := ui.SpinWithOutputContext(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(ctx context.Context, w io.Writer) error {
-		return git.RunToContext(ctx, w, "worktree", "remove", "-f", target.path)
+		args := []string{"worktree", "remove"}
+		if opts.force {
+			args = append(args, "--force")
+		}
+		return git.RunToContext(ctx, w, append(args, "--", target.path)...)
 	}); err != nil {
 		return err
 	}
 
 	if target.hasBranch() {
-		out, err := git.RunWithOutput("branch", "-D", target.branch)
+		out, err := git.RunWithOutput("update-ref", "-d", "refs/heads/"+target.branch, branchHead)
 		if err != nil {
 			if out != "" {
 				return fmt.Errorf("%s", strings.TrimSpace(out))
@@ -622,8 +691,10 @@ func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string
 		}
 		ui.Successf("Deleted local branch %s", ui.Accent(target.branch))
 
-		if deleteRemote {
-			deleteRemoteBranch(target.branch, remote)
+		if opts.deleteRemote {
+			if err := deleteRemoteBranch(target.remoteBranch, target.remote, remoteHead); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -637,24 +708,24 @@ func removeSingleWorktree(target removalTarget, deleteRemote bool, remote string
 	return nil
 }
 
-func deleteRemoteBranch(branch, remote string) {
+func deleteRemoteBranch(branch, remote, expectedHead string) error {
 	if remote == "" {
-		fmt.Printf("%s %s\n", ui.Muted("·"), ui.Muted("No remote configured"))
-		return
+		fmt.Printf("%s %s\n", ui.Muted("·"), ui.Muted("No remote upstream configured; remote deletion skipped"))
+		return nil
 	}
 
 	remoteBranch := remote + "/" + branch
 
-	if _, err := git.Query("ls-remote", "--exit-code", "--heads", remote, branch); err != nil {
-		fmt.Printf("%s %s\n", ui.Muted("·"), ui.Muted("No remote branch "+remoteBranch))
-		return
+	if expectedHead == "" {
+		return nil
 	}
 
 	if err := ui.SpinWithOutputContext(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(ctx context.Context, w io.Writer) error {
-		return git.RunToContext(ctx, w, "push", remote, "--delete", branch)
+		return git.RunToContext(ctx, w, "push", "--force-with-lease=refs/heads/"+branch+":"+expectedHead, remote, ":refs/heads/"+branch)
 	}); err != nil {
-		ui.Warnf("Failed to delete remote branch %s: %s", remoteBranch, err)
+		return fmt.Errorf("local worktree removed, but remote deletion failed for %s: %w", remoteBranch, err)
 	}
+	return nil
 }
 
 func entriesToPickerItems(entries []worktree.Entry) []picker.Item {

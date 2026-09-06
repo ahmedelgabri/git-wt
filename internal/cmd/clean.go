@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,13 +12,16 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 )
 
-func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]removalItem, error) {
-	defaultBranch := worktree.DefaultBranch(worktree.DefaultRemote())
+func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filters removeFilters) ([]removalItem, error) {
+	defaultBranch := worktree.DefaultBranchInContext(ctx, "", worktree.DefaultRemoteInContext(ctx, ""))
 	currentRoot, _ := currentWorktreeRoot()
 
 	candidates := make([]removalItem, 0)
 	seenPrune := make(map[string]bool)
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		reason, prune := pruneReason(entry)
 		if prune {
 			if filters.stale && !seenPrune[entry.Path] {
@@ -44,7 +48,7 @@ func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]r
 			continue
 		}
 
-		dirty, err := worktreeDirty(entry.Path)
+		dirty, err := worktreeDirtyContext(ctx, entry.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -57,11 +61,11 @@ func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]r
 			if err != nil {
 				return nil, err
 			}
-			if gone {
+			if gone && defaultBranch != "" && branchMergedIntoDefault(entry.Branch, defaultBranch) {
 				candidates = append(candidates, removalItem{
 					Action: removalActionRemove,
-					Target: removalTarget{path: entry.Path, branch: entry.Branch},
-					Reason: "upstream is gone",
+					Target: newRemovalTargetFromEntry(entry),
+					Reason: "upstream is gone; fully merged into " + defaultBranch,
 				})
 				continue
 			}
@@ -70,7 +74,7 @@ func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]r
 		if filters.merged && defaultBranch != "" && branchHasRemoteUpstream(entry.Branch) && branchMergedIntoDefault(entry.Branch, defaultBranch) {
 			candidates = append(candidates, removalItem{
 				Action: removalActionRemove,
-				Target: removalTarget{path: entry.Path, branch: entry.Branch},
+				Target: newRemovalTargetFromEntry(entry),
 				Reason: fmt.Sprintf("fully merged into %s", defaultBranch),
 			})
 		}
@@ -89,6 +93,14 @@ func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]r
 }
 
 func pruneReason(entry worktree.Entry) (string, bool) {
+	if entry.Locked || entry.Detached || entry.Branch == "" {
+		return "", false
+	}
+	if _, err := os.Stat(entry.Path); err == nil {
+		return "", false
+	} else if !os.IsNotExist(err) {
+		return "", false
+	}
 	if entry.Prunable {
 		reason := entry.PrunableReason
 		if reason == "" {
@@ -96,14 +108,18 @@ func pruneReason(entry worktree.Entry) (string, bool) {
 		}
 		return reason, true
 	}
-	if _, err := os.Stat(entry.Path); err != nil {
+	if _, err := os.Stat(entry.Path); os.IsNotExist(err) {
 		return "missing worktree path", true
 	}
 	return "", false
 }
 
 func worktreeDirty(path string) (bool, error) {
-	out, err := git.QueryIn(path, "status", "--porcelain")
+	return worktreeDirtyContext(context.Background(), path)
+}
+
+func worktreeDirtyContext(ctx context.Context, path string) (bool, error) {
+	out, err := git.QueryInContext(ctx, path, "status", "--porcelain", "--untracked-files=all", "--ignored=matching")
 	if err != nil {
 		return false, err
 	}
@@ -132,7 +148,7 @@ func branchMergedIntoDefault(branch, defaultBranch string) bool {
 }
 
 func currentWorktreeRoot() (string, error) {
-	root, err := git.Query("rev-parse", "--show-toplevel")
+	root, err := git.QueryPath("rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
 	}
