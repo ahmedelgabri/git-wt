@@ -18,7 +18,7 @@ teardown() {
 	[[ "$output" == *"git-wt"* ]] || [[ "$output" == *"worktree"* ]]
 	[[ "$output" == *"Supported commands:"* ]]
 	[[ "$output" == *"Passthrough:"* ]]
-	[[ "$output" == *"Pass-through to git worktree list"* ]]
+	[[ "$output" == *"List worktrees using native Git output or JSON"* ]]
 	[[ "$output" != *"Available Commands:"* ]]
 	[[ "$output" != *"destroy"* ]]
 }
@@ -42,7 +42,7 @@ teardown() {
 	[[ "$output" == *"git-wt"* ]] || [[ "$output" == *"worktree"* ]]
 	[[ "$output" == *"Supported commands:"* ]]
 	[[ "$output" == *"Passthrough:"* ]]
-	[[ "$output" == *"Pass-through to git worktree list"* ]]
+	[[ "$output" == *"List worktrees using native Git output or JSON"* ]]
 }
 
 @test "general: unknown command shows error" {

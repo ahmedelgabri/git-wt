@@ -48,6 +48,12 @@
             ];
 
             subPackages = ["cmd/git-wt"];
+            nativeCheckInputs = [pkgs.git];
+            checkPhase = ''
+              runHook preCheck
+              go test ./...
+              runHook postCheck
+            '';
 
             postInstall = ''
               # Generate shell completions before wrapping
@@ -105,6 +111,8 @@
             lefthook
             prettier
             bats
+            python3 # pseudo-terminal integration tests
+            actionlint
             go
             gopls
             gofumpt

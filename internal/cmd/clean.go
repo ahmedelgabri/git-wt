@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,13 +12,24 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 )
 
-func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]removalItem, error) {
-	defaultBranch := worktree.DefaultBranch(worktree.DefaultRemote())
+func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filters removeFilters) ([]removalItem, error) {
+	var base string
+	if filters.merged || filters.gone {
+		var err error
+		base, err = resolveCleanupBase(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defaultBranch := strings.TrimPrefix(base, "refs/heads/")
 	currentRoot, _ := currentWorktreeRoot()
 
 	candidates := make([]removalItem, 0)
 	seenPrune := make(map[string]bool)
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		reason, prune := pruneReason(entry)
 		if prune {
 			if filters.stale && !seenPrune[entry.Path] {
@@ -31,6 +43,10 @@ func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]r
 			continue
 		}
 
+		// Existing paths with broken metadata need repair, not automatic removal.
+		if entry.Prunable {
+			continue
+		}
 		if !filters.merged && !filters.gone {
 			continue
 		}
@@ -44,7 +60,7 @@ func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]r
 			continue
 		}
 
-		dirty, err := worktreeDirty(entry.Path)
+		dirty, err := worktreeDirtyContext(ctx, entry.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -57,20 +73,20 @@ func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]r
 			if err != nil {
 				return nil, err
 			}
-			if gone {
+			if gone && defaultBranch != "" && branchMergedIntoDefault(entry.Branch, base) {
 				candidates = append(candidates, removalItem{
 					Action: removalActionRemove,
-					Target: removalTarget{path: entry.Path, branch: entry.Branch},
-					Reason: "upstream is gone",
+					Target: newRemovalTargetFromEntry(entry),
+					Reason: "upstream is gone; fully merged into " + defaultBranch,
 				})
 				continue
 			}
 		}
 
-		if filters.merged && defaultBranch != "" && branchHasRemoteUpstream(entry.Branch) && branchMergedIntoDefault(entry.Branch, defaultBranch) {
+		if filters.merged && defaultBranch != "" && branchHasRemoteUpstream(entry.Branch) && branchMergedIntoDefault(entry.Branch, base) {
 			candidates = append(candidates, removalItem{
 				Action: removalActionRemove,
-				Target: removalTarget{path: entry.Path, branch: entry.Branch},
+				Target: newRemovalTargetFromEntry(entry),
 				Reason: fmt.Sprintf("fully merged into %s", defaultBranch),
 			})
 		}
@@ -89,6 +105,12 @@ func findRemovalCandidates(entries []worktree.Entry, filters removeFilters) ([]r
 }
 
 func pruneReason(entry worktree.Entry) (string, bool) {
+	if entry.Locked || entry.Detached || entry.Branch == "" {
+		return "", false
+	}
+	if _, err := os.Stat(entry.Path); !os.IsNotExist(err) {
+		return "", false
+	}
 	if entry.Prunable {
 		reason := entry.PrunableReason
 		if reason == "" {
@@ -96,14 +118,15 @@ func pruneReason(entry worktree.Entry) (string, bool) {
 		}
 		return reason, true
 	}
-	if _, err := os.Stat(entry.Path); err != nil {
-		return "missing worktree path", true
-	}
-	return "", false
+	return "missing worktree path", true
 }
 
 func worktreeDirty(path string) (bool, error) {
-	out, err := git.QueryIn(path, "status", "--porcelain")
+	return worktreeDirtyContext(context.Background(), path)
+}
+
+func worktreeDirtyContext(ctx context.Context, path string) (bool, error) {
+	out, err := git.QueryInContext(ctx, path, "status", "--porcelain", "--untracked-files=all")
 	if err != nil {
 		return false, err
 	}
@@ -126,13 +149,13 @@ func branchHasRemoteUpstream(branch string) bool {
 	return strings.HasPrefix(strings.TrimSpace(out), "refs/remotes/")
 }
 
-func branchMergedIntoDefault(branch, defaultBranch string) bool {
-	_, err := git.Query("merge-base", "--is-ancestor", branch, defaultBranch)
+func branchMergedIntoDefault(branch, base string) bool {
+	_, err := git.Query("merge-base", "--is-ancestor", "refs/heads/"+branch, base)
 	return err == nil
 }
 
 func currentWorktreeRoot() (string, error) {
-	root, err := git.Query("rev-parse", "--show-toplevel")
+	root, err := git.QueryPath("rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
 	}

@@ -16,8 +16,9 @@ var updateCmd = &cobra.Command{
 	Use:     "update",
 	Aliases: []string{"u"},
 	Short:   "Fetch and update the default branch worktree",
-	Long: `Fetch all remotes (with prune) and pull the default branch (main/master)
-in its worktree.`,
+	Long: `Fetch all remotes with prune and pull the default branch in its worktree.
+Tag pruning and the pull strategy follow Git configuration, including
+fetch.pruneTags, remote.<name>.pruneTags, pull.rebase, and pull.ff.`,
 	Example: `  git wt update
   git wt u`,
 	SilenceUsage:  true,
@@ -31,7 +32,7 @@ in its worktree.`,
 			ShowOutput: true,
 			RawOutput:  true,
 			Run: func(ctx context.Context, w io.Writer) error {
-				return git.RunToContext(ctx, w, "fetch", "--all", "--prune", "--prune-tags")
+				return git.RunToContext(ctx, w, "fetch", "--all", "--prune")
 			},
 		}, {
 			Message: "Resolving default branch worktree",

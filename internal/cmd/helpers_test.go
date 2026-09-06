@@ -10,7 +10,7 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 )
 
-func TestMoveContents(t *testing.T) {
+func TestMigrationMoves(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()
 
@@ -18,8 +18,12 @@ func TestMoveContents(t *testing.T) {
 	os.MkdirAll(filepath.Join(src, "subdir"), 0o755)
 	os.WriteFile(filepath.Join(src, "subdir", "nested.txt"), []byte("world"), 0o644)
 
-	if err := moveContents(src, dst); err != nil {
-		t.Fatalf("moveContents error: %v", err)
+	moved, err := (migrationMoves{rename: renameEntry}).move(src, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(moved, ",") != "file.txt,subdir" {
+		t.Fatalf("moved entries = %v", moved)
 	}
 
 	// Entries should exist in dst
@@ -37,12 +41,13 @@ func TestMoveContents(t *testing.T) {
 	}
 }
 
-func TestMoveContentsEmptySrc(t *testing.T) {
+func TestMigrationMovesEmptySource(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()
 
-	if err := moveContents(src, dst); err != nil {
-		t.Fatalf("moveContents empty src error: %v", err)
+	moved, err := (migrationMoves{rename: renameEntry}).move(src, dst)
+	if err != nil || len(moved) != 0 {
+		t.Fatalf("empty source: moved %v, error %v", moved, err)
 	}
 
 	entries, _ := os.ReadDir(dst)
@@ -51,10 +56,10 @@ func TestMoveContentsEmptySrc(t *testing.T) {
 	}
 }
 
-func TestMoveContentsNonExistentSrc(t *testing.T) {
-	err := moveContents(filepath.Join(t.TempDir(), "nonexistent"), t.TempDir())
+func TestMigrationMovesMissingSource(t *testing.T) {
+	_, err := (migrationMoves{rename: renameEntry}).move(filepath.Join(t.TempDir(), "nonexistent"), t.TempDir())
 	if err == nil {
-		t.Error("moveContents with nonexistent src should return error")
+		t.Error("moving a nonexistent source should return an error")
 	}
 }
 
@@ -67,7 +72,7 @@ func TestFinalizeMigrationRollbackOnValidationFailure(t *testing.T) {
 	os.MkdirAll(filepath.Join(newStructure, ".bare"), 0o755)
 	os.WriteFile(filepath.Join(newStructure, ".git"), []byte("gitdir: ./.bare\n"), 0o644)
 
-	err := finalizeMigration(repoRoot, newStructure, tempBackup, []string{".git", ".bare", "main"})
+	err := finalizeMigration(repoRoot, newStructure, tempBackup, []string{".git", ".bare", "main"}, migrationMoves{rename: renameEntry}, func() error { return nil })
 	if err == nil {
 		t.Fatal("finalizeMigration should fail validation when required entries are missing")
 	}
@@ -118,14 +123,17 @@ func TestCopyFileSimpleNonExistent(t *testing.T) {
 	}
 }
 
-func TestRestoreBackup(t *testing.T) {
+func TestMigrationRestoreNamedEntries(t *testing.T) {
 	backup := t.TempDir()
 	repoRoot := t.TempDir()
 
 	os.WriteFile(filepath.Join(backup, "file.txt"), []byte("backup"), 0o644)
 	os.MkdirAll(filepath.Join(backup, "subdir"), 0o755)
+	os.WriteFile(filepath.Join(backup, "retained.txt"), []byte("recovery data"), 0o600)
 
-	restoreBackup(backup, repoRoot)
+	if err := (migrationMoves{rename: renameEntry}).restore(backup, repoRoot, []string{"file.txt", "subdir"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := os.Stat(filepath.Join(repoRoot, "file.txt")); err != nil {
 		t.Error("file.txt should exist in repoRoot after restore")
@@ -134,15 +142,9 @@ func TestRestoreBackup(t *testing.T) {
 		t.Error("subdir should exist in repoRoot after restore")
 	}
 
-	// Backup dir should be removed
-	if _, err := os.Stat(backup); !os.IsNotExist(err) {
-		t.Error("backup dir should be removed after restore")
+	if data, err := os.ReadFile(filepath.Join(backup, "retained.txt")); err != nil || string(data) != "recovery data" {
+		t.Fatalf("unselected recovery data changed: %q, %v", data, err)
 	}
-}
-
-func TestRestoreBackupNonExistent(t *testing.T) {
-	// Should return silently without error
-	restoreBackup(filepath.Join(t.TempDir(), "nonexistent"), t.TempDir())
 }
 
 func TestIsKnownCommand(t *testing.T) {
@@ -271,23 +273,7 @@ func initGitRepo(t *testing.T) string {
 	return dir
 }
 
-func TestCheckGitDiffClean(t *testing.T) {
-	repo := initGitRepo(t)
-	if err := checkGitDiff(repo); err != nil {
-		t.Errorf("checkGitDiff on clean repo = %v, want nil", err)
-	}
-}
-
-func TestCheckGitDiffDirty(t *testing.T) {
-	repo := initGitRepo(t)
-	// Modify a tracked file to create a diff
-	os.WriteFile(filepath.Join(repo, "README.md"), []byte("modified"), 0o644)
-	if err := checkGitDiff(repo); err == nil {
-		t.Error("checkGitDiff on dirty repo should return error")
-	}
-}
-
-func TestMoveContentsRenameFail(t *testing.T) {
+func TestMigrationMovesIntoFileFails(t *testing.T) {
 	src := t.TempDir()
 	os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0o644)
 
@@ -295,9 +281,9 @@ func TestMoveContentsRenameFail(t *testing.T) {
 	dstFile := filepath.Join(t.TempDir(), "not-a-dir")
 	os.WriteFile(dstFile, []byte("x"), 0o644)
 
-	err := moveContents(src, dstFile)
+	_, err := (migrationMoves{rename: renameEntry}).move(src, dstFile)
 	if err == nil {
-		t.Error("moveContents to a file dst should return error")
+		t.Error("moving entries into a file should return an error")
 	}
 }
 

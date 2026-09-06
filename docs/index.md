@@ -27,7 +27,7 @@ worktree directory.
 - **Safe cleanup filters** with `git wt remove --sweep`
 - **Repository diagnostics** with `git wt doctor`
 - **Status dashboard** with `git wt status`
-- **Structured output** with `git wt list --json`
+- **Machine-readable output** with `git wt list --json` or native `--porcelain -z`
 - **Agent skill installer** with `git wt agent-skill`
 - **Dry-run support** for destructive operations
 
@@ -96,6 +96,20 @@ repo/
 └── main/           # Worktree for default branch
 ```
 
+## List worktrees
+
+```bash
+git wt list
+git wt ls --json
+git wt list --porcelain -z
+```
+
+`ls` is an alias for `list`. JSON mode emits a stable array of non-bare worktrees and cannot be combined with native list options. Without `--json`, Git's options and output pass through unchanged. See the [JSON schema](safety.md#updates-and-scripting).
+
+## Safety
+
+Migration is experimental, verifies copied state, and retains the original repository as a sibling backup. Stop other writers first and keep the backup until you have checked the new worktrees. Removal protects tracked modifications, non-ignored untracked files, and commits without another retained ref; discarding them requires `--force` with an explicit target. Ignored files, including build output and ignored `.env` files, do not block removal or cleanup and are deleted with the worktree. Cleanup filters never accept `--force`, and a gone upstream alone is not a deletion candidate. Remote deletion follows each target's configured upstream and checks for concurrent changes. Updates respect Git's configured tag-pruning and pull strategy, including one-off `git -c` overrides. See [migration and removal safety](safety.md) for details and recovery guidance.
+
 ## Hooks
 
 Run shell commands around worktree creation and removal. Hooks are configured through Git config, so they can be scoped per repository or globally with `--global`.
@@ -121,7 +135,7 @@ git config --add wt.afterremove 'workspace-registry remove "$GIT_WT_PATH"'
 | `wt.beforeremove` | Immediately before removal                                                 | Worktree being removed | Preserves the worktree and exits non-zero               |
 | `wt.afterremove`  | After worktree and branch cleanup                                          | Bare repository root   | Removal remains complete and the command exits non-zero |
 
-Every hook receives the lifecycle context through environment variables:
+Hooks inherit the full calling environment, including all `GIT_*` variables. Unset repository selectors such as `GIT_DIR` in your hook if you want Git to discover the repository from the hook's working directory. git-wt adds the lifecycle context through these environment variables:
 
 - `GIT_WT_EVENT`: `beforeadd`, `afteradd`, `beforeremove`, or `afterremove`
 - `GIT_WT_PATH`: absolute worktree path
@@ -132,23 +146,23 @@ Each configured value runs with `sh -c`. Repeated `git config --add` values run 
 
 Before-hooks are not transactional: the subsequent Git operation can still fail after a hook succeeds, so side effects should be idempotent. After-hook failures cannot roll back an operation that already completed. Removing the current worktree or a locked worktree is rejected before any hook runs; for stale, missing, or prunable worktrees the removal proceeds with the hooks skipped. `DEBUG=1` echoes hooks instead of running them.
 
-Hooks apply to `git wt add` and `git wt remove`; the initial worktree created by `git wt clone` does not trigger add hooks.
+Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `clone` or `migrate` do not trigger git-wt add hooks. Migration also suppresses native checkout hooks while building the new layout.
 
 ## Commands
 
-| Command             | Description                                                |
-| ------------------- | ---------------------------------------------------------- |
-| `clone <url>`       | Clone a repo with the bare worktree structure              |
-| `migrate`           | Convert an existing repo to the bare worktree structure    |
-| `add [options] ...` | Create a new worktree                                      |
-| `remove [worktree]` | Remove worktrees directly or by safe cleanup filters       |
-| `doctor`            | Run repository diagnostics                                 |
-| `agent-skill`       | Install the git-wt agent skill                             |
-| `init <shell>`      | Print shell integration for automatic directory switching  |
-| `status`            | Show a compact dashboard for linked worktrees              |
-| `list`              | List worktrees with table, JSON, or passthrough Git output |
-| `switch`            | Interactive worktree selection                             |
-| `update`            | Fetch remotes and update the default branch                |
+| Command             | Description                                               |
+| ------------------- | --------------------------------------------------------- |
+| `clone <url>`       | Clone a repo with the bare worktree structure             |
+| `migrate`           | Convert an existing repo to the bare worktree structure   |
+| `add [options] ...` | Create a new worktree                                     |
+| `remove [worktree]` | Remove worktrees directly or by safe cleanup filters      |
+| `doctor`            | Run repository diagnostics                                |
+| `agent-skill`       | Install the git-wt agent skill                            |
+| `init <shell>`      | Print shell integration for automatic directory switching |
+| `status`            | Show a compact dashboard for linked worktrees             |
+| `list` / `ls`       | List worktrees with native Git output or JSON             |
+| `switch`            | Interactive worktree selection                            |
+| `update`            | Fetch remotes and update the default branch               |
 
 Native `git worktree` commands (`lock`, `unlock`, `move`, `prune`, `repair`) are also supported as pass-through commands.
 

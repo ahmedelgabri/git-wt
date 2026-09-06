@@ -21,8 +21,8 @@ var addCmd = &cobra.Command{
 	Use:   "add [options] [<path>] [<commit-ish>]",
 	Short: "Create a new worktree",
 	Long: `Create a new worktree. With no arguments, opens an interactive picker to
-select from remote branches or create a new branch. All git worktree add
-flags are supported (-b, -B, -d, --lock, --quiet, etc).
+select from remote branches or create a new branch. Common git worktree add
+flags are supported; see the options below.
 
 Always fetches from the remote before creating the worktree. When using -b/-B,
 upstream tracking is set automatically if the branch exists on the remote.
@@ -55,34 +55,31 @@ func init() {
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
-	// Change to bare root.
+	// Resolve paths once without changing the process working directory.
 	root, err := worktree.BareRoot()
 	if err != nil {
 		return err
-	}
-	if err := os.Chdir(root); err != nil {
-		return fmt.Errorf("failed to change to bare root: %w", err)
 	}
 
 	var createdPath string
 
 	interactive := len(args) == 0 && !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("force-branch")
 	if interactive {
-		createdPath, err = runAddInteractive()
+		createdPath, err = runAddInteractive(root)
 		if err != nil {
 			return err
 		}
 	} else {
-		remote := worktree.DefaultRemote()
+		remote := worktree.DefaultRemoteIn(root)
 		if remote != "" {
 			if err := ui.SpinWithOutputRawContext(fmt.Sprintf("Fetching from %s", remote), func(ctx context.Context, w io.Writer) error {
-				return git.RunToContext(ctx, w, "fetch", remote, "--prune")
+				return git.RunInToContext(ctx, root, w, "fetch", remote, "--prune")
 			}); err != nil {
 				return err
 			}
 		}
 
-		createdPath, err = runAddDirect(cmd, args, remote)
+		createdPath, err = runAddDirect(cmd, args, remote, root)
 		if err != nil {
 			return err
 		}
@@ -102,7 +99,7 @@ func fetchInteractiveBranches() error {
 	})
 }
 
-func runAddInteractive() (string, error) {
+func runAddInteractive(root string) (string, error) {
 	items, err := loadInteractiveAddItems(context.Background())
 	if errors.Is(err, context.Canceled) {
 		return "", nil
@@ -130,7 +127,7 @@ func runAddInteractive() (string, error) {
 	selected := result.Items[0]
 
 	if selected.Value == createNewBranchValue {
-		return createNewBranch()
+		return createNewBranch(root)
 	}
 
 	remote, branch := splitRemoteBranchRef(selected.Value)
@@ -138,19 +135,32 @@ func runAddInteractive() (string, error) {
 		return "", fmt.Errorf("invalid remote branch ref: %s", selected.Value)
 	}
 
-	wtPath := promptWorktreePath(branch)
+	wtPath, err := promptWorktreePath(branch)
+	if err != nil {
+		return "", err
+	}
 
+	wtPath = addPath(root, wtPath)
+	_, existsErr := git.QueryIn(root, "show-ref", "--verify", "refs/heads/"+branch)
+	existing := existsErr == nil
 	err = runAddLifecycle(wtPath, branch, func() error {
 		// Create worktree from selected remote branch.
 		if err := ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "worktree", "add", "-b", branch, wtPath, selected.Value)
+			if existing {
+				return git.RunInToContext(ctx, root, w, "worktree", "add", "--", wtPath, branch)
+			}
+			return git.RunInToContext(ctx, root, w, "worktree", "add", "-b", branch, "--", wtPath, selected.Value)
 		}); err != nil {
 			return err
 		}
 
+		// Existing branches keep their configured upstream.
+		if existing {
+			return nil
+		}
 		// Set upstream tracking.
 		return ui.SpinWithOutputContext(fmt.Sprintf("Setting upstream to %s", ui.Accent(selected.Value)), func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "branch", "--set-upstream-to="+selected.Value, branch)
+			return git.RunInToContext(ctx, root, w, "branch", "--set-upstream-to="+selected.Value, branch)
 		})
 	})
 	if err != nil {
@@ -159,19 +169,26 @@ func runAddInteractive() (string, error) {
 	return wtPath, nil
 }
 
-func createNewBranch() (string, error) {
-	branchName := ui.PromptInput("Enter new branch name:")
+func createNewBranch(root string) (string, error) {
+	branchName, err := ui.PromptInputResult("Enter new branch name:")
+	if err != nil {
+		return "", err
+	}
 
 	if branchName == "" {
 		ui.Error("Branch name cannot be empty")
 		return "", fmt.Errorf("branch name cannot be empty")
 	}
 
-	wtPath := promptWorktreePath(branchName)
+	wtPath, err := promptWorktreePath(branchName)
+	if err != nil {
+		return "", err
+	}
 
-	err := runAddLifecycle(wtPath, branchName, func() error {
+	wtPath = addPath(root, wtPath)
+	err = runAddLifecycle(wtPath, branchName, func() error {
 		return ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "worktree", "add", "-b", branchName, wtPath)
+			return git.RunInToContext(ctx, root, w, "worktree", "add", "-b", branchName, "--", wtPath)
 		})
 	})
 	if err != nil {
@@ -180,15 +197,29 @@ func createNewBranch() (string, error) {
 	return wtPath, nil
 }
 
-func promptWorktreePath(defaultPath string) string {
-	wtPath := ui.PromptInput(fmt.Sprintf("Enter worktree path (optional, default: %s):", defaultPath))
-	if wtPath == "" {
-		return defaultPath
+func promptWorktreePath(defaultPath string) (string, error) {
+	wtPath, err := ui.PromptInputResult(fmt.Sprintf("Enter worktree path (optional, default: %s):", defaultPath))
+	if err != nil {
+		return "", err
 	}
-	return wtPath
+	if wtPath == "" {
+		return defaultPath, nil
+	}
+	return wtPath, nil
 }
 
-func runAddDirect(cmd *cobra.Command, args []string, remote string) (string, error) {
+func addPath(root, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(root, path)
+}
+
+func runAddDirect(cmd *cobra.Command, args []string, remote, root string) (string, error) {
+	args = append([]string(nil), args...)
+	if len(args) > 0 {
+		args[0] = addPath(root, args[0])
+	}
 	var gitArgs []string
 
 	branch, _ := cmd.Flags().GetString("branch")
@@ -210,6 +241,7 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) (string, err
 	}
 
 	// Append positional args (path, commit-ish).
+	gitArgs = append(gitArgs, "--")
 	gitArgs = append(gitArgs, args...)
 
 	createdPath := ""
@@ -226,16 +258,16 @@ func runAddDirect(cmd *cobra.Command, args []string, remote string) (string, err
 	err := runAddLifecycle(createdPath, trackBranch, func() error {
 		// Create the worktree.
 		if err := ui.SpinWithOutputContext("Creating worktree", func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, fullArgs...)
+			return git.RunInToContext(ctx, root, w, fullArgs...)
 		}); err != nil {
 			return err
 		}
 
 		// Set upstream tracking if -b/-B was used.
-		if trackBranch != "" && remote != "" {
-			if _, err := git.Query("rev-parse", "--verify", remote+"/"+trackBranch); err == nil {
+		if trackBranch != "" && remote != "" && !boolFlag(cmd, "no-track") {
+			if _, err := git.QueryIn(root, "rev-parse", "--verify", "refs/remotes/"+remote+"/"+trackBranch); err == nil {
 				if err := ui.SpinWithOutputContext(fmt.Sprintf("Setting upstream to %s", ui.Accent(remote+"/"+trackBranch)), func(ctx context.Context, w io.Writer) error {
-					return git.RunToContext(ctx, w, "branch", "--set-upstream-to="+remote+"/"+trackBranch, trackBranch)
+					return git.RunInToContext(ctx, root, w, "branch", "--set-upstream-to="+remote+"/"+trackBranch, trackBranch)
 				}); err != nil {
 					return err
 				}

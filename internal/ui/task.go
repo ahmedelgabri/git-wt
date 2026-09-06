@@ -126,7 +126,9 @@ func (m *taskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel()
 			m.phase = AsyncCanceled
 			m.err = context.Canceled
-			return m, tea.Quit
+			// Wait for taskFinishedMsg before returning to a caller that may
+			// immediately start rollback or another mutation.
+			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		m.setSize(msg.Width, msg.Height)
