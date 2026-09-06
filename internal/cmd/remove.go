@@ -55,12 +55,14 @@ var removeCmd = &cobra.Command{
 By default, removing a worktree also deletes its local branch, provided its
 commits are preserved by another branch or tag. Dirty worktrees and unique
 commits require --force with explicit targets. Current and locked worktrees
-remain protected. Use --delete-remote to delete the target's configured upstream.
+remain protected. Ignored files do not block removal and are deleted with the
+worktree, as with native Git. Use --delete-remote to delete the target's
+configured upstream.
 
 Cleanup filters let you select safe bulk candidates:
   --merged  branches fully merged into the default branch
   --gone    branches whose upstream is gone and which are fully merged
-  --stale   missing or prunable worktree metadata
+  --stale   missing, unlocked worktree paths with attached branches
   --sweep   shorthand for --merged --gone --stale
 
 With no arguments and no cleanup filters, an interactive picker is shown.`,
@@ -80,7 +82,7 @@ func init() {
 	removeCmd.Flags().Bool("force", false, "Allow explicit removal of dirty worktrees and commits without another retained ref")
 	removeCmd.Flags().Bool("merged", false, "Select worktrees whose branches are fully merged into the default branch")
 	removeCmd.Flags().Bool("gone", false, "Select fully merged worktrees whose upstream is gone")
-	removeCmd.Flags().Bool("stale", false, "Select stale or prunable worktree metadata")
+	removeCmd.Flags().Bool("stale", false, "Select missing, unlocked worktree paths with attached branches")
 	removeCmd.Flags().Bool("sweep", false, "Select merged, gone, and stale cleanup candidates")
 	rootCmd.AddCommand(removeCmd)
 }
@@ -417,6 +419,9 @@ func renderRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) st
 	if cleanup {
 		notes = append(notes, ui.Subtle("Safe candidates only: fully merged branches and missing, unlocked metadata."))
 	}
+	if removeCount > 0 {
+		notes = append(notes, ui.Yellow("Ignored files, including .env files and build output, are deleted with the worktree."))
+	}
 	if opts.force {
 		notes = append(notes, ui.Red("FORCE: dirty files and commits without another retained ref may be lost."))
 	}
@@ -704,8 +709,9 @@ func deleteRemoteBranches(branch, remote string, deletions []remoteDeletion) err
 
 	remoteBranch := remote + "/" + branch
 
-	for _, deletion := range deletions {
+	for i, deletion := range deletions {
 		if deletion.head == "" {
+			fmt.Printf("%s No remote branch %s at push destination %d; deletion skipped\n", ui.Muted("·"), remoteBranch, i+1)
 			continue
 		}
 		if err := ui.SpinWithOutputContext(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(ctx context.Context, w io.Writer) error {

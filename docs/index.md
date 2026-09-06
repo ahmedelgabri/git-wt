@@ -108,7 +108,7 @@ git wt list --porcelain -z
 
 ## Safety
 
-Migration is experimental, verifies copied state, and retains the original repository as a sibling backup. Stop other writers first and keep the backup until you have checked the new worktrees. Removal protects dirty files and commits without another retained ref; discarding them requires `--force` with an explicit target. Cleanup filters never accept `--force`, and a gone upstream alone is not a deletion candidate. Remote deletion follows each target's configured upstream and checks for concurrent changes. Updates respect Git's configured tag-pruning and pull strategy, including one-off `git -c` overrides. See [migration and removal safety](safety.md) for details and recovery guidance.
+Migration is experimental, verifies copied state, and retains the original repository as a sibling backup. Stop other writers first and keep the backup until you have checked the new worktrees. Removal protects tracked modifications, non-ignored untracked files, and commits without another retained ref; discarding them requires `--force` with an explicit target. Ignored files, including build output and ignored `.env` files, do not block removal or cleanup and are deleted with the worktree. Cleanup filters never accept `--force`, and a gone upstream alone is not a deletion candidate. Remote deletion follows each target's configured upstream and checks for concurrent changes. Updates respect Git's configured tag-pruning and pull strategy, including one-off `git -c` overrides. See [migration and removal safety](safety.md) for details and recovery guidance.
 
 ## Hooks
 

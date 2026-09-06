@@ -1,4 +1,8 @@
-# Migration and removal safety
+# Repository safety
+
+## Clone
+
+A failed initial bare clone cleans up only the destination git-wt created. Once the bare clone succeeds, the download is retained even if writing the `.git` pointer, configuring the repository, fetching, entering a branch name, or creating a worktree subsequently fails. These late failures return non-zero and print a warning to stderr with the retained path and recovery instructions. Inspect the downloaded branches with `git --git-dir=<destination>/.bare branch -a`. Complete layout configuration if needed, then use `git -C <destination> wt add <path> <branch>` to create a worktree.
 
 ## Migration
 
@@ -10,22 +14,22 @@ Verification compares filesystem contents and modes, index entries, original ref
 
 The original repository is retained at the printed sibling `<repo>-backup-*` path. It is a normal Git repository that can be inspected or used directly. Keep it until you have checked the migrated worktrees, hooks, and configuration. Absolute paths in custom commands or configuration may need manual adjustment. Migration needs disk space for a full copy, including ignored files and the object database.
 
-If restoration fails, the command reports the recovery directories and does not delete their remaining contents. Do not run another migration over a partially restored layout. Stop writers, inspect the original backup and staging directories, and recover from those copies before proceeding.
+Failure messages distinguish an original repository restored at its initial path from recovery files still present in the backup or staging directories. Empty directories are not reported as containing recovery files. If restoration fails, the command reports the nonempty recovery directories and does not delete their remaining contents; locations it cannot inspect are flagged for manual recovery. Do not run another migration over a partially restored layout. Stop writers, inspect the original backup and staging directories, and recover from those copies before proceeding.
 
 Migration refuses submodules, existing linked worktrees, sparse checkout, alternate object directories, per-worktree configuration, unborn branches, Git lock files, symlinked Git metadata, and in-progress merge, rebase, cherry-pick, revert, or sequencer operations. Unsupported special files also stop preparation. `--dry-run` and `DEBUG=1` do not restructure the filesystem.
 
 ## Removal
 
-Explicit removal refuses dirty worktrees, including ignored files, and commits that have no other retained branch or tag. `--force` permits discarding that state only for explicit targets. Current and locked worktrees remain protected. The plan warns when force is enabled, and the command checks identity and safety again after before-remove hooks run.
+Explicit removal and cleanup refuse tracked modifications, non-ignored untracked files, and commits that have no other retained branch or tag. Ignored files do not block removal and are deleted with the worktree, as with native Git. This includes `node_modules/`, `target/`, build output, and ignored `.env` files. Save any valuable ignored files before removing or cleaning up a worktree. `--force` permits discarding protected changes and unpreserved commits only for explicit targets. Current and locked worktrees remain protected. The plan warns when force is enabled, and the command checks identity and safety again after before-remove hooks run.
 
 Cleanup filters remain conservative:
 
 - `--merged` selects clean branches with a remote upstream that are fully merged into the default branch.
 - `--gone` also requires full merge into the default branch. A deleted remote branch does not prove local commits are preserved.
-- `--stale` selects missing, unlocked worktree paths with attached branches. It removes metadata without deleting their branches. Detached metadata is retained because its HEAD may be the only remaining reference to a commit.
+- `--stale` selects missing, unlocked worktree paths with attached branches. It removes metadata without deleting their branches. Detached metadata is retained because its HEAD may be the only remaining reference to a commit. Existing directories are excluded even when Git reports their metadata prunable, such as when the worktree's `.git` file is broken. Inspect the files and use `git wt repair <path>` before removal.
 - `--sweep` combines these filters. It cannot be combined with `--force`.
 
-`--delete-remote` uses each target's configured upstream remote and branch name. It does not guess from the invoking worktree. The command resolves every configured push destination, including `pushurl` and URL rewrites, and checks all of them before local removal. Each destination gets its own expected-commit lease. Remote-specific transport settings remain in effect. If cascading URL rewrites would redirect verification to a different destination, removal stops before changing anything; use native Git for that configuration. Network errors and rejected deletion return a non-zero exit. If remote deletion fails after local removal, the error explains that local removal has completed.
+`--delete-remote` uses each target's configured upstream remote and branch name. It does not guess from the invoking worktree. The command resolves every configured push destination, including `pushurl` and URL rewrites, and checks all of them before local removal. Each destination gets its own expected-commit lease. Remote-specific transport settings remain in effect. If cascading URL rewrites would redirect verification to a different destination, removal stops before changing anything; use native Git for that configuration. An already-absent remote branch produces a notice and skips deletion for that destination. Network errors and rejected deletion return a non-zero exit. If remote deletion fails after local removal, the error explains that local removal has completed.
 
 As with native Git, separate worktree and remote operations are not one atomic transaction. Avoid concurrent branch rewrites during removal. Local branch deletion uses an expected object ID so a concurrently advanced branch is retained rather than silently deleted. After successful deletion, repository-local `branch.<name>.*` settings are removed as with native `git branch -D`; inherited defaults are preserved.
 

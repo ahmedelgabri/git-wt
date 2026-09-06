@@ -99,6 +99,19 @@ teardown() {
 	command git -C "$TEST_DIR/repo-origin" show-ref --verify refs/heads/feature
 }
 
+@test "remove: reports when a remote branch is already absent" {
+	init_bare_repo_with_remote repo
+	cd repo
+	create_worktree feature feature
+	command git push --quiet -u origin feature
+	command git push --quiet origin --delete feature
+	run bash -c 'printf "feature\n" | "$1" remove feature --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"No remote branch origin/feature"* ]]
+	[[ "$output" == *"deletion skipped"* ]]
+	[ ! -d feature ]
+}
+
 @test "remove: checks all push destinations before removing anything" {
 	init_bare_repo_with_remote repo
 	cd repo

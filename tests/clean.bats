@@ -10,6 +10,57 @@ teardown() {
 	teardown_test_env
 }
 
+cleanup_ignored_worktree() {
+	local filter="$1"
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	create_worktree feature feature
+	command git push --quiet -u origin feature
+	printf 'node_modules/\ntarget/\nbuild/\n.env\n' >>.bare/info/exclude
+	mkdir -p feature/node_modules feature/target feature/build
+	touch feature/node_modules/package feature/target/binary feature/build/output feature/.env
+	if [[ "$filter" = --gone ]]; then
+		command git push --quiet origin --delete feature
+	fi
+	run bash -c 'printf "cleanup\n" | env GIT_WT_SELECT="$2" "$1" remove "$3"' _ "$GIT_WT" "$TEST_DIR/myrepo/feature" "$filter"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Ignored files"* ]]
+	[ ! -d feature ]
+	assert_branch_not_exists feature
+}
+
+@test "remove: --merged tolerates ignored build output and local configuration" {
+	cleanup_ignored_worktree --merged
+}
+
+@test "remove: --gone tolerates ignored build output and local configuration" {
+	cleanup_ignored_worktree --gone
+}
+
+@test "remove: --sweep tolerates ignored build output and local configuration" {
+	cleanup_ignored_worktree --sweep
+}
+
+@test "remove: existing prunable directories need inspection and repair" {
+	init_bare_repo_with_remote myrepo
+	cd myrepo
+	create_worktree feature feature
+	echo valuable >feature/notes.txt
+	rm feature/.git
+	command git worktree list --porcelain | grep -q prunable
+	for filter in --stale --merged --gone --sweep; do
+		run "$GIT_WT" remove "$filter" --dry-run
+		[ "$status" -eq 0 ]
+		[[ "$output" == *"No matching cleanup candidates"* ]]
+	done
+	run bash -c 'printf "y\n" | "$1" remove feature' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"marked prunable but its path still exists"* ]]
+	[[ "$output" == *"git wt repair"* ]]
+	[ -f feature/notes.txt ]
+	assert_worktree_exists "$TEST_DIR/myrepo/feature"
+}
+
 @test "remove: --sweep interactively removes selected merged worktrees with upstream" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo

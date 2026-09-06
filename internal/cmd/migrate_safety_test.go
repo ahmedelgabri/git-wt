@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -64,6 +65,16 @@ func TestMigrationRollbackAtEveryRename(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected injected failure")
 			}
+			reported := migrationRecoveryError(err, root, stage, backup)
+			if !errors.Is(reported, err) || !strings.Contains(reported.Error(), "original repository restored at "+root) {
+				t.Fatalf("rollback status lost: %v", reported)
+			}
+			if strings.Contains(reported.Error(), "retained at "+backup) {
+				t.Fatalf("empty backup reported as containing recovery files: %v", reported)
+			}
+			if !strings.Contains(reported.Error(), "retained at "+stage) {
+				t.Fatalf("staged recovery files not reported: %v", reported)
+			}
 			for path, want := range map[string]string{".git/database": "original database", "file": "original work"} {
 				got, err := os.ReadFile(filepath.Join(root, path))
 				if err != nil || string(got) != want {
@@ -96,6 +107,26 @@ func TestMigrationRepositoryVerificationRollsBack(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git", "valuable")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMigrationRecoveryErrorReportsOnlyRemainingData(t *testing.T) {
+	root, stage, backup := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(backup, "original"), []byte("valuable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cause := errors.New("rollback failed")
+	reported := migrationRecoveryError(cause, root, stage, backup)
+	if !errors.Is(reported, cause) || !strings.Contains(reported.Error(), "retained at "+backup) {
+		t.Fatalf("remaining backup not reported: %v", reported)
+	}
+	if strings.Contains(reported.Error(), "retained at "+stage) || strings.Contains(reported.Error(), "original repository restored") {
+		t.Fatalf("incorrect recovery status: %v", reported)
+	}
+	// An inaccessible recovery location must not be described as empty.
+	reported = migrationRecoveryError(cause, root, stage, filepath.Join(backup, "original"))
+	if !strings.Contains(reported.Error(), "could not inspect recovery directory") {
+		t.Fatalf("inspection failure hidden: %v", reported)
 	}
 }
 

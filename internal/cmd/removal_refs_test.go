@@ -1,11 +1,58 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 )
+
+func TestRemovalSafetyWithLargeRetainedRefList(t *testing.T) {
+	root := initGitRepo(t)
+	t.Chdir(root)
+	head, err := git.Query("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := git.Run("update-ref", "refs/heads/feature", head); err != nil {
+		t.Fatal(err)
+	}
+	// A packed fixture is cheap to create, but its ref names alone exceed the
+	// usual process argument limit. Tags preserve main, not the later commit.
+	var packed strings.Builder
+	packed.WriteString("# pack-refs with: sorted\n")
+	for i := range 12000 {
+		fmt.Fprintf(&packed, "%s refs/tags/release-%05d-%s\n", head, i, strings.Repeat("x", 180))
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git", "packed-refs"), []byte(packed.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := removalTarget{path: filepath.Join(root, "missing-worktree"), branch: "feature", upstreamRef: "refs/remotes/origin/feature"}
+	if err := validateRemovalSafety(target, true, false); err != nil {
+		t.Fatalf("retained commit rejected: %v", err)
+	}
+	unique, err := git.RunWithOutput("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit-tree", "HEAD^{tree}", "-p", head, "-m", "unique")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"refs/heads/feature", target.upstreamRef} {
+		if err := git.Run("update-ref", ref, unique); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := git.Run("symbolic-ref", "refs/remotes/origin/HEAD", target.upstreamRef); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemovalSafety(target, false, false); err != nil {
+		t.Fatalf("retained upstream rejected: %v", err)
+	}
+	if err := validateRemovalSafety(target, true, false); err == nil || !strings.Contains(err.Error(), unique) {
+		t.Fatalf("symbolic alias must not preserve a deleted upstream: %v", err)
+	}
+}
 
 func TestRemoteDeletionRejectsRewritingAnAlreadyResolvedURL(t *testing.T) {
 	root := initGitRepo(t)

@@ -212,6 +212,12 @@ func QueryContext(ctx context.Context, args ...string) (string, error) {
 	return execGit(ExecOptions{Capture: true, Context: ctx}, args...)
 }
 
+// QueryWithInput executes a read-only command with explicit stdin and captures
+// stdout. Input is separate from argv, so large revision lists remain usable.
+func QueryWithInput(input io.Reader, args ...string) (string, error) {
+	return execGit(ExecOptions{Capture: true, Stdin: input, Context: context.Background()}, args...)
+}
+
 // QueryRaw executes a read-only git command without trimming its output.
 func QueryRaw(args ...string) (string, error) {
 	return QueryRawContext(context.Background(), args...)

@@ -31,7 +31,7 @@ func init() {
 	rootCmd.AddCommand(cloneCmd)
 }
 
-func runClone(cmd *cobra.Command, args []string) error {
+func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 	repoURL := args[0]
 	folderName := strings.TrimSuffix(filepath.Base(repoURL), ".git")
 	if len(args) > 1 {
@@ -58,12 +58,16 @@ func runClone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	complete := false
+	cloned := false
 	defer func() {
-		if !complete {
+		if !cloned {
 			if err := os.RemoveAll(destination); err != nil {
 				ui.Errorf("Could not clean up %s: %v", destination, err)
 			}
+		} else if resultErr != nil {
+			fmt.Fprintf(os.Stderr, "%s Repository downloaded and retained at %s, but setup did not finish: %v\n", ui.Yellow("Warning:"), destination, resultErr)
+			fmt.Fprintf(os.Stderr, "Inspect the downloaded branches with: git --git-dir=%s branch -a\n", shellQuote(filepath.Join(destination, ".bare")))
+			fmt.Fprintf(os.Stderr, "Finish layout configuration if needed, then create a worktree with: git -C %s wt add <path> <branch>\n", shellQuote(destination))
 		}
 	}()
 
@@ -73,7 +77,11 @@ func runClone(cmd *cobra.Command, args []string) error {
 		ShowOutput: true,
 		RawOutput:  true,
 		Run: func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "clone", "--progress", "--bare", "--", repoURL, filepath.Join(destination, ".bare"))
+			if err := git.RunToContext(ctx, w, "clone", "--progress", "--bare", "--", repoURL, filepath.Join(destination, ".bare")); err != nil {
+				return err
+			}
+			cloned = true
+			return nil
 		},
 	}, {
 		Message: "Configuring worktree layout",
@@ -98,7 +106,9 @@ func runClone(cmd *cobra.Command, args []string) error {
 			return nil
 		},
 	}}); err != nil {
-		ui.Error("Failed to clone repository")
+		if !cloned {
+			ui.Error("Failed to clone repository")
+		}
 		return err
 	}
 
@@ -126,7 +136,6 @@ func runClone(cmd *cobra.Command, args []string) error {
 		fmt.Printf("No worktree created. Use %s to create worktrees.\n", ui.Accent("git wt add"))
 	}
 
-	complete = true
 	ui.Success("Repository cloned successfully")
 
 	var branches []treeBranch

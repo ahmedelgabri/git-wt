@@ -10,6 +10,53 @@ teardown() {
 	teardown_test_env
 }
 
+assert_late_clone_failure() {
+	bats_require_minimum_version 1.5.0
+	local step="$1"
+	init_repo source
+	export REAL_GIT
+	REAL_GIT=$(command -v git)
+	mkdir "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/git" <<'SH'
+#!/bin/sh
+if [ "$1" = "$FAIL_CLONE_STEP" ]; then
+	echo "injected $FAIL_CLONE_STEP failure" >&2
+	exit 1
+fi
+exec "$REAL_GIT" "$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run --separate-stderr env PATH="$TEST_DIR/bin:$PATH" FAIL_CLONE_STEP="$step" NO_COLOR=1 "$GIT_WT" clone "$TEST_DIR/source" "retained clone"
+	[ "$status" -ne 0 ]
+	[[ "$stderr" == *"Warning: Repository downloaded and retained at $TEST_DIR/retained clone"* ]]
+	[[ "$stderr" == *"Inspect the downloaded branches"* ]]
+	[[ "$stderr" == *"wt add <path> <branch>"* ]]
+	[ -f "$TEST_DIR/retained clone/.git" ]
+	command git --git-dir="$TEST_DIR/retained clone/.bare" cat-file -e "$(command git -C source rev-parse HEAD)"
+}
+
+@test "clone: configuration failure retains the download and warns" {
+	assert_late_clone_failure config
+}
+
+@test "clone: fetch failure retains the download and warns" {
+	assert_late_clone_failure fetch
+}
+
+@test "clone: worktree failure retains the download and warns" {
+	assert_late_clone_failure worktree
+}
+
+@test "clone: mistyped branch at the prompt retains the download" {
+	init_repo source
+	command git -C source symbolic-ref HEAD refs/heads/missing
+	run bash -c 'printf "typo\n" | "$1" clone "$2" "$3"' _ "$GIT_WT" "$TEST_DIR/source" "$TEST_DIR/retained"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Warning:"*"retained"* ]]
+	[[ "$output" == *"wt add <path> <branch>"* ]]
+	command git --git-dir="$TEST_DIR/retained/.bare" cat-file -e "$(command git -C source rev-parse main)"
+}
+
 @test "clone: clones repo with bare structure" {
 	# Create a source repo to clone from
 	init_repo source-repo

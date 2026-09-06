@@ -148,6 +148,8 @@ repo/
 └── main/          # Worktree for the default branch
 ```
 
+Once the bare clone succeeds, git-wt keeps the downloaded repository even if later configuration, fetching, or worktree creation fails. It exits non-zero and prints a warning with the retained path and instructions for inspecting the branches and finishing setup.
+
 ### Migrate an existing repository
 
 ```bash
@@ -220,7 +222,7 @@ git wt remove feature-branch
 git wt remove --dry-run feature-branch
 ```
 
-Removal refuses dirty worktrees and commits without another retained branch or tag. To deliberately discard that work, use `git wt remove --force <worktree>` and confirm the warning. Hooks cannot bypass these checks; removal checks again after before-hooks run.
+Removal refuses tracked modifications, non-ignored untracked files, and commits without another retained branch or tag. Ignored files do not block removal and are deleted with the worktree, including build output and ignored `.env` files. This also applies to cleanup filters. To deliberately discard protected work, use `git wt remove --force <worktree>` and confirm the warning. Hooks cannot bypass these checks; removal checks again after before-hooks run.
 
 ### Remove a worktree and local + remote branch
 
@@ -238,7 +240,7 @@ git wt remove --sweep
 git wt remove --sweep --dry-run
 ```
 
-Both `--merged` and `--gone` require the branch to be fully merged into the default branch. A missing upstream alone is not safe to delete. `--stale` selects only missing, unlocked worktree paths with attached branches and preserves those branches. Detached metadata is retained. `--force` cannot be combined with cleanup filters.
+Both `--merged` and `--gone` require the branch to be fully merged into the default branch. A missing upstream alone is not safe to delete. `--stale` selects only missing, unlocked worktree paths with attached branches and preserves those branches. Detached metadata is retained. Existing directories are skipped even if Git marks their metadata prunable. Inspect their files and use `git wt repair <path>` before attempting removal. `--force` cannot be combined with cleanup filters.
 
 ### Inspect repository health
 

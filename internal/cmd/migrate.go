@@ -104,7 +104,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	// Finalization runs synchronously. Signals cancel preparation, never race a
 	// second cleanup goroutine against the directory renames below.
 	if err := finalizeMigration(repoRoot, newStructure, backup, required, migrationMoves{rename: renameEntry}, func() error { return verifyMigrationState(context.Background(), plan, repoRoot) }); err != nil {
-		return fmt.Errorf("%w; recovery data retained at %s and %s", err, backup, newStructure)
+		return migrationRecoveryError(err, repoRoot, newStructure, backup)
 	}
 	ui.Success("Migration complete")
 	fmt.Printf("Original repository retained at %s\n", backup)
@@ -423,6 +423,30 @@ func verifyMigrationState(ctx context.Context, plan migratePlan, dest string) er
 		return fmt.Errorf("migration object verification failed: %s: %w", out, err)
 	}
 	return nil
+}
+
+// Report what is actually left after finalization and rollback. Empty recovery
+// directories do not imply that they still contain original repository data.
+func migrationRecoveryError(cause error, repoRoot, stage, backup string) error {
+	var details []string
+	for _, dir := range []string{backup, stage} {
+		entries, err := os.ReadDir(dir)
+		switch {
+		case os.IsNotExist(err):
+		case err != nil:
+			details = append(details, fmt.Sprintf("could not inspect recovery directory %s: %v; keep it for manual recovery", dir, err))
+		case len(entries) > 0:
+			details = append(details, "recovery files retained at "+dir)
+		case dir == backup:
+			if info, err := os.Lstat(filepath.Join(repoRoot, ".git")); err == nil && info.IsDir() {
+				details = append(details, "original repository restored at "+repoRoot)
+			}
+		}
+	}
+	if len(details) == 0 {
+		details = append(details, "inspect repository state at "+repoRoot+" before retrying")
+	}
+	return fmt.Errorf("%w; %s", cause, strings.Join(details, "; "))
 }
 
 // finalizeMigration deliberately retains the original backup even on success.

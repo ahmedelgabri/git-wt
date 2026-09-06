@@ -35,6 +35,10 @@ func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filter
 			continue
 		}
 
+		// Existing paths with broken metadata need repair, not automatic removal.
+		if entry.Prunable {
+			continue
+		}
 		if !filters.merged && !filters.gone {
 			continue
 		}
@@ -114,7 +118,7 @@ func worktreeDirty(path string) (bool, error) {
 }
 
 func worktreeDirtyContext(ctx context.Context, path string) (bool, error) {
-	out, err := git.QueryInContext(ctx, path, "status", "--porcelain", "--untracked-files=all", "--ignored=matching")
+	out, err := git.QueryInContext(ctx, path, "status", "--porcelain", "--untracked-files=all")
 	if err != nil {
 		return false, err
 	}

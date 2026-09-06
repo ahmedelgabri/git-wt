@@ -263,15 +263,17 @@ teardown() { teardown_test_env; }
 	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/feature
 }
 
-@test "remove: ignored files are protected without force" {
+@test "remove: ignored files do not require force" {
 	init_bare_repo repo
 	cd repo
 	create_worktree feature feature
 	echo secret.txt >.bare/info/exclude
 	echo valuable >feature/secret.txt
 	run bash -c 'printf "y\n" | "$1" remove feature' _ "$GIT_WT"
-	[ "$status" -ne 0 ]
-	[ -f feature/secret.txt ]
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Ignored files"* ]]
+	[ ! -d feature ]
+	assert_branch_not_exists feature
 }
 
 @test "remove: missing worktree can be explicitly removed without force" {

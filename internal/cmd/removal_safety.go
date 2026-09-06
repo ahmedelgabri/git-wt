@@ -26,6 +26,9 @@ func removalUpstream(branch string) (remote, branchName, trackingRef string) {
 
 func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) error {
 	if _, err := os.Stat(target.path); err == nil {
+		if target.prunable {
+			return fmt.Errorf("worktree %s is marked prunable but its path still exists; inspect its files and run git wt repair %s before removal", target.path, shellQuote(target.path))
+		}
 		dirty, err := worktreeDirty(target.path)
 		if err != nil {
 			return err
@@ -54,7 +57,7 @@ func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) err
 	if err != nil {
 		return err
 	}
-	args := []string{"rev-list", "--max-count=1", ref, "--not"}
+	var exclusions strings.Builder
 	for _, line := range strings.Split(refs, "\n") {
 		retained, symbolic, _ := strings.Cut(line, "\t")
 		if symbolic != "" {
@@ -66,9 +69,11 @@ func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) err
 		if deleteRemote && retained == target.upstreamRef {
 			continue
 		}
-		args = append(args, retained)
+		fmt.Fprintf(&exclusions, "^%s\n", retained)
 	}
-	unique, err := git.Query(args...)
+	// Keep the symbolic-ref exclusions above without putting every retained
+	// ref in argv. Large repositories can exceed the process argument limit.
+	unique, err := git.QueryWithInput(strings.NewReader(exclusions.String()), "rev-list", "--max-count=1", ref, "--stdin")
 	if err != nil {
 		return err
 	}
