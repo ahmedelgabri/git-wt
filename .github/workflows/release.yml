@@ -7,41 +7,54 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 jobs:
   build:
     name: Build Binaries
     runs-on: ubuntu-latest
-    # Only run if CI passes and commit message doesn't contain [skip release]
-    if: "!contains(github.event.head_commit.message, '[skip release]')"
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Get version from flake.nix
         id: version
         run: |
           VERSION=$(grep 'version = ' flake.nix | head -1 | sed 's/.*version = "\([^"]*\)".*/\1/')
-          echo "version=$VERSION" >>$GITHUB_OUTPUT
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
           echo "Version: $VERSION"
 
       - name: Check if tag exists
         id: check_tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if git ls-remote --tags origin "refs/tags/v${{ steps.version.outputs.version }}" | grep -q .; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.version.outputs.version }} already exists on remote, skipping release"
+          MESSAGE=$(git log -1 --format=%B)
+          TAG=$(git ls-remote --tags origin "refs/tags/v${VERSION}")
+          if [[ "$MESSAGE" == *'[skip release]'* || -n "$TAG" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release skipped by commit message or existing tag"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Go
         if: steps.check_tag.outputs.exists == 'false'
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.25.x"
+          check-latest: true
 
       - name: Build native binary for completions and man pages
         if: steps.check_tag.outputs.exists == 'false'
@@ -84,7 +97,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           cd dist
-          sha256sum git-wt-${VERSION}-*.tar.gz > "git-wt-${VERSION}-checksums.txt"
+          sha256sum git-wt-"${VERSION}"-*.tar.gz > "git-wt-${VERSION}-checksums.txt"
 
       - name: Upload artifacts
         if: steps.check_tag.outputs.exists == 'false'
@@ -103,11 +116,15 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     if: needs.build.outputs.tag_exists == 'false'
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -123,16 +140,19 @@ jobs:
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
           echo "Previous reference: $PREV_TAG"
 
-          CHANGELOG=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s" --no-merges | head -50)
-
-          echo "changelog<<EOF" >>$GITHUB_OUTPUT
-          echo "$CHANGELOG" >>$GITHUB_OUTPUT
-          echo "EOF" >>$GITHUB_OUTPUT
+          CHANGELOG=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s" --no-merges -50)
+          DELIMITER="changelog-$(openssl rand -hex 16)"
+          {
+            echo "changelog<<$DELIMITER"
+            echo "$CHANGELOG"
+            echo "$DELIMITER"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build.outputs.version }}
+          target_commitish: ${{ github.event.workflow_run.head_sha }}
           name: v${{ needs.build.outputs.version }}
           body: |
             ## Changes
