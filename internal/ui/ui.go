@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -183,7 +184,7 @@ func PromptInputResult(msg string) (string, error) {
 		fmt.Fprintf(os.Stderr, "%s %s ", Accent("?"), msg)
 		reader := getReader()
 		input, err := reader.ReadString('\n')
-		if err != nil {
+		if err != nil && !(errors.Is(err, io.EOF) && input != "") {
 			return "", err
 		}
 		return normalizeInputValue(input), nil

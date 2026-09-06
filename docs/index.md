@@ -135,7 +135,7 @@ git config --add wt.afterremove 'workspace-registry remove "$GIT_WT_PATH"'
 | `wt.beforeremove` | Immediately before removal                                                 | Worktree being removed | Preserves the worktree and exits non-zero               |
 | `wt.afterremove`  | After worktree and branch cleanup                                          | Bare repository root   | Removal remains complete and the command exits non-zero |
 
-Every hook receives the lifecycle context through environment variables:
+Hooks inherit the full calling environment, including all `GIT_*` variables. Unset repository selectors such as `GIT_DIR` in your hook if you want Git to discover the repository from the hook's working directory. git-wt adds the lifecycle context through these environment variables:
 
 - `GIT_WT_EVENT`: `beforeadd`, `afteradd`, `beforeremove`, or `afterremove`
 - `GIT_WT_PATH`: absolute worktree path

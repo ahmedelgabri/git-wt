@@ -187,11 +187,7 @@ func DefaultRemoteInContext(ctx context.Context, dir string) string {
 	if err == nil && branch != "" {
 		configured, err := git.QueryInContext(ctx, dir, "config", fmt.Sprintf("branch.%s.remote", branch))
 		if err == nil && configured != "" {
-			for _, remote := range remotes {
-				if configured == remote {
-					return remote
-				}
-			}
+			return configured
 		}
 	}
 
@@ -203,6 +199,17 @@ func DefaultRemoteInContext(ctx context.Context, dir string) string {
 	}
 
 	return remotes[0]
+}
+
+// remoteTimeout defaults to ten seconds. Zero disables the discovery deadline;
+// malformed or negative durations retain the default.
+func remoteTimeout(ctx context.Context, dir string) time.Duration {
+	if value, err := git.QueryInContext(ctx, dir, "config", "--get", "wt.remoteTimeout"); err == nil {
+		if timeout, err := time.ParseDuration(value); err == nil && timeout >= 0 {
+			return timeout
+		}
+	}
+	return 10 * time.Second
 }
 
 // DefaultBranch returns the default branch name, preferring local lookup over network.
@@ -224,8 +231,11 @@ func DefaultBranchInContext(ctx context.Context, dir, remote string) string {
 	}
 
 	// Bound network discovery, including calls from non-interactive commands.
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	if timeout := remoteTimeout(ctx, dir); timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	out, err := git.QueryInContext(ctx, dir, "ls-remote", "--symref", remote, "HEAD")
 	if err != nil {
 		return ""

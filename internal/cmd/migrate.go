@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -292,6 +294,18 @@ func createMigrationWorktree(ctx context.Context, root, branch, remote string, e
 }
 
 func normalizeMigrationRemoteURLs(ctx context.Context, source, dest string) error {
+	// A URL without a scheme may be a user-defined alias, not a local path.
+	out, err := git.QueryRawInContext(ctx, source, "config", "--null", "--get-regexp", `^url\..*\.(insteadof|pushinsteadof)$`)
+	var exitErr *exec.ExitError
+	if err != nil && !(errors.As(err, &exitErr) && exitErr.ExitCode() == 1) {
+		return err
+	}
+	var prefixes []string
+	for record := range strings.SplitSeq(out, "\x00") {
+		if _, prefix, ok := strings.Cut(record, "\n"); ok {
+			prefixes = append(prefixes, prefix)
+		}
+	}
 	names, err := git.QueryInContext(ctx, source, "remote")
 	if err != nil {
 		return err
@@ -307,13 +321,21 @@ func normalizeMigrationRemoteURLs(ctx context.Context, source, dest string) erro
 				continue
 			}
 			urls := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
+			changed := false
+			for i, url := range urls {
+				alias := slices.ContainsFunc(prefixes, func(prefix string) bool { return strings.HasPrefix(url, prefix) })
+				if !alias && !filepath.IsAbs(url) && !strings.Contains(url, ":") {
+					urls[i] = filepath.Join(source, url)
+					changed = true
+				}
+			}
+			if !changed {
+				continue
+			}
 			if _, err := git.RunInWithOutputContext(ctx, dest, "config", "--unset-all", key); err != nil {
 				return err
 			}
 			for _, url := range urls {
-				if !filepath.IsAbs(url) && !strings.Contains(url, ":") {
-					url = filepath.Join(source, url)
-				}
 				if _, err := git.RunInWithOutputContext(ctx, dest, "config", "--add", key, url); err != nil {
 					return err
 				}

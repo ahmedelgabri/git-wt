@@ -272,6 +272,8 @@ git wt update # or: git wt u
 
 `update` runs `git fetch --all --prune`, then plain `git pull` in the default branch's worktree. Tag pruning follows `fetch.pruneTags`, `remote.<name>.pruneTags`, and your fetch refspecs; enabling it can delete local-only tags. The pull strategy follows `pull.rebase`, `branch.<name>.rebase`, and `pull.ff`. Repository/global configuration and one-off overrides such as `git -c fetch.pruneTags=true -c pull.rebase=true wt update` are respected.
 
+Remote default-branch discovery waits up to ten seconds when no local remote HEAD is available. Set `wt.remoteTimeout` to a duration such as `30s` or `2m`, or `0` to disable the deadline. For example, use `git config --global wt.remoteTimeout 30s` or `git -c wt.remoteTimeout=0 wt update`. Invalid or negative durations use the ten-second default. This setting only controls discovery, not fetch or pull.
+
 ## Hooks
 
 Run shell commands around worktree creation and removal. Hooks are configured through Git config, so they can be scoped per repository or globally with `--global`.
@@ -297,7 +299,7 @@ git config --add wt.afterremove 'workspace-registry remove "$GIT_WT_PATH"'
 | `wt.beforeremove` | Immediately before removal                                                 | Worktree being removed | Preserves the worktree and exits non-zero               |
 | `wt.afterremove`  | After worktree and branch cleanup                                          | Bare repository root   | Removal remains complete and the command exits non-zero |
 
-Every hook receives the lifecycle context through environment variables:
+Hooks inherit the full calling environment, including all `GIT_*` variables. An inherited `GIT_DIR` or `GIT_INDEX_FILE` can therefore override Git's repository discovery inside a hook; unset it in your hook if you want Git to use the hook's working directory. git-wt adds the lifecycle context through these environment variables:
 
 - `GIT_WT_EVENT`: `beforeadd`, `afteradd`, `beforeremove`, or `afterremove`
 - `GIT_WT_PATH`: absolute worktree path

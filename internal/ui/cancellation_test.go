@@ -16,11 +16,12 @@ func TestPromptInputDistinguishesBlankFromEOF(t *testing.T) {
 	t.Cleanup(func() { stdinReader = old })
 	for _, tc := range []struct {
 		input   string
+		want    string
 		wantErr error
-	}{{"\n", nil}, {"", io.EOF}} {
+	}{{"\n", "", nil}, {"", "", io.EOF}, {"custom-path", "custom-path", nil}, {"custom-path\n", "custom-path", nil}} {
 		stdinReader = func() *bufio.Reader { return bufio.NewReader(strings.NewReader(tc.input)) }
 		value, err := PromptInputResult("path")
-		if value != "" || !errors.Is(err, tc.wantErr) {
+		if value != tc.want || !errors.Is(err, tc.wantErr) {
 			t.Fatalf("input %q: value=%q, error=%v", tc.input, value, err)
 		}
 	}

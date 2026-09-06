@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -57,7 +58,7 @@ func Run(ctx context.Context, hooks []string, invocation Invocation, w io.Writer
 		cmd := exec.CommandContext(ctx, "sh", "-c", h)
 		cmd.Dir = invocation.Dir
 		cmd.Env = append(
-			git.RepositoryEnv(),
+			os.Environ(),
 			"GIT_WT_EVENT="+string(invocation.Event),
 			"GIT_WT_PATH="+invocation.WorktreePath,
 			"GIT_WT_BRANCH="+invocation.Branch,

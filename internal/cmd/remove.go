@@ -656,17 +656,11 @@ func removeSingleWorktree(target removalTarget, opts removeOptions, cleanup bool
 			return err
 		}
 	}
-	remoteHead := ""
+	var deletions []remoteDeletion
 	if opts.deleteRemote && target.remote != "" {
-		out, err := git.Query("ls-remote", "--heads", target.remote, "refs/heads/"+target.remoteBranch)
+		deletions, err = planRemoteDeletions(target, branchHead, opts.force)
 		if err != nil {
-			return fmt.Errorf("check remote branch %s/%s: %w", target.remote, target.remoteBranch, err)
-		}
-		remoteHead, _, _ = strings.Cut(out, "\t")
-		if remoteHead != "" && !opts.force {
-			if _, err := git.Query("merge-base", "--is-ancestor", remoteHead, "refs/heads/"+target.branch); err != nil {
-				return fmt.Errorf("remote branch has commits not preserved by the selected local branch; fetch and review before removal")
-			}
+			return err
 		}
 	}
 	if err := ui.SpinWithOutputContext(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(ctx context.Context, w io.Writer) error {
@@ -680,17 +674,13 @@ func removeSingleWorktree(target removalTarget, opts removeOptions, cleanup bool
 	}
 
 	if target.hasBranch() {
-		out, err := git.RunWithOutput("update-ref", "-d", "refs/heads/"+target.branch, branchHead)
-		if err != nil {
-			if out != "" {
-				return fmt.Errorf("%s", strings.TrimSpace(out))
-			}
+		if err := deleteLocalBranch(target.branch, branchHead); err != nil {
 			return err
 		}
 		ui.Successf("Deleted local branch %s", ui.Accent(target.branch))
 
 		if opts.deleteRemote {
-			if err := deleteRemoteBranch(target.remoteBranch, target.remote, remoteHead); err != nil {
+			if err := deleteRemoteBranches(target.remoteBranch, target.remote, deletions); err != nil {
 				return err
 			}
 		}
@@ -706,7 +696,7 @@ func removeSingleWorktree(target removalTarget, opts removeOptions, cleanup bool
 	return nil
 }
 
-func deleteRemoteBranch(branch, remote, expectedHead string) error {
+func deleteRemoteBranches(branch, remote string, deletions []remoteDeletion) error {
 	if remote == "" {
 		fmt.Printf("%s %s\n", ui.Muted("·"), ui.Muted("No remote upstream configured; remote deletion skipped"))
 		return nil
@@ -714,14 +704,18 @@ func deleteRemoteBranch(branch, remote, expectedHead string) error {
 
 	remoteBranch := remote + "/" + branch
 
-	if expectedHead == "" {
-		return nil
-	}
-
-	if err := ui.SpinWithOutputContext(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(ctx context.Context, w io.Writer) error {
-		return git.RunToContext(ctx, w, "push", "--force-with-lease=refs/heads/"+branch+":"+expectedHead, remote, ":refs/heads/"+branch)
-	}); err != nil {
-		return fmt.Errorf("local worktree removed, but remote deletion failed for %s: %w", remoteBranch, err)
+	for _, deletion := range deletions {
+		if deletion.head == "" {
+			continue
+		}
+		if err := ui.SpinWithOutputContext(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(ctx context.Context, w io.Writer) error {
+			// Select one configured push destination while retaining the named
+			// remote's transport settings, such as receivepack and proxy.
+			return git.RunToContext(ctx, w, "-c", "remote."+remote+".pushurl=", "-c", "remote."+remote+".pushurl="+deletion.url,
+				"push", "--force-with-lease=refs/heads/"+branch+":"+deletion.head, remote, ":refs/heads/"+branch)
+		}); err != nil {
+			return fmt.Errorf("local worktree removed, but remote deletion failed for %s at %s: %w", remoteBranch, deletion.url, err)
+		}
 	}
 	return nil
 }
