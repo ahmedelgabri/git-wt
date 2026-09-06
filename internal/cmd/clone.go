@@ -38,20 +38,34 @@ func runClone(cmd *cobra.Command, args []string) error {
 		folderName = args[1]
 	}
 
-	if _, err := os.Stat(folderName); err == nil {
+	destination, err := filepath.Abs(folderName)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(destination); err == nil {
 		ui.Errorf("Directory '%s' already exists", folderName)
 		return fmt.Errorf("directory '%s' already exists", folderName)
 	}
 
-	if err := os.MkdirAll(folderName, 0o755); err != nil {
+	if git.Debug() {
+		return git.Run("clone", "--bare", repoURL, filepath.Join(destination, ".bare"))
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return err
+	}
+	if err := os.Mkdir(destination, 0o755); err != nil {
 		ui.Errorf("Failed to create directory '%s'", folderName)
 		return err
 	}
 
-	if err := os.Chdir(folderName); err != nil {
-		ui.Errorf("Failed to change to directory '%s'", folderName)
-		return err
-	}
+	complete := false
+	defer func() {
+		if !complete {
+			if err := os.RemoveAll(destination); err != nil {
+				ui.Errorf("Could not clean up %s: %v", destination, err)
+			}
+		}
+	}()
 
 	var defaultBranch string
 	if err := ui.RunSteps([]ui.Step{{
@@ -59,45 +73,43 @@ func runClone(cmd *cobra.Command, args []string) error {
 		ShowOutput: true,
 		RawOutput:  true,
 		Run: func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "clone", "--progress", "--bare", repoURL, ".bare")
+			return git.RunToContext(ctx, w, "clone", "--progress", "--bare", "--", repoURL, filepath.Join(destination, ".bare"))
 		},
 	}, {
 		Message: "Configuring worktree layout",
 		Run: func(context.Context, io.Writer) error {
-			if err := os.WriteFile(".git", []byte("gitdir: ./.bare\n"), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(destination, ".git"), []byte("gitdir: ./.bare\n"), 0o644); err != nil {
 				return err
 			}
-			return configureBareRepo(".")
+			return configureBareRepo(destination)
 		},
 	}, {
 		Message:    "Fetching all branches",
 		ShowOutput: true,
 		RawOutput:  true,
 		Run: func(ctx context.Context, w io.Writer) error {
-			if err := git.RunToContext(ctx, w, "fetch", "--progress", "--all"); err != nil {
-				ui.Warn("Failed to fetch all branches")
-			}
-			return nil
+			return git.RunInToContext(ctx, destination, w, "fetch", "--progress", "--all")
 		},
 	}, {
 		Message: "Discovering default branch",
 		Run: func(context.Context, io.Writer) error {
-			cleanupLocalBranchRefs(".")
-			defaultBranch = worktree.DefaultBranch("origin")
+			cleanupLocalBranchRefs(destination)
+			defaultBranch = worktree.DefaultBranchIn(destination, "origin")
 			return nil
 		},
 	}}); err != nil {
 		ui.Error("Failed to clone repository")
-		os.Chdir("..")
-		os.RemoveAll(folderName)
 		return err
 	}
 
 	if defaultBranch == "" {
 		ui.Warn("Could not discover default branch from remote")
 		fmt.Println("Available branches:")
-		git.Run("branch", "-r")
-		defaultBranch = ui.PromptInput("Enter default branch name (or press Enter to skip):")
+		_ = git.RunIn(destination, "branch", "-r")
+		defaultBranch, err = ui.PromptInputResult("Enter default branch name (or press Enter to skip):")
+		if err != nil {
+			return err
+		}
 	}
 
 	if defaultBranch != "" {
@@ -105,10 +117,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 			Message:    fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)),
 			ShowOutput: true,
 			Run: func(ctx context.Context, w io.Writer) error {
-				if err := git.RunToContext(ctx, w, "worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch); err != nil {
-					ui.Warn("Failed to create worktree for default branch")
-				}
-				return nil
+				return git.RunInToContext(ctx, destination, w, "worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch)
 			},
 		}}); err != nil {
 			return err
@@ -117,6 +126,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 		fmt.Printf("No worktree created. Use %s to create worktrees.\n", ui.Accent("git wt add"))
 	}
 
+	complete = true
 	ui.Success("Repository cloned successfully")
 
 	var branches []treeBranch
