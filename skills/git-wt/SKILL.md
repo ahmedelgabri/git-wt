@@ -55,6 +55,8 @@ git wt list
 git wt list --porcelain
 ```
 
+Migration is experimental. Stop other writers first. It verifies copied files, index entries, refs, and stashes, and retains the original repository at a printed sibling backup path. Keep the backup until the user has checked the new layout; never delete it automatically. Unsupported layouts or failed verification must stop migration.
+
 Clone or migrate repositories:
 
 ```shell
@@ -71,7 +73,7 @@ git wt add -b new-feature new-feature
 git wt add --detach hotfix HEAD~5
 ```
 
-Update the default branch worktree:
+Update the default branch worktree with a fast-forward-only pull. Local-only tags are preserved:
 
 ```shell
 git wt update
@@ -87,6 +89,8 @@ Switch worktrees:
 
 - For an agent workflow, inspect `git wt list` output and `cd` to the exact
   worktree path instead of invoking the interactive switch picker.
+
+Removal refuses dirty worktrees and commits without another retained branch or tag. Do not retry failures with `--force` unless the user explicitly authorizes discarding that work. `--gone` and `--sweep` require full merge into the default branch, even if the upstream was deleted. `--delete-remote` follows the target's configured upstream and skips remote deletion when none is configured.
 
 Remove worktrees safely:
 

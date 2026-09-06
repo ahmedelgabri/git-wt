@@ -27,7 +27,7 @@ worktree directory.
 - **Safe cleanup filters** with `git wt remove --sweep`
 - **Repository diagnostics** with `git wt doctor`
 - **Status dashboard** with `git wt status`
-- **Structured output** with `git wt list --json`
+- **Machine-readable Git output** with `git wt list --porcelain -z`
 - **Agent skill installer** with `git wt agent-skill`
 - **Dry-run support** for destructive operations
 
@@ -96,6 +96,10 @@ repo/
 └── main/           # Worktree for default branch
 ```
 
+## Safety
+
+Migration is experimental, verifies copied state, and retains the original repository as a sibling backup. Stop other writers first and keep the backup until you have checked the new worktrees. Removal protects dirty files and commits without another retained ref; discarding them requires `--force` with an explicit target. Cleanup filters never accept `--force`, and a gone upstream alone is not a deletion candidate. Remote deletion follows each target's configured upstream and checks for concurrent changes. Updates are fast-forward-only and preserve local-only tags. See [migration and removal safety](safety.md) for details and recovery guidance.
+
 ## Hooks
 
 Run shell commands around worktree creation and removal. Hooks are configured through Git config, so they can be scoped per repository or globally with `--global`.
@@ -132,7 +136,7 @@ Each configured value runs with `sh -c`. Repeated `git config --add` values run 
 
 Before-hooks are not transactional: the subsequent Git operation can still fail after a hook succeeds, so side effects should be idempotent. After-hook failures cannot roll back an operation that already completed. Removing the current worktree or a locked worktree is rejected before any hook runs; for stale, missing, or prunable worktrees the removal proceeds with the hooks skipped. `DEBUG=1` echoes hooks instead of running them.
 
-Hooks apply to `git wt add` and `git wt remove`; the initial worktree created by `git wt clone` does not trigger add hooks.
+Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `clone` or `migrate` do not trigger git-wt add hooks. Migration also suppresses native checkout hooks while building the new layout.
 
 ## Commands
 

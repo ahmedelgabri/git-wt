@@ -36,10 +36,10 @@ separate directories. They are useful for:
 - **Safe cleanup filters** with `git wt remove --sweep`
 - **Repository diagnostics** with `git wt doctor`
 - **Status dashboard** with `git wt status`
-- **Structured output** with `git wt list --json`
+- **Machine-readable Git output** with `git wt list --porcelain -z`
 - **Agent skill installer** with `git wt agent-skill`
 - **Dry-run support** for destructive operations
-- **Preserves uncommitted changes, stashes, remotes, and repo-local config** during migration
+- **Verified migration with a retained backup** of the original repository
 
 ## Dependencies
 
@@ -155,9 +155,9 @@ cd existing-repo
 git wt migrate
 ```
 
-This converts a standard Git repository into the bare worktree layout while
-preserving tracked changes, untracked files, stashes, remotes, and selected
-repo-local config.
+Migration is experimental. Stop other Git operations and file writers first. It copies the complete Git database, including packed refs, stashes, reflogs, hooks, and local configuration, then restores the current worktree without checking out committed files over local deletions. It verifies file contents and modes, index entries, refs, stashes, and object connectivity before accepting the new layout.
+
+The original repository remains in a sibling `<repo>-backup-*` directory. Keep it until you have checked your worktrees and configuration. Migration requires enough free space for a full copy and refuses unsupported layouts or in-progress Git operations. See [migration and removal safety](docs/safety.md) for limitations and recovery.
 
 ### Create a worktree
 
@@ -220,11 +220,15 @@ git wt remove feature-branch
 git wt remove --dry-run feature-branch
 ```
 
+Removal refuses dirty worktrees and commits without another retained branch or tag. To deliberately discard that work, use `git wt remove --force <worktree>` and confirm the warning. Hooks cannot bypass these checks; removal checks again after before-hooks run.
+
 ### Remove a worktree and local + remote branch
 
 ```bash
 git wt remove feature-branch --delete-remote
 ```
+
+Remote deletion uses each target branch's configured upstream remote and branch name, not the invoking worktree's default remote. Targets without a remote upstream keep remote branches untouched. A lease prevents deleting a remote branch that changed after verification.
 
 ### Sweep safe cleanup candidates
 
@@ -233,6 +237,8 @@ git wt remove --sweep
 
 git wt remove --sweep --dry-run
 ```
+
+Both `--merged` and `--gone` require the branch to be fully merged into the default branch. A missing upstream alone is not safe to delete. `--stale` selects only missing, unlocked worktree paths with attached branches and preserves those branches. Detached metadata is retained. `--force` cannot be combined with cleanup filters.
 
 ### Inspect repository health
 
@@ -250,7 +256,6 @@ git wt status
 
 ```bash
 git wt list
-git wt list --json
 git wt list --porcelain
 ```
 
@@ -259,6 +264,8 @@ git wt list --porcelain
 ```bash
 git wt update # or: git wt u
 ```
+
+Updates are fast-forward-only. Fetching prunes stale remote-tracking branches, not local-only tags.
 
 ## Hooks
 
@@ -296,7 +303,7 @@ Each configured value runs with `sh -c`. Repeated `git config --add` values run 
 
 Before-hooks are not transactional: the subsequent Git operation can still fail after a hook succeeds, so side effects should be idempotent. After-hook failures cannot roll back an operation that already completed. Removing the current worktree or a locked worktree is rejected before any hook runs; for stale, missing, or prunable worktrees the removal proceeds with the hooks skipped. `DEBUG=1` echoes hooks instead of running them.
 
-Hooks apply to `git wt add` and `git wt remove`; the initial worktree created by `git wt clone` does not trigger add hooks.
+Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `clone` or `migrate` do not trigger git-wt add hooks. Migration also suppresses native checkout hooks while building the new layout.
 
 ## Commands
 
@@ -314,8 +321,7 @@ Hooks apply to `git wt add` and `git wt remove`; the initial worktree created by
 | `switch`            | Interactively select a worktree                            |
 | `update` / `u`      | Fetch remotes and update the default branch                |
 
-Native `git worktree` commands (`lock`, `unlock`, `move`, `prune`, `repair`)
-are also supported as pass-through commands.
+Native `git worktree` commands (`lock`, `unlock`, `move`, `prune`, `repair`) are also supported as pass-through commands. `add` requires the `.bare` layout and rejects standard `.git` directories with a migration hint.
 
 ## Claude Code Integration
 
@@ -354,6 +360,8 @@ The hooks receive a JSON payload on stdin. `WorktreeCreate` reads the `.name`
 field (the branch name) and passes it to `git wt add`. `WorktreeRemove` reads
 `.worktree_path` and passes it to `git wt rm`; the leading `echo y |` confirms
 the interactive prompt non-interactively.
+
+The removal hook refuses dirty worktrees or unpreserved commits. Handle its non-zero exit rather than automatically adding `--force`; forcing removal can discard the agent's work.
 
 ## Development
 
