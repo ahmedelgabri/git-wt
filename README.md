@@ -230,7 +230,7 @@ Removal refuses tracked modifications, non-ignored untracked files, and commits 
 git wt remove feature-branch --delete-remote
 ```
 
-Remote deletion uses each target branch's configured upstream remote and branch name, not the invoking worktree's default remote. Targets without a remote upstream keep remote branches untouched. A lease prevents deleting a remote branch that changed after verification.
+Remote deletion uses each target branch's configured upstream remote and branch name, not the invoking worktree's default remote. Targets without a remote upstream keep remote branches untouched. A lease prevents deleting a remote branch that changed after verification. A single push URL matching the effective fetch URL works on older Git without URL overrides. Multiple push URLs or differing fetch/push URLs require Git 2.46 or newer. Unsupported configurations stop before hooks or local changes; use local-only removal or native Git instead.
 
 ### Sweep safe cleanup candidates
 
@@ -240,7 +240,9 @@ git wt remove --sweep
 git wt remove --sweep --dry-run
 ```
 
-Both `--merged` and `--gone` require the branch to be fully merged into the default branch. A missing upstream alone is not safe to delete. `--stale` selects only missing, unlocked worktree paths with attached branches and preserves those branches. Detached metadata is retained. Existing directories are skipped even if Git marks their metadata prunable. Inspect their files and use `git wt repair <path>` before attempting removal. `--force` cannot be combined with cleanup filters.
+Both `--merged` and `--gone` require the branch to be fully merged into the cleanup base. A missing upstream alone is not safe to delete. `--stale` selects only missing, unlocked worktree paths with attached branches and preserves those branches. Detached metadata is retained. Existing directories are skipped even if Git marks their metadata prunable. Inspect their files and use `git wt repair <path>` before attempting removal. `--force` cannot be combined with cleanup filters.
+
+The cleanup base defaults to the remote's default branch. Set an explicit local branch with `git config wt.cleanupBase refs/heads/main`, or use a short branch name such as `main`. This setting only affects cleanup, not the remote used by other commands. Without an explicit base, `branch.<name>.remote=.` stops `--merged`, `--gone`, and `--sweep` with configuration guidance rather than treating the current branch as the default. Raw remote URLs use network discovery bounded by `wt.remoteTimeout`. `--stale` alone needs no cleanup base.
 
 ### Inspect repository health
 

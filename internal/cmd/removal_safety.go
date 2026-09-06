@@ -1,12 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
-	"github.com/ahmedelgabri/git-wt/internal/worktree"
 )
 
 func removalUpstream(branch string) (remote, branchName, trackingRef string) {
@@ -41,9 +41,15 @@ func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) err
 	}
 	var err error
 	if cleanup {
-		defaultBranch := worktree.DefaultBranch(worktree.DefaultRemote())
-		if defaultBranch == "" || !branchMergedIntoDefault(target.branch, defaultBranch) {
-			return fmt.Errorf("branch %s is no longer merged into the default branch", target.branch)
+		base, err := resolveCleanupBase(context.Background())
+		if err != nil {
+			return err
+		}
+		if base == "refs/heads/"+target.branch {
+			return fmt.Errorf("cannot remove cleanup base %s", base)
+		}
+		if !branchMergedIntoDefault(target.branch, base) {
+			return fmt.Errorf("branch %s is no longer merged into cleanup base %s", target.branch, base)
 		}
 	}
 	ref := "refs/heads/" + target.branch

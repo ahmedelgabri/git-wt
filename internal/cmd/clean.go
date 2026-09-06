@@ -13,7 +13,15 @@ import (
 )
 
 func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filters removeFilters) ([]removalItem, error) {
-	defaultBranch := worktree.DefaultBranchInContext(ctx, "", worktree.DefaultRemoteInContext(ctx, ""))
+	var base string
+	if filters.merged || filters.gone {
+		var err error
+		base, err = resolveCleanupBase(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defaultBranch := strings.TrimPrefix(base, "refs/heads/")
 	currentRoot, _ := currentWorktreeRoot()
 
 	candidates := make([]removalItem, 0)
@@ -65,7 +73,7 @@ func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filter
 			if err != nil {
 				return nil, err
 			}
-			if gone && defaultBranch != "" && branchMergedIntoDefault(entry.Branch, defaultBranch) {
+			if gone && defaultBranch != "" && branchMergedIntoDefault(entry.Branch, base) {
 				candidates = append(candidates, removalItem{
 					Action: removalActionRemove,
 					Target: newRemovalTargetFromEntry(entry),
@@ -75,7 +83,7 @@ func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filter
 			}
 		}
 
-		if filters.merged && defaultBranch != "" && branchHasRemoteUpstream(entry.Branch) && branchMergedIntoDefault(entry.Branch, defaultBranch) {
+		if filters.merged && defaultBranch != "" && branchHasRemoteUpstream(entry.Branch) && branchMergedIntoDefault(entry.Branch, base) {
 			candidates = append(candidates, removalItem{
 				Action: removalActionRemove,
 				Target: newRemovalTargetFromEntry(entry),
@@ -141,8 +149,8 @@ func branchHasRemoteUpstream(branch string) bool {
 	return strings.HasPrefix(strings.TrimSpace(out), "refs/remotes/")
 }
 
-func branchMergedIntoDefault(branch, defaultBranch string) bool {
-	_, err := git.Query("merge-base", "--is-ancestor", branch, defaultBranch)
+func branchMergedIntoDefault(branch, base string) bool {
+	_, err := git.Query("merge-base", "--is-ancestor", "refs/heads/"+branch, base)
 	return err == nil
 }
 

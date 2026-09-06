@@ -10,6 +10,29 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/git"
 )
 
+func TestSupportsRemoteURLReset(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		want    bool
+	}{
+		{"git version 2.39.5 (Apple Git-154)", false},
+		{"git version 2.45.4", false},
+		{"git version 2.46.0", true},
+		{"git version 2.46.0.windows.1", true},
+		{"git version 2.54.0", true},
+		{"git version 3.0.0", true},
+		{"git version 3.-1.0", false},
+		{"git version unknown", false},
+		{"not a Git version", false},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			if got := supportsRemoteURLReset(tc.version); got != tc.want {
+				t.Fatalf("supports reset = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRemovalSafetyWithLargeRetainedRefList(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)
@@ -58,7 +81,8 @@ func TestRemoteDeletionRejectsRewritingAnAlreadyResolvedURL(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)
 	for _, args := range [][]string{
-		{"remote", "add", "origin", "alias:repo"},
+		{"remote", "add", "origin", root + "/fetch"},
+		{"config", "remote.origin.pushurl", "alias:repo"},
 		{"config", "url." + root + "/intended/.insteadOf", "alias:"},
 		{"config", "url." + root + "/wrong/.insteadOf", root + "/intended/"},
 	} {

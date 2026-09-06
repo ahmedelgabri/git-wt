@@ -5,49 +5,97 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 )
 
 type remoteDeletion struct {
-	url  string
-	head string
+	url         string
+	head        string
+	overrideURL bool
 }
 
-// Check every push destination before local removal. Fetch and push URLs need
-// not expose the same tip, and each destination needs its own deletion lease.
-func planRemoteDeletions(target removalTarget, branchHead string, force bool) ([]remoteDeletion, error) {
-	out, err := git.QueryRaw("remote", "get-url", "--push", "--all", target.remote)
+func remoteDeletionDestinations(remote string) ([]remoteDeletion, error) {
+	out, err := git.QueryRaw("remote", "get-url", "--push", "--all", remote)
 	if err != nil {
 		return nil, err
 	}
+	urls := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	fetch, err := git.QueryRaw("remote", "get-url", remote)
+	if err != nil {
+		return nil, err
+	}
+	overrideURL := len(urls) != 1 || urls[0] != strings.TrimSuffix(fetch, "\n")
+	if overrideURL {
+		reason := "has differing fetch and push URLs"
+		if len(urls) > 1 {
+			reason = "has multiple push URLs"
+		}
+		version, err := git.Query("--version")
+		if err != nil {
+			return nil, fmt.Errorf("remote %s %s; cannot check the Git 2.46 minimum for destination selection: %w", remote, reason, err)
+		}
+		if !supportsRemoteURLReset(version) {
+			return nil, fmt.Errorf("remote %s %s; destination selection requires Git 2.46 or newer, found %q; refusing before local removal to avoid partial completion. Upgrade Git on PATH, remove without --delete-remote, or review and delete the remote branch with native Git", remote, reason, version)
+		}
+	}
 	var deletions []remoteDeletion
 	seen := make(map[string]bool)
-	for url := range strings.SplitSeq(strings.TrimSuffix(out, "\n"), "\n") {
-		if seen[url] {
-			continue
+	for _, url := range urls {
+		if !seen[url] {
+			deletions = append(deletions, remoteDeletion{url: url, overrideURL: overrideURL})
+			seen[url] = true
 		}
-		seen[url] = true
-		args := []string{"-c", "remote." + target.remote + ".url=", "-c", "remote." + target.remote + ".url=" + url}
-		resolved, err := git.QueryRaw(append(args, "remote", "get-url", target.remote)...)
-		if err != nil {
-			return nil, err
-		}
-		if strings.TrimSuffix(resolved, "\n") != url {
-			return nil, fmt.Errorf("URL rewrites change the push destination during verification; use native Git to review and delete this remote branch")
+	}
+	return deletions, nil
+}
+
+func supportsRemoteURLReset(version string) bool {
+	fields := strings.Fields(version)
+	if len(fields) < 3 || fields[0] != "git" || fields[1] != "version" {
+		return false
+	}
+	parts := strings.Split(fields[2], ".")
+	if len(parts) < 2 {
+		return false
+	}
+	major, majorErr := strconv.Atoi(parts[0])
+	minor, minorErr := strconv.Atoi(parts[1])
+	return majorErr == nil && minorErr == nil && minor >= 0 && (major > 2 || major == 2 && minor >= 46)
+}
+
+// Check every push destination before local removal. Repeat URL discovery after
+// hooks, since a hook may have changed the configuration checked by the plan.
+func planRemoteDeletions(target removalTarget, branchHead string, force bool) ([]remoteDeletion, error) {
+	deletions, err := remoteDeletionDestinations(target.remote)
+	if err != nil {
+		return nil, err
+	}
+	for i := range deletions {
+		deletion := &deletions[i]
+		var args []string
+		if deletion.overrideURL {
+			args = []string{"-c", "remote." + target.remote + ".url=", "-c", "remote." + target.remote + ".url=" + deletion.url}
+			resolved, err := git.QueryRaw(append(args, "remote", "get-url", target.remote)...)
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSuffix(resolved, "\n") != deletion.url {
+				return nil, fmt.Errorf("URL rewrites change the push destination during verification; use native Git to review and delete this remote branch")
+			}
 		}
 		out, err := git.Query(append(args, "ls-remote", "--heads", target.remote, "refs/heads/"+target.remoteBranch)...)
 		if err != nil {
-			return nil, fmt.Errorf("check remote branch %s/%s at %s: %w", target.remote, target.remoteBranch, url, err)
+			return nil, fmt.Errorf("check remote branch %s/%s at %s: %w", target.remote, target.remoteBranch, deletion.url, err)
 		}
-		head, _, _ := strings.Cut(out, "\t")
-		if head != "" && !force {
-			if _, err := git.Query("merge-base", "--is-ancestor", head, branchHead); err != nil {
-				return nil, fmt.Errorf("remote branch at %s has commits not preserved by the selected local branch; fetch and review before removal", url)
+		deletion.head, _, _ = strings.Cut(out, "\t")
+		if deletion.head != "" && !force {
+			if _, err := git.Query("merge-base", "--is-ancestor", deletion.head, branchHead); err != nil {
+				return nil, fmt.Errorf("remote branch at %s has commits not preserved by the selected local branch; fetch and review before removal", deletion.url)
 			}
 		}
-		deletions = append(deletions, remoteDeletion{url: url, head: head})
 	}
 	return deletions, nil
 }

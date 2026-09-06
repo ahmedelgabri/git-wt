@@ -60,10 +60,18 @@ worktree, as with native Git. Use --delete-remote to delete the target's
 configured upstream.
 
 Cleanup filters let you select safe bulk candidates:
-  --merged  branches fully merged into the default branch
+  --merged  branches fully merged into the cleanup base
   --gone    branches whose upstream is gone and which are fully merged
   --stale   missing, unlocked worktree paths with attached branches
   --sweep   shorthand for --merged --gone --stale
+
+Set an explicit local cleanup base with:
+  git config wt.cleanupBase refs/heads/main
+Otherwise cleanup discovers the remote default branch. A local remote (.) needs
+an explicit base. Raw URL discovery respects wt.remoteTimeout.
+
+Remote deletion with multiple push URLs or differing fetch/push URLs requires
+Git 2.46 or newer. One matching fetch/push URL needs no destination overrides.
 
 With no arguments and no cleanup filters, an interactive picker is shown.`,
 	Example: `  git wt remove feature-1
@@ -80,7 +88,7 @@ func init() {
 	removeCmd.Flags().BoolP("dry-run", "n", false, "Preview what would be removed without making changes")
 	removeCmd.Flags().Bool("delete-remote", false, "Also delete each worktree branch's configured upstream branch")
 	removeCmd.Flags().Bool("force", false, "Allow explicit removal of dirty worktrees and commits without another retained ref")
-	removeCmd.Flags().Bool("merged", false, "Select worktrees whose branches are fully merged into the default branch")
+	removeCmd.Flags().Bool("merged", false, "Select worktrees whose branches are fully merged into the cleanup base")
 	removeCmd.Flags().Bool("gone", false, "Select fully merged worktrees whose upstream is gone")
 	removeCmd.Flags().Bool("stale", false, "Select missing, unlocked worktree paths with attached branches")
 	removeCmd.Flags().Bool("sweep", false, "Select merged, gone, and stale cleanup candidates")
@@ -292,6 +300,21 @@ func runRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) error
 	if opts.dryRun {
 		fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
 		return nil
+	}
+
+	// Check the entire selection before hooks or local mutations. A later
+	// incompatible target must not strand earlier targets in a bulk removal.
+	if opts.deleteRemote {
+		seen := make(map[string]bool)
+		for _, item := range items {
+			remote := item.Target.remote
+			if item.Action == removalActionRemove && remote != "" && !seen[remote] {
+				if _, err := remoteDeletionDestinations(remote); err != nil {
+					return err
+				}
+				seen[remote] = true
+			}
+		}
 	}
 
 	if !confirmRemoval(items, opts, cleanup) {
@@ -715,10 +738,13 @@ func deleteRemoteBranches(branch, remote string, deletions []remoteDeletion) err
 			continue
 		}
 		if err := ui.SpinWithOutputContext(fmt.Sprintf("Deleting remote branch %s", ui.Accent(remoteBranch)), func(ctx context.Context, w io.Writer) error {
-			// Select one configured push destination while retaining the named
-			// remote's transport settings, such as receivepack and proxy.
-			return git.RunToContext(ctx, w, "-c", "remote."+remote+".pushurl=", "-c", "remote."+remote+".pushurl="+deletion.url,
-				"push", "--force-with-lease=refs/heads/"+branch+":"+deletion.head, remote, ":refs/heads/"+branch)
+			// A single matching fetch/push URL needs no overrides, even on old
+			// Git. Both paths retain the named remote's transport settings.
+			var args []string
+			if deletion.overrideURL {
+				args = []string{"-c", "remote." + remote + ".pushurl=", "-c", "remote." + remote + ".pushurl=" + deletion.url}
+			}
+			return git.RunToContext(ctx, w, append(args, "push", "--force-with-lease=refs/heads/"+branch+":"+deletion.head, remote, ":refs/heads/"+branch)...)
 		}); err != nil {
 			return fmt.Errorf("local worktree removed, but remote deletion failed for %s at %s: %w", remoteBranch, deletion.url, err)
 		}
