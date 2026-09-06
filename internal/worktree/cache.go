@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 
@@ -21,8 +22,10 @@ type Entry struct {
 
 // List returns all worktrees (excluding the .bare entry) by parsing
 // git worktree list --porcelain.
-func List() ([]Entry, error) {
-	out, err := git.Query("worktree", "list", "--porcelain")
+func List() ([]Entry, error) { return ListContext(context.Background()) }
+
+func ListContext(ctx context.Context) ([]Entry, error) {
+	out, err := git.QueryRawContext(ctx, "worktree", "list", "--porcelain", "-z")
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +41,13 @@ func ParsePorcelain(output string) []Entry {
 
 	var entries []Entry
 	var current Entry
+	bare := false
+	separator := "\n"
+	if strings.Contains(output, "\x00") {
+		separator = "\x00"
+	}
 
-	for line := range strings.SplitSeq(output, "\n") {
+	for line := range strings.SplitSeq(output, separator) {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
 			current.Path = strings.TrimPrefix(line, "worktree ")
@@ -52,6 +60,8 @@ func ParsePorcelain(output string) []Entry {
 		case strings.HasPrefix(line, "branch "):
 			current.Branch = strings.TrimPrefix(line, "branch refs/heads/")
 			current.Detached = false
+		case line == "bare":
+			bare = true
 		case line == "detached":
 			current.Branch = ""
 			current.Detached = true
@@ -62,15 +72,16 @@ func ParsePorcelain(output string) []Entry {
 			current.Prunable = true
 			current.PrunableReason = strings.TrimSpace(strings.TrimPrefix(line, "prunable"))
 		case line == "":
-			if current.Path != "" && filepath.Base(current.Path) != ".bare" {
+			if !bare && current.Path != "" && filepath.Base(current.Path) != ".bare" {
 				entries = append(entries, current)
 			}
 			current = Entry{}
+			bare = false
 		}
 	}
 
 	// Handle last entry (no trailing blank line)
-	if current.Path != "" && filepath.Base(current.Path) != ".bare" {
+	if !bare && current.Path != "" && filepath.Base(current.Path) != ".bare" {
 		entries = append(entries, current)
 	}
 

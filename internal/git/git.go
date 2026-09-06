@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -41,9 +42,11 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 
 	cmd := newCommand(opts.Context, args...)
 	cmd.Dir = opts.Dir
-	if len(opts.Env) > 0 {
-		cmd.Env = append(os.Environ(), opts.Env...)
+	cmd.Env = os.Environ()
+	if opts.Dir != "" {
+		cmd.Env = RepositoryEnv()
 	}
+	cmd.Env = append(cmd.Env, opts.Env...)
 	if opts.Stdin != nil {
 		cmd.Stdin = opts.Stdin
 	}
@@ -65,6 +68,10 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 		} else {
 			out, err = cmd.Output()
 		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			err = fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(exitErr.Stderr)), err)
+		}
 		if opts.Raw {
 			return string(out), err
 		}
@@ -77,6 +84,37 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 		cmd.Stdin = os.Stdin
 	}
 	return "", cmd.Run()
+}
+
+// RepositoryEnv removes inherited repository selectors before changing repos.
+// Explicit ExecOptions.Env overrides are applied afterward.
+func RepositoryEnv() []string {
+	env := os.Environ()
+	for _, key := range []string{"GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX"} {
+		filtered := env[:0]
+		for _, value := range env {
+			if !strings.HasPrefix(value, key+"=") {
+				filtered = append(filtered, value)
+			}
+		}
+		env = filtered
+	}
+	return env
+}
+
+// QueryPath removes Git's record terminator without trimming path characters.
+func QueryPath(args ...string) (string, error) {
+	out, err := QueryRaw(args...)
+	return strings.TrimSuffix(out, "\n"), err
+}
+
+func QueryPathInContext(ctx context.Context, dir string, args ...string) (string, error) {
+	out, err := QueryRawInContext(ctx, dir, args...)
+	return strings.TrimSuffix(out, "\n"), err
+}
+
+func QueryRawInContext(ctx context.Context, dir string, args ...string) (string, error) {
+	return execGit(ExecOptions{Dir: dir, Capture: true, Raw: true, Context: ctx}, args...)
 }
 
 func newCommand(ctx context.Context, args ...string) *exec.Cmd {

@@ -1,11 +1,13 @@
 package worktree
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 )
@@ -128,7 +130,7 @@ func displayNames(entries []Entry) []string {
 
 // BareRoot returns the root directory of the bare repo structure (parent of .bare/).
 func BareRoot() (string, error) {
-	commonDir, err := git.Query("rev-parse", "--git-common-dir")
+	commonDir, err := git.QueryPath("rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", fmt.Errorf("not in a git repository: %w", err)
 	}
@@ -145,16 +147,22 @@ func BareRoot() (string, error) {
 		return "", err
 	}
 
-	// Strip trailing /.bare
-	return strings.TrimSuffix(absDir, string(os.PathSeparator)+".bare"), nil
+	if filepath.Base(absDir) != ".bare" {
+		return "", fmt.Errorf("unsupported repository layout: expected a .bare directory; use git wt migrate for a standard repository")
+	}
+	return filepath.Dir(absDir), nil
 }
 
 // DefaultRemote returns the best remote name for the current repository.
 // If exactly one remote exists, it is returned. With multiple remotes, it
 // checks the current branch's configured remote, then falls back to "origin"
 // if present, then the first remote alphabetically. Returns "" if no remotes.
-func DefaultRemote() string {
-	out, err := git.Query("remote")
+func DefaultRemote() string { return DefaultRemoteIn("") }
+
+func DefaultRemoteIn(dir string) string { return DefaultRemoteInContext(context.Background(), dir) }
+
+func DefaultRemoteInContext(ctx context.Context, dir string) string {
+	out, err := git.QueryInContext(ctx, dir, "remote")
 	if err != nil || out == "" {
 		return ""
 	}
@@ -175,11 +183,15 @@ func DefaultRemote() string {
 	}
 
 	// Check the current branch's configured remote
-	branch, err := git.Query("branch", "--show-current")
+	branch, err := git.QueryInContext(ctx, dir, "branch", "--show-current")
 	if err == nil && branch != "" {
-		configured, err := git.Query("config", fmt.Sprintf("branch.%s.remote", branch))
+		configured, err := git.QueryInContext(ctx, dir, "config", fmt.Sprintf("branch.%s.remote", branch))
 		if err == nil && configured != "" {
-			return configured
+			for _, remote := range remotes {
+				if configured == remote {
+					return remote
+				}
+			}
 		}
 	}
 
@@ -194,26 +206,35 @@ func DefaultRemote() string {
 }
 
 // DefaultBranch returns the default branch name, preferring local lookup over network.
-func DefaultBranch(remote string) string {
+func DefaultBranch(remote string) string { return DefaultBranchIn("", remote) }
+
+func DefaultBranchIn(dir, remote string) string {
+	return DefaultBranchInContext(context.Background(), dir, remote)
+}
+
+func DefaultBranchInContext(ctx context.Context, dir, remote string) string {
 	if remote == "" {
 		return ""
 	}
 
 	// Try local symbolic-ref first (instant, no network)
-	ref, err := git.Query("symbolic-ref", fmt.Sprintf("refs/remotes/%s/HEAD", remote))
+	ref, err := git.QueryInContext(ctx, dir, "symbolic-ref", fmt.Sprintf("refs/remotes/%s/HEAD", remote))
 	if err == nil && ref != "" {
 		return strings.TrimPrefix(ref, fmt.Sprintf("refs/remotes/%s/", remote))
 	}
 
-	// Fall back to network call
-	out, err := git.QueryCombined("remote", "show", remote)
+	// Bound network discovery, including calls from non-interactive commands.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := git.QueryInContext(ctx, dir, "ls-remote", "--symref", remote, "HEAD")
 	if err != nil {
 		return ""
 	}
 	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(line, "HEAD branch:"); ok {
-			return strings.TrimSpace(after)
+		if after, ok := strings.CutPrefix(line, "ref: refs/heads/"); ok {
+			branch, _, _ := strings.Cut(after, "\t")
+			return branch
 		}
 	}
 	return ""

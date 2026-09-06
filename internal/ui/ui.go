@@ -173,20 +173,33 @@ func Confirm(msg string) bool {
 // PromptInput prints a styled prompt and returns the trimmed user input.
 // Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
 func PromptInput(msg string) string {
+	value, _ := PromptInputResult(msg)
+	return value
+}
+
+// PromptInputResult distinguishes accepting a blank default from cancellation.
+func PromptInputResult(msg string) (string, error) {
 	if useSimpleIO() {
 		fmt.Fprintf(os.Stderr, "%s %s ", Accent("?"), msg)
 		reader := getReader()
-		input, _ := reader.ReadString('\n')
-		return normalizeInputValue(input)
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+		return normalizeInputValue(input), nil
 	}
 
 	m := newInputModel(msg, Accent("?"), "")
 	p := NewProgram(m, os.Stderr)
 	result, err := p.Run()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return normalizeInputValue(result.(inputModel).Value())
+	input := result.(inputModel)
+	if input.canceled {
+		return "", context.Canceled
+	}
+	return normalizeInputValue(input.Value()), nil
 }
 
 // PromptDangerous prints a red-styled prompt and returns true if the user's
