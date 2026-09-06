@@ -20,8 +20,8 @@ const (
 
 var (
 	configureRootCommandOnce sync.Once
-	supportedCommandNames    = []string{"add", "agent-skill", "clone", "doctor", "init", "migrate", "remove", "status", "switch", "update"}
-	passthroughCommandNames  = []string{"list", "lock", "unlock", "move", "prune", "repair"}
+	supportedCommandNames    = []string{"add", "agent-skill", "clone", "doctor", "init", "list", "migrate", "remove", "status", "switch", "update"}
+	passthroughCommandNames  = []string{"lock", "unlock", "move", "prune", "repair"}
 )
 
 var rootCmd = &cobra.Command{
@@ -32,8 +32,9 @@ var rootCmd = &cobra.Command{
 Uses a .bare/ directory for git data with each branch in its own worktree
 directory. Run 'git-wt <command> --help' for details on any command.
 
-Native git worktree commands (list, lock, unlock, move, prune, repair) are
-also supported as pass-throughs.`,
+List worktrees with 'list' (alias 'ls'), using native Git output or --json.
+Native git worktree commands (lock, unlock, move, prune, repair) are also
+supported as pass-throughs.`,
 	// Don't show usage on errors from subcommands
 	SilenceUsage: true,
 	// We handle error formatting ourselves
@@ -72,9 +73,6 @@ func runWorktreePassthrough(name string, args []string) error {
 		rawArgs = os.Args[2:]
 	}
 	fullArgs := append([]string{"worktree", name}, rawArgs...)
-	if name == "list" {
-		return git.QueryRun(fullArgs...)
-	}
 	return git.Run(fullArgs...)
 }
 

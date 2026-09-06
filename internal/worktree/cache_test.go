@@ -41,9 +41,9 @@ func TestParsePorcelain(t *testing.T) {
 		prunable       bool
 		prunableReason string
 	}{
-		{0, "/home/user/project/main", "main", "abc1234", false, false, "", false, ""},
-		{1, "/home/user/project/feature-a", "feature-a", "def4567", false, true, "manually locked", false, ""},
-		{2, "/home/user/project/detached-wt", "", "9998887", true, false, "", true, "gitdir file points to non-existent location"},
+		{0, "/home/user/project/main", "main", "abc1234567890abcdef1234567890abcdef123456", false, false, "", false, ""},
+		{1, "/home/user/project/feature-a", "feature-a", "def4567890abcdef1234567890abcdef12345678", false, true, "manually locked", false, ""},
+		{2, "/home/user/project/detached-wt", "", "999888777666555444333222111000aaabbbccc", true, false, "", true, "gitdir file points to non-existent location"},
 	}
 
 	for _, tt := range tests {

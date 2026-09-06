@@ -51,8 +51,9 @@ Inspect repository health and worktrees:
 ```shell
 git wt doctor
 git wt status
-git wt list
-git wt list --porcelain
+git wt list --json
+git wt ls --json
+git wt list --porcelain -z
 ```
 
 Migration is experimental. Stop other writers first. It verifies copied files, index entries, refs, and stashes, and retains the original repository at a printed sibling backup path. Keep the backup until the user has checked the new layout; never delete it automatically. Unsupported layouts or failed verification must stop migration.
@@ -87,8 +88,7 @@ Switch worktrees:
   cd "$(git wt switch)"
   ```
 
-- For an agent workflow, inspect `git wt list` output and `cd` to the exact
-  worktree path instead of invoking the interactive switch picker.
+- For an agent workflow, parse `git wt list --json` or `git wt ls --json` and `cd` to an object's `path` instead of invoking the interactive switch picker. JSON returns an array of non-bare worktrees with full HEAD IDs, branch names, and detached/locked/prunable flags and reasons. Empty results are `[]`; do not combine `--json` with native Git list options.
 
 Removal refuses dirty worktrees and commits without another retained branch or tag. Do not retry failures with `--force` unless the user explicitly authorizes discarding that work. `--gone` and `--sweep` require full merge into the default branch, even if the upstream was deleted. `--delete-remote` follows the target's configured upstream and skips remote deletion when none is configured.
 

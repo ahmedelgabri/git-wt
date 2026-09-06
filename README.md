@@ -36,7 +36,7 @@ separate directories. They are useful for:
 - **Safe cleanup filters** with `git wt remove --sweep`
 - **Repository diagnostics** with `git wt doctor`
 - **Status dashboard** with `git wt status`
-- **Machine-readable Git output** with `git wt list --porcelain -z`
+- **Machine-readable output** with `git wt list --json` or native `--porcelain -z`
 - **Agent skill installer** with `git wt agent-skill`
 - **Dry-run support** for destructive operations
 - **Verified migration with a retained backup** of the original repository
@@ -256,8 +256,13 @@ git wt status
 
 ```bash
 git wt list
-git wt list --porcelain
+git wt ls
+git wt list --json
+git wt ls --json
+git wt list --porcelain -z
 ```
+
+`ls` is an alias for `list`. Without `--json`, native Git options and output pass through unchanged. JSON mode returns an array of non-bare worktrees with absolute paths, full HEAD object IDs, branch names, and detached/locked/prunable metadata. An empty list is `[]`. Do not combine `--json` with native output options such as `--porcelain` or `-z`. See the [JSON schema](docs/safety.md#updates-and-scripting) for field definitions.
 
 ### Update the default branch
 
@@ -307,19 +312,19 @@ Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `c
 
 ## Commands
 
-| Command             | Description                                                |
-| ------------------- | ---------------------------------------------------------- |
-| `clone <url>`       | Clone a repo with the bare worktree structure              |
-| `migrate`           | Convert an existing repo to the bare worktree structure    |
-| `add [options] ...` | Create a new worktree                                      |
-| `remove` / `rm`     | Remove worktrees directly or by safe cleanup filters       |
-| `doctor`            | Run repository diagnostics                                 |
-| `agent-skill`       | Install the git-wt agent skill                             |
-| `init <shell>`      | Print shell integration for automatic directory switching  |
-| `status`            | Show a compact dashboard for linked worktrees              |
-| `list`              | List worktrees with table, JSON, or passthrough Git output |
-| `switch`            | Interactively select a worktree                            |
-| `update` / `u`      | Fetch remotes and update the default branch                |
+| Command             | Description                                               |
+| ------------------- | --------------------------------------------------------- |
+| `clone <url>`       | Clone a repo with the bare worktree structure             |
+| `migrate`           | Convert an existing repo to the bare worktree structure   |
+| `add [options] ...` | Create a new worktree                                     |
+| `remove` / `rm`     | Remove worktrees directly or by safe cleanup filters      |
+| `doctor`            | Run repository diagnostics                                |
+| `agent-skill`       | Install the git-wt agent skill                            |
+| `init <shell>`      | Print shell integration for automatic directory switching |
+| `status`            | Show a compact dashboard for linked worktrees             |
+| `list` / `ls`       | List worktrees with native Git output or JSON             |
+| `switch`            | Interactively select a worktree                           |
+| `update` / `u`      | Fetch remotes and update the default branch               |
 
 Native `git worktree` commands (`lock`, `unlock`, `move`, `prune`, `repair`) are also supported as pass-through commands. `add` requires the `.bare` layout and rejects standard `.git` directories with a migration hint.
 

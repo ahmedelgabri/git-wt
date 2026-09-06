@@ -33,6 +33,21 @@ As with native Git, separate worktree and remote operations are not one atomic t
 
 `git wt update` fetches remotes and fast-forwards the default branch. It does not merge divergent histories or prune local-only tags.
 
-`git wt list` is a native Git passthrough. Use `git wt list --porcelain -z` for machine-readable records; `--json` is not supported. Parse NUL-delimited records rather than splitting paths on whitespace or newlines.
+`git wt ls` is an alias for `git wt list`. Without `--json`, both commands pass native Git options and output through unchanged. For native machine-readable records, use `git wt list --porcelain -z` and parse NUL-delimited records rather than splitting paths on whitespace or newlines.
+
+`git wt list --json` and `git wt ls --json` emit a JSON array of non-bare worktrees in Git's listing order. The bare database entry is excluded, while a standard repository's main worktree is included. Empty results are `[]`. Every object always contains these fields:
+
+| Field             | Type    | Meaning                                                            |
+| ----------------- | ------- | ------------------------------------------------------------------ |
+| `path`            | string  | Absolute worktree path as reported by Git, including missing paths |
+| `branch`          | string  | Local branch name without `refs/heads/`; empty for detached HEAD   |
+| `head`            | string  | Full HEAD object ID; Git reports an all-zero ID for an unborn HEAD |
+| `detached`        | boolean | Whether the worktree has detached HEAD                             |
+| `locked`          | boolean | Whether the worktree is locked                                     |
+| `locked_reason`   | string  | Lock reason, or an empty string                                    |
+| `prunable`        | boolean | Whether Git marks the worktree metadata prunable                   |
+| `prunable_reason` | string  | Git's prune reason, or an empty string                             |
+
+JSON escapes tabs, newlines, and quotes in paths and reasons. Invalid UTF-8 metadata returns an error instead of silently changing paths; use native porcelain for those repositories. JSON mode works from worktree subdirectories and in `DEBUG` mode without adding human output to stdout. Errors return non-zero and are written to stderr. `--json` cannot be combined with native options such as `--porcelain`, `-z`, `--verbose`, or `--expire`; `--json=false` selects native output.
 
 `git wt add` prints its created path on stdout and sends human output to stderr. Accepting a blank path uses the suggested default. Escape, Ctrl-C, and EOF cancel input instead of accepting that default. `add` requires the `.bare` layout; it will not create worktrees inside a standard repository's `.git` directory.

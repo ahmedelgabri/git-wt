@@ -2,7 +2,6 @@ package worktree
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -12,7 +11,7 @@ import (
 type Entry struct {
 	Path           string
 	Branch         string
-	Head           string // short SHA (7 chars)
+	Head           string // full object ID as reported by Git
 	Detached       bool
 	Locked         bool
 	LockedReason   string
@@ -52,11 +51,7 @@ func ParsePorcelain(output string) []Entry {
 		case strings.HasPrefix(line, "worktree "):
 			current.Path = strings.TrimPrefix(line, "worktree ")
 		case strings.HasPrefix(line, "HEAD "):
-			sha := strings.TrimPrefix(line, "HEAD ")
-			if len(sha) > 7 {
-				sha = sha[:7]
-			}
-			current.Head = sha
+			current.Head = strings.TrimPrefix(line, "HEAD ")
 		case strings.HasPrefix(line, "branch "):
 			current.Branch = strings.TrimPrefix(line, "branch refs/heads/")
 			current.Detached = false
@@ -65,14 +60,14 @@ func ParsePorcelain(output string) []Entry {
 		case line == "detached":
 			current.Branch = ""
 			current.Detached = true
-		case strings.HasPrefix(line, "locked"):
+		case line == "locked" || strings.HasPrefix(line, "locked "):
 			current.Locked = true
-			current.LockedReason = strings.TrimSpace(strings.TrimPrefix(line, "locked"))
-		case strings.HasPrefix(line, "prunable"):
+			current.LockedReason = strings.TrimPrefix(strings.TrimPrefix(line, "locked"), " ")
+		case line == "prunable" || strings.HasPrefix(line, "prunable "):
 			current.Prunable = true
-			current.PrunableReason = strings.TrimSpace(strings.TrimPrefix(line, "prunable"))
+			current.PrunableReason = strings.TrimPrefix(strings.TrimPrefix(line, "prunable"), " ")
 		case line == "":
-			if !bare && current.Path != "" && filepath.Base(current.Path) != ".bare" {
+			if !bare && current.Path != "" {
 				entries = append(entries, current)
 			}
 			current = Entry{}
@@ -81,7 +76,7 @@ func ParsePorcelain(output string) []Entry {
 	}
 
 	// Handle last entry (no trailing blank line)
-	if !bare && current.Path != "" && filepath.Base(current.Path) != ".bare" {
+	if !bare && current.Path != "" {
 		entries = append(entries, current)
 	}
 
