@@ -44,6 +44,9 @@ func CopyDirContext(ctx context.Context, src, dst string, excludes []string) err
 		if err != nil {
 			return err
 		}
+		if err := CheckMetadata(path); err != nil {
+			return err
+		}
 		if existing, err := os.Lstat(target); err == nil {
 			if !d.IsDir() || !existing.IsDir() {
 				// Refuse to recursively discard unexpected destination directories.
@@ -66,7 +69,10 @@ func CopyDirContext(ctx context.Context, src, dst string, excludes []string) err
 			if err != nil {
 				return err
 			}
-			return os.Symlink(link, target)
+			if err := os.Symlink(link, target); err != nil {
+				return err
+			}
+			return CopyExtendedAttributes(path, target)
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("unsupported file type: %s", path)
@@ -83,6 +89,9 @@ func CopyDirContext(ctx context.Context, src, dst string, excludes []string) err
 			return err
 		}
 		target := filepath.Join(dst, dirs[i])
+		if err := CopyExtendedAttributes(filepath.Join(src, dirs[i]), target); err != nil {
+			return err
+		}
 		if err := os.Chmod(target, info.Mode().Perm()); err != nil {
 			return err
 		}
@@ -104,7 +113,7 @@ func copyFileContext(ctx context.Context, src, dst string) error {
 	}
 	defer in.Close()
 	// Exclusive creation makes a raced-in symlink an error, never a write target.
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm()|0o600)
 	if err != nil {
 		return err
 	}
@@ -115,6 +124,9 @@ func copyFileContext(ctx context.Context, src, dst string) error {
 	}
 	if closeErr != nil {
 		return closeErr
+	}
+	if err := CopyExtendedAttributes(src, dst); err != nil {
+		return err
 	}
 	if err := os.Chmod(dst, info.Mode().Perm()); err != nil {
 		return err

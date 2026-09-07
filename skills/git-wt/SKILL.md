@@ -56,7 +56,7 @@ git wt ls --json
 git wt list --porcelain -z
 ```
 
-Migration is experimental. Stop other writers first. It verifies copied files, index entries, refs, and stashes, and retains the original repository at a printed sibling backup path. Keep the backup until the user has checked the new layout; never delete it automatically. Unsupported layouts or failed verification must stop migration.
+Migration is experimental. Stop other writers first. It restores per-worktree Git metadata into the linked Git directory, verifies copied files and extended attributes, index entries, refs, and reflogs, and retains the original repository at a printed sibling backup path. ACLs, unsupported ref backends such as reftable, and metadata that cannot be inspected or preserved must stop migration; never strip metadata to bypass a refusal. Keep the backup until the user has checked the new layout; never delete it automatically. Unsupported layouts or failed verification must stop migration.
 
 Clone or migrate repositories:
 

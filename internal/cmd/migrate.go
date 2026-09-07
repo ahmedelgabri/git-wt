@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -38,6 +39,8 @@ type migratePlan struct {
 	index         string
 	stashes       string
 	files         map[string]fsutil.FileState
+	gitFiles      map[string]fsutil.FileState
+	objectFiles   map[string]fsutil.FileState
 }
 
 func runMigrate(cmd *cobra.Command, args []string) error {
@@ -154,6 +157,14 @@ func buildMigratePlan(ctx context.Context, root string) (migratePlan, error) {
 	if err != nil {
 		return plan, err
 	}
+	plan.gitFiles, err = fsutil.Snapshot(ctx, filepath.Join(root, ".git"), []string{"objects"})
+	if err != nil {
+		return plan, err
+	}
+	plan.objectFiles, err = fsutil.SnapshotMetadata(ctx, filepath.Join(root, ".git", "objects"), nil)
+	if err != nil {
+		return plan, err
+	}
 	plan.files, err = fsutil.Snapshot(ctx, root, []string{".git"})
 	return plan, err
 }
@@ -166,6 +177,13 @@ func preflightMigrateRepo(root string) error {
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("unsupported repository layout: %s must be a directory", gitPath)
+	}
+	for _, control := range []string{"commondir", "gitdir"} {
+		if _, err := os.Lstat(filepath.Join(gitPath, control)); err == nil {
+			return fmt.Errorf("unsupported Git layout: %s contains linked-worktree control file %s", gitPath, control)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
 	}
 	if _, err := os.Stat(filepath.Join(root, ".gitmodules")); err == nil {
 		return fmt.Errorf("repositories with submodules are not supported by migrate")
@@ -194,6 +212,9 @@ func preflightMigrateRepo(root string) error {
 			return fmt.Errorf("repositories using %s are not supported by migrate", item.reason)
 		}
 	}
+	if format, _ := git.QueryIn(root, "config", "--get", "extensions.refStorage"); format != "" && format != "files" {
+		return fmt.Errorf("migration does not support the %s ref storage format", format)
+	}
 	if enabled, _ := git.QueryIn(root, "config", "--bool", "extensions.worktreeConfig"); enabled == "true" {
 		return fmt.Errorf("repositories using per-worktree config are not supported by migrate")
 	}
@@ -211,7 +232,7 @@ func preflightMigrateRepo(root string) error {
 		if strings.HasSuffix(entry.Name(), ".lock") {
 			return fmt.Errorf("git lock present at %s; stop other Git operations before migrating", path)
 		}
-		return nil
+		return fsutil.CheckMetadata(path)
 	})
 }
 
@@ -250,33 +271,11 @@ func buildMigratedStructure(ctx context.Context, plan migratePlan, dest string) 
 	if err := fsutil.CopyDirContext(ctx, plan.repoRoot, wt, []string{".git"}); err != nil {
 		return err
 	}
-	gitDir, err := git.QueryPathInContext(ctx, wt, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return err
-	}
-	index := filepath.Join(dest, ".bare", "index")
-	if _, err := os.Stat(index); err == nil {
-		if err := copyFileSimple(index, filepath.Join(gitDir, "index")); err != nil {
-			return err
-		}
-		shared, err := filepath.Glob(filepath.Join(dest, ".bare", "sharedindex.*"))
-		if err != nil {
-			return err
-		}
-		for _, path := range shared {
-			if err := copyFileSimple(path, filepath.Join(gitDir, filepath.Base(path))); err != nil {
-				return err
-			}
-		}
-		if _, err := git.RunInWithOutputContext(ctx, wt, "update-index", "--no-split-index"); err != nil {
-			return err
-		}
-	}
-	return nil
+	return copyMigrationWorktreeMetadata(ctx, plan, wt)
 }
 
 func createMigrationWorktree(ctx context.Context, root, branch, remote string, empty bool) error {
-	args := []string{"-c", "core.hooksPath=/dev/null", "worktree", "add"}
+	args := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "worktree", "add"}
 	if empty {
 		args = append(args, "--no-checkout")
 	}
@@ -350,7 +349,7 @@ func migrationRefs(ctx context.Context, root string) (string, error) {
 }
 
 func migrationIndex(ctx context.Context, root string) (string, error) {
-	return git.QueryRawInContext(ctx, root, "ls-files", "--stage", "-z")
+	return git.QueryRawInContext(ctx, root, "-c", "core.fsmonitor=false", "--no-optional-locks", "ls-files", "--stage", "-z")
 }
 
 func migrationStashes(ctx context.Context, root string) (string, error) {
@@ -358,6 +357,9 @@ func migrationStashes(ctx context.Context, root string) (string, error) {
 }
 
 func verifyMigration(ctx context.Context, plan migratePlan, dest string) error {
+	if err := verifyMigrationState(ctx, plan, dest); err != nil {
+		return err
+	}
 	// Detect changes to the source while preparation was running.
 	refs, err := migrationRefs(ctx, plan.repoRoot)
 	if err != nil {
@@ -377,20 +379,35 @@ func verifyMigration(ctx context.Context, plan migratePlan, dest string) error {
 	if err := fsutil.VerifySnapshot(ctx, plan.repoRoot, []string{".git"}, plan.files); err != nil {
 		return err
 	}
-	return verifyMigrationState(ctx, plan, dest)
+	if err := fsutil.VerifySnapshot(ctx, filepath.Join(plan.repoRoot, ".git"), []string{"objects"}, plan.gitFiles); err != nil {
+		return err
+	}
+	objects, err := fsutil.SnapshotMetadata(ctx, filepath.Join(plan.repoRoot, ".git", "objects"), nil)
+	if err != nil {
+		return err
+	}
+	if !maps.Equal(objects, plan.objectFiles) {
+		return fmt.Errorf("source Git object metadata changed during migration; original left untouched")
+	}
+	return nil
 }
 
 func verifyMigrationState(ctx context.Context, plan migratePlan, dest string) error {
 	wt := filepath.Join(dest, plan.currentBranch)
+	// Run Git's checks before the final filesystem snapshots. Even read-only
+	// commands can refresh caches; optional index writes are disabled below.
+	if _, err := git.QueryInContext(ctx, wt, "-c", "core.fsmonitor=false", "--no-optional-locks", "status", "--porcelain=v2", "-z"); err != nil {
+		return err
+	}
+	if out, err := git.QueryInContext(ctx, wt, "-c", "core.fsmonitor=false", "--no-optional-locks", "fsck", "--connectivity-only", "--no-dangling"); err != nil {
+		return fmt.Errorf("migration object verification failed: %s: %w", out, err)
+	}
 	branch, err := git.QueryInContext(ctx, wt, "branch", "--show-current")
 	if err != nil {
 		return err
 	}
 	if branch != plan.currentBranch {
 		return fmt.Errorf("migration validation failed: expected branch %s, got %s", plan.currentBranch, branch)
-	}
-	if err := fsutil.VerifySnapshot(ctx, wt, []string{".git"}, plan.files); err != nil {
-		return err
 	}
 	index, err := migrationIndex(ctx, wt)
 	if err != nil {
@@ -403,7 +420,7 @@ func verifyMigrationState(ctx context.Context, plan migratePlan, dest string) er
 	if index != plan.index || stashes != plan.stashes {
 		return fmt.Errorf("migration validation failed: index or stash entries changed")
 	}
-	refs, err := migrationRefs(ctx, dest)
+	refs, err := migrationRefs(ctx, wt)
 	if err != nil {
 		return err
 	}
@@ -416,13 +433,10 @@ func verifyMigrationState(ctx context.Context, plan migratePlan, dest string) er
 			return fmt.Errorf("migration validation failed: missing or changed ref %s", ref)
 		}
 	}
-	if _, err := git.QueryInContext(ctx, wt, "status", "--porcelain=v2", "-z"); err != nil {
+	if err := fsutil.VerifySnapshot(ctx, wt, []string{".git"}, plan.files); err != nil {
 		return err
 	}
-	if out, err := git.QueryInContext(ctx, dest, "fsck", "--connectivity-only", "--no-dangling"); err != nil {
-		return fmt.Errorf("migration object verification failed: %s: %w", out, err)
-	}
-	return nil
+	return verifyMigrationMetadata(ctx, plan, wt)
 }
 
 // Report what is actually left after finalization and rollback. Empty recovery
@@ -489,26 +503,6 @@ func validateMigratedLayout(root string, required []string) error {
 		}
 	}
 	return nil
-}
-
-func copyFileSimple(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	file, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
-	if err != nil {
-		return err
-	}
-	_, writeErr := file.Write(data)
-	return errors.Join(writeErr, file.Close())
 }
 
 type migrationMoves struct{ rename func(string, string) error }

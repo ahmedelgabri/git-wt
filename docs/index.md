@@ -108,7 +108,7 @@ git wt list --porcelain -z
 
 ## Safety
 
-Migration is experimental, verifies copied state, and retains the original repository as a sibling backup. Stop other writers first and keep the backup until you have checked the new worktrees. Removal protects tracked modifications, non-ignored untracked files, and commits without another retained ref; discarding them requires `--force` with an explicit target. Ignored files, including build output and ignored `.env` files, do not block removal or cleanup and are deleted with the worktree. Cleanup filters never accept `--force`, and a gone upstream alone is not a deletion candidate. Remote deletion follows each target's configured upstream and checks for concurrent changes. Updates respect Git's configured tag-pruning and pull strategy, including one-off `git -c` overrides. See [migration and removal safety](safety.md) for details and recovery guidance.
+Migration is experimental, restores per-worktree Git metadata, verifies copied state and extended attributes, and retains the original repository as a sibling backup. ACLs and unpreservable metadata stop migration. Stop other writers first and keep the backup until you have checked the new worktrees. Removal protects tracked modifications, non-ignored untracked files, and commits without another retained ref; discarding them requires `--force` with an explicit target. Ignored files, including build output and ignored `.env` files, do not block removal or cleanup and are deleted with the worktree. Cleanup filters never accept `--force`, and a gone upstream alone is not a deletion candidate. Remote deletion follows each target's configured upstream and checks for concurrent changes. Updates respect Git's configured tag-pruning and pull strategy, including one-off `git -c` overrides. See [migration and removal safety](safety.md) for details and recovery guidance.
 
 ## Hooks
 
@@ -146,7 +146,7 @@ Each configured value runs with `sh -c`. Repeated `git config --add` values run 
 
 Before-hooks are not transactional: the subsequent Git operation can still fail after a hook succeeds, so side effects should be idempotent. After-hook failures cannot roll back an operation that already completed. Removing the current worktree or a locked worktree is rejected before any hook runs; for stale, missing, or prunable worktrees the removal proceeds with the hooks skipped. `DEBUG=1` echoes hooks instead of running them.
 
-Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `clone` or `migrate` do not trigger git-wt add hooks. Migration also suppresses native checkout hooks while building the new layout.
+Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `clone` or `migrate` do not trigger git-wt add hooks. Migration suppresses native hooks while creating worktrees and restoring Git metadata.
 
 ## Commands
 

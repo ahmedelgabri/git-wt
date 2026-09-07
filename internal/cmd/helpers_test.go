@@ -89,40 +89,6 @@ func TestFinalizeMigrationRollbackOnValidationFailure(t *testing.T) {
 	}
 }
 
-func TestCopyFileSimple(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "src.txt")
-	dst := filepath.Join(t.TempDir(), "dst.txt")
-
-	os.WriteFile(src, []byte("content"), 0o644)
-
-	if err := copyFileSimple(src, dst); err != nil {
-		t.Fatalf("copyFileSimple error: %v", err)
-	}
-
-	data, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("read dst: %v", err)
-	}
-	if string(data) != "content" {
-		t.Errorf("dst content = %q, want %q", data, "content")
-	}
-
-	info, err := os.Stat(dst)
-	if err != nil {
-		t.Fatalf("stat dst: %v", err)
-	}
-	if info.Mode().Perm() != 0o644 {
-		t.Errorf("permissions = %o, want 644", info.Mode().Perm())
-	}
-}
-
-func TestCopyFileSimpleNonExistent(t *testing.T) {
-	err := copyFileSimple(filepath.Join(t.TempDir(), "nonexistent"), filepath.Join(t.TempDir(), "dst"))
-	if err == nil {
-		t.Error("copyFileSimple with nonexistent src should return error")
-	}
-}
-
 func TestMigrationRestoreNamedEntries(t *testing.T) {
 	backup := t.TempDir()
 	repoRoot := t.TempDir()

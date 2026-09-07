@@ -157,7 +157,7 @@ cd existing-repo
 git wt migrate
 ```
 
-Migration is experimental. Stop other Git operations and file writers first. It copies the complete Git database, including packed refs, stashes, reflogs, hooks, and local configuration, then restores the current worktree without checking out committed files over local deletions. It verifies file contents and modes, index entries, refs, stashes, and object connectivity before accepting the new layout.
+Migration is experimental. Stop other Git operations and file writers first. It copies the complete Git database, including packed refs, stashes, reflogs, hooks, and local configuration, then restores the current worktree without checking out committed files over local deletions. It restores worktree-specific metadata, including HEAD reflogs, pseudorefs, and private ref namespaces, into the linked worktree's Git directory. It verifies file contents, modes, extended attributes, index entries, refs, stashes, and object connectivity before accepting the new layout. ACLs and filesystem metadata that cannot be inspected or preserved stop migration rather than being discarded.
 
 The original repository remains in a sibling `<repo>-backup-*` directory. Keep it until you have checked your worktrees and configuration. Migration requires enough free space for a full copy and refuses unsupported layouts or in-progress Git operations. See [migration and removal safety](docs/safety.md) for limitations and recovery.
 
@@ -314,7 +314,7 @@ Each configured value runs with `sh -c`. Repeated `git config --add` values run 
 
 Before-hooks are not transactional: the subsequent Git operation can still fail after a hook succeeds, so side effects should be idempotent. After-hook failures cannot roll back an operation that already completed. Removing the current worktree or a locked worktree is rejected before any hook runs; for stale, missing, or prunable worktrees the removal proceeds with the hooks skipped. `DEBUG=1` echoes hooks instead of running them.
 
-Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `clone` or `migrate` do not trigger git-wt add hooks. Migration also suppresses native checkout hooks while building the new layout.
+Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `clone` or `migrate` do not trigger git-wt add hooks. Migration suppresses native hooks while creating worktrees and restoring Git metadata.
 
 ## Commands
 
