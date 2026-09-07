@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ahmedelgabri/git-wt/internal/testutil"
 	"golang.org/x/sys/unix"
 )
 
 func TestCopyAndVerifyExtendedAttributes(t *testing.T) {
 	src, dst := t.TempDir(), t.TempDir()
+	testutil.RequireXattrs(t, src)
 	if err := os.WriteFile(filepath.Join(src, "file"), []byte("contents"), 0o640); err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +60,7 @@ func TestCopyAndVerifyExtendedAttributes(t *testing.T) {
 
 func TestCopySymlinkMetadataDoesNotFollowTarget(t *testing.T) {
 	src, dst := t.TempDir(), t.TempDir()
+	testutil.RequireXattrs(t, src)
 	target := filepath.Join(t.TempDir(), "external")
 	if err := os.WriteFile(target, nil, 0o600); err != nil {
 		t.Fatal(err)

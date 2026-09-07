@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ahmedelgabri/git-wt/internal/testutil"
 	"golang.org/x/sys/unix"
 )
 
 func TestMigrationDetectsSourceGitAttributeChanges(t *testing.T) {
 	root := initGitRepo(t)
+	testutil.RequireXattrs(t, root)
 	plan, err := buildMigratePlan(context.Background(), root)
 	if err != nil {
 		t.Fatal(err)
@@ -47,6 +49,7 @@ func TestMigrationRejectsLostXattrsBeforeAndAfterPromotion(t *testing.T) {
 			}
 			t.Run(location.source+"/"+phase, func(t *testing.T) {
 				testMigrationMetadataDamage(t, promoted, func(root string) error {
+					testutil.RequireXattrs(t, root)
 					return unix.Lsetxattr(filepath.Join(root, location.source), "user.migration-test", []byte("keep me"), 0)
 				}, func(dest string) error {
 					return unix.Lremovexattr(filepath.Join(dest, location.dest), "user.migration-test")
