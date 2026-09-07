@@ -13,7 +13,7 @@ import (
 )
 
 func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filters removeFilters) ([]removalItem, error) {
-	var base string
+	var base cleanupBase
 	if filters.merged || filters.gone {
 		var err error
 		base, err = resolveCleanupBase(ctx)
@@ -21,7 +21,8 @@ func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filter
 			return nil, err
 		}
 	}
-	defaultBranch := strings.TrimPrefix(base, "refs/heads/")
+	defaultBranch := base.protectedBranch
+	baseLabel := strings.TrimPrefix(base.ref, "refs/heads/")
 	currentRoot, _ := currentWorktreeRoot()
 
 	candidates := make([]removalItem, 0)
@@ -73,21 +74,21 @@ func findRemovalCandidates(ctx context.Context, entries []worktree.Entry, filter
 			if err != nil {
 				return nil, err
 			}
-			if gone && defaultBranch != "" && branchMergedIntoDefault(entry.Branch, base) {
+			if gone && defaultBranch != "" && branchMergedIntoDefault(entry.Branch, base.ref) {
 				candidates = append(candidates, removalItem{
 					Action: removalActionRemove,
 					Target: newRemovalTargetFromEntry(entry),
-					Reason: "upstream is gone; fully merged into " + defaultBranch,
+					Reason: "upstream is gone; fully merged into " + baseLabel,
 				})
 				continue
 			}
 		}
 
-		if filters.merged && defaultBranch != "" && branchHasRemoteUpstream(entry.Branch) && branchMergedIntoDefault(entry.Branch, base) {
+		if filters.merged && defaultBranch != "" && branchHasRemoteUpstream(entry.Branch) && branchMergedIntoDefault(entry.Branch, base.ref) {
 			candidates = append(candidates, removalItem{
 				Action: removalActionRemove,
 				Target: newRemovalTargetFromEntry(entry),
-				Reason: fmt.Sprintf("fully merged into %s", defaultBranch),
+				Reason: fmt.Sprintf("fully merged into %s", baseLabel),
 			})
 		}
 	}

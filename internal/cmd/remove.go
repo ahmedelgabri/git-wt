@@ -65,10 +65,13 @@ Cleanup filters let you select safe bulk candidates:
   --stale   missing, unlocked worktree paths with attached branches
   --sweep   shorthand for --merged --gone --stale
 
-Set an explicit local cleanup base with:
+Set an explicit cleanup base with either:
   git config wt.cleanupBase refs/heads/main
-Otherwise cleanup discovers the remote default branch. A local remote (.) needs
-an explicit base. Raw URL discovery respects wt.remoteTimeout.
+  git config wt.cleanupBase refs/remotes/origin/main
+Remote-tracking bases use the last fetched tip without an implicit fetch, and
+protect the same-name local branch if it exists. Without wt.cleanupBase,
+cleanup discovers the remote default branch. A local remote (.) needs an explicit base.
+Raw URL discovery respects wt.remoteTimeout.
 
 Remote deletion with multiple push URLs or differing fetch/push URLs requires
 Git 2.46 or newer. One matching fetch/push URL needs no destination overrides.
