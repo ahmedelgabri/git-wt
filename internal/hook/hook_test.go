@@ -68,6 +68,23 @@ func TestRunSetsLifecycleEnvironmentAndDirectory(t *testing.T) {
 	}
 }
 
+func TestRunInheritsGitEnvironment(t *testing.T) {
+	keys := []string{"GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX", "GIT_CONFIG_PARAMETERS", "GIT_SSH_COMMAND"}
+	for _, key := range keys {
+		t.Setenv(key, "user value for "+key)
+	}
+	var output bytes.Buffer
+	for _, key := range keys {
+		output.Reset()
+		if err := Run(context.Background(), []string{`printf '%s' "$` + key + `"`}, Invocation{Dir: t.TempDir()}, &output); err != nil {
+			t.Fatal(err)
+		}
+		if want := os.Getenv(key); output.String() != want {
+			t.Fatalf("%s: got %q, want %q", key, output.String(), want)
+		}
+	}
+}
+
 func TestRunStopsAfterFirstFailure(t *testing.T) {
 	dir := t.TempDir()
 	invocation := Invocation{Event: AfterAdd, Dir: dir}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,6 +79,7 @@ func init() {
 
 func buildStatusRows(entries []worktree.Entry, currentRoot string) []statusRow {
 	rows := make([]statusRow, len(entries))
+	bareRoot, _ := worktree.BareRoot()
 	for i, entry := range entries {
 		current := samePath(entry.Path, currentRoot)
 		branch := entry.Branch
@@ -99,7 +101,7 @@ func buildStatusRows(entries []worktree.Entry, currentRoot string) []statusRow {
 			flags = append(flags, ui.Subtle("—"))
 		}
 
-		workspace := workspaceName(entry.Path)
+		workspace := workspaceNameWithRoot(entry.Path, bareRoot)
 		if current {
 			workspace = ui.Accent(workspace)
 		}
@@ -108,7 +110,7 @@ func buildStatusRows(entries []worktree.Entry, currentRoot string) []statusRow {
 			entryPath: entry.Path,
 			workspace: workspace,
 			branch:    branch,
-			path:      displayWorktreePath(entry.Path),
+			path:      displayWorktreePathWithRoot(entry.Path, bareRoot),
 			flags:     strings.Join(flags, ", "),
 			current:   current,
 		}
@@ -170,13 +172,13 @@ func statusCounts(rows []statusRow) (clean, dirty, errors int) {
 
 func runStatusSync(rows []statusRow) error {
 	for i := range rows {
-		fetchStatusInto(&rows[i])
+		fetchStatusInto(context.Background(), &rows[i])
 	}
 	return printStatusTable(rows)
 }
 
-func fetchStatusInto(row *statusRow) {
-	statusOut, err := git.QueryIn(row.entryPath, "status", "--porcelain=v2", "--branch")
+func fetchStatusInto(ctx context.Context, row *statusRow) {
+	statusOut, err := git.QueryInContext(ctx, row.entryPath, "status", "--porcelain=v2", "--branch")
 	if err != nil {
 		row.loaded = true
 		row.fetchErr = err
@@ -184,7 +186,7 @@ func fetchStatusInto(row *statusRow) {
 	}
 	upstream, ahead, behind, dirty := parseBranchStatus(statusOut)
 	lastCommit := "n/a"
-	if ts, err := git.QueryIn(row.entryPath, "log", "-1", "--format=%ct"); err == nil && ts != "" {
+	if ts, err := git.QueryInContext(ctx, row.entryPath, "log", "-1", "--format=%ct"); err == nil && ts != "" {
 		lastCommit = humanizeCommitAge(ts)
 	}
 	row.loaded = true
@@ -242,10 +244,16 @@ type statusModel struct {
 	pending int
 	phase   ui.AsyncPhase
 	err     error
+	ctx     context.Context
+	cancel  context.CancelFunc
+	slots   chan struct{}
 }
 
 func runStatusAsync(rows []statusRow) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	m := statusModel{
+		ctx: ctx, cancel: cancel, slots: make(chan struct{}, 8),
 		spinner: spinner.New(
 			spinner.WithSpinner(spinner.MiniDot),
 			spinner.WithStyle(ui.ForegroundStyle(ui.SubtleColor())),
@@ -269,30 +277,22 @@ func (m statusModel) Init() tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(m.rows)+1)
 	cmds = append(cmds, m.spinner.Tick)
 	for i, row := range m.rows {
-		cmds = append(cmds, fetchWorktreeStatusCmd(i, row.entryPath))
+		cmds = append(cmds, fetchWorktreeStatusCmd(m.ctx, m.slots, i, row.entryPath))
 	}
 	return tea.Batch(cmds...)
 }
 
-func fetchWorktreeStatusCmd(index int, path string) tea.Cmd {
+func fetchWorktreeStatusCmd(ctx context.Context, slots chan struct{}, index int, path string) tea.Cmd {
 	return func() tea.Msg {
-		statusOut, err := git.QueryIn(path, "status", "--porcelain=v2", "--branch")
-		if err != nil {
-			return statusResultMsg{index: index, err: err}
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			return statusResultMsg{index: index, err: ctx.Err()}
 		}
-		upstream, ahead, behind, dirty := parseBranchStatus(statusOut)
-		lastCommit := "n/a"
-		if ts, err := git.QueryIn(path, "log", "-1", "--format=%ct"); err == nil && ts != "" {
-			lastCommit = humanizeCommitAge(ts)
-		}
-		return statusResultMsg{
-			index:      index,
-			dirty:      dirty,
-			upstream:   upstream,
-			ahead:      ahead,
-			behind:     behind,
-			lastCommit: lastCommit,
-		}
+		defer func() { <-slots }()
+		row := statusRow{entryPath: path}
+		fetchStatusInto(ctx, &row)
+		return statusResultMsg{index: index, dirty: row.dirty, upstream: row.upstream, ahead: row.ahead, behind: row.behind, lastCommit: row.lastCommit, err: row.fetchErr}
 	}
 }
 
@@ -318,6 +318,9 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
+			if m.cancel != nil {
+				m.cancel()
+			}
 			m.err = fmt.Errorf("interrupted")
 			m.phase = ui.AsyncCanceled
 			return m, tea.Quit
@@ -398,6 +401,7 @@ func parseBranchStatus(output string) (upstream string, ahead, behind int, dirty
 		switch {
 		case strings.HasPrefix(line, "# branch.upstream "):
 			upstream = strings.TrimPrefix(line, "# branch.upstream ")
+			ahead, behind = -1, -1
 		case strings.HasPrefix(line, "# branch.ab "):
 			fields := strings.Fields(line)
 			if len(fields) >= 4 {
@@ -423,6 +427,8 @@ func formatSyncState(upstream string, ahead, behind int) string {
 		return ui.Subtle("local only")
 	}
 	switch {
+	case ahead < 0 || behind < 0:
+		return ui.Yellow("upstream unavailable")
 	case ahead == 0 && behind == 0:
 		return ui.Green("✓ synced")
 	case ahead > 0 && behind > 0:
@@ -435,7 +441,12 @@ func formatSyncState(upstream string, ahead, behind int) string {
 }
 
 func displayWorktreePath(path string) string {
-	if bareRoot, err := worktree.BareRoot(); err == nil && bareRoot != "" {
+	root, _ := worktree.BareRoot()
+	return displayWorktreePathWithRoot(path, root)
+}
+
+func displayWorktreePathWithRoot(path, bareRoot string) string {
+	if bareRoot != "" {
 		if rel, err := filepath.Rel(bareRoot, path); err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
 			if rel == "." {
 				return ui.Path(".")
@@ -450,8 +461,8 @@ func ansiLess(s string) string {
 	return ansi.Strip(s)
 }
 
-func workspaceName(path string) string {
-	if bareRoot, err := worktree.BareRoot(); err == nil && bareRoot != "" {
+func workspaceNameWithRoot(path, bareRoot string) string {
+	if bareRoot != "" {
 		if rel, err := filepath.Rel(bareRoot, path); err == nil {
 			return rel
 		}

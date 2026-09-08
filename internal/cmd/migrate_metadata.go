@@ -1,0 +1,233 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/ahmedelgabri/git-wt/internal/fsutil"
+	"github.com/ahmedelgabri/git-wt/internal/git"
+)
+
+type migrationMetadataLayout struct {
+	common, private string
+	shared          map[string]bool
+	excludes        []string
+}
+
+// These shared directories also contain worktree-local entries. Split at their
+// immediate children, then let Git decide ownership rather than maintaining a
+// list of pseudorefs or assuming everything except the index is shared.
+func mixedGitDirectory(path string) bool {
+	return path == "." || path == "refs" || path == "logs" || path == "logs/refs" || path == "info"
+}
+
+func migrationMetadataRoot(path string) string {
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	root := parts[0]
+	for _, part := range parts[1:] {
+		if !mixedGitDirectory(root) {
+			break
+		}
+		root += "/" + part
+	}
+	return root
+}
+
+func locateMigrationMetadata(ctx context.Context, wt string, files map[string]fsutil.FileState) (migrationMetadataLayout, error) {
+	layout := migrationMetadataLayout{shared: make(map[string]bool)}
+	var err error
+	layout.private, err = git.QueryPathInContext(ctx, wt, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return layout, err
+	}
+	layout.common, err = git.QueryPathInContext(ctx, wt, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return layout, err
+	}
+	// Object contents are checked by Git, not hashed again in the metadata
+	// snapshot. They must still be excluded from the private directory copy.
+	roots := map[string]bool{"objects": true}
+	for path := range files {
+		roots[migrationMetadataRoot(path)] = true
+	}
+	for root := range roots {
+		if mixedGitDirectory(root) {
+			layout.shared[root] = true
+			continue
+		}
+		query := strings.TrimPrefix(root, "logs/")
+		// Reflogs follow their ref's storage. --git-path logs/ORIG_HEAD,
+		// for example, can disagree with the ref backend on older Git.
+		resolved, err := git.QueryPathInContext(ctx, wt, "rev-parse", "--path-format=absolute", "--git-path", query)
+		if err != nil {
+			return layout, err
+		}
+		private := pathWithin(layout.private, resolved)
+		layout.shared[root] = !private
+		if !private {
+			layout.excludes = append(layout.excludes, filepath.FromSlash(root))
+		}
+	}
+	return layout, nil
+}
+
+func (layout migrationMetadataLayout) paths(rel string) []string {
+	root := migrationMetadataRoot(rel)
+	if mixedGitDirectory(filepath.ToSlash(rel)) {
+		// Both halves of a split directory retain its permissions and xattrs.
+		return []string{filepath.Join(layout.common, rel), filepath.Join(layout.private, rel)}
+	}
+	if layout.shared[root] {
+		// Never write to an external core.hooksPath or other configured path.
+		return []string{filepath.Join(layout.common, rel)}
+	}
+	return []string{filepath.Join(layout.private, rel)}
+}
+
+type migrationRef struct {
+	name, object, target string
+}
+
+func migrationPrivateRef(name string) bool {
+	return strings.HasPrefix(name, "refs/worktree/") || strings.HasPrefix(name, "refs/bisect/") || strings.HasPrefix(name, "refs/rewritten/")
+}
+
+func migrationPrivateRefs(refs string) []migrationRef {
+	var result []migrationRef
+	for line := range strings.SplitSeq(refs, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !migrationPrivateRef(fields[0]) {
+			continue
+		}
+		ref := migrationRef{name: fields[0], object: fields[1]}
+		if len(fields) == 3 {
+			ref.target = fields[2]
+		}
+		result = append(result, ref)
+	}
+	return result
+}
+
+func removeMigrationCommonPrivateRefs(ctx context.Context, plan migratePlan, root string) error {
+	// Delete through the original/main ref store before any linked worktrees
+	// exist. Git removes both loose and packed copies, without hand-editing
+	// packed-refs or disturbing unrelated entries and their peeled records.
+	for _, ref := range migrationPrivateRefs(plan.refs) {
+		if _, err := git.RunInWithOutputContext(ctx, root, "-c", "core.hooksPath=/dev/null", "update-ref", "--no-deref", "-d", ref.name); err != nil {
+			return err
+		}
+	}
+	return verifyMigrationPrivateRefIsolation(ctx, root)
+}
+
+func verifyMigrationPrivateRefIsolation(ctx context.Context, root string) error {
+	out, err := git.QueryInContext(ctx, root, "for-each-ref", "--format=%(refname)", "refs/worktree/", "refs/bisect/", "refs/rewritten/")
+	if err != nil {
+		return err
+	}
+	if out != "" {
+		return fmt.Errorf("migration metadata verification failed: worktree-local refs remain in the common database")
+	}
+	// A loose ref can hide a packed entry from for-each-ref. Check storage as
+	// well so a hidden packed copy cannot become visible in another worktree.
+	packed, err := os.ReadFile(filepath.Join(root, ".bare", "packed-refs"))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for line := range strings.SplitSeq(string(packed), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && migrationPrivateRef(fields[1]) {
+			return fmt.Errorf("migration metadata verification failed: worktree-local ref %s remains in common packed-refs", fields[1])
+		}
+	}
+	return nil
+}
+
+func copyMigrationWorktreeMetadata(ctx context.Context, plan migratePlan, wt string) error {
+	layout, err := locateMigrationMetadata(ctx, wt, plan.gitFiles)
+	if err != nil {
+		return err
+	}
+	// Per-worktree refs can have been packed in the original main repository.
+	// Materialize them through the destination ref backend before restoring the
+	// original files and reflogs over any records generated by these writes.
+	for _, ref := range migrationPrivateRefs(plan.refs) {
+		args := []string{"update-ref", "--no-deref", ref.name, ref.object}
+		if ref.target != "" {
+			args = []string{"symbolic-ref", ref.name, ref.target}
+		}
+		if _, err := git.RunInWithOutputContext(ctx, wt, append([]string{"-c", "core.hooksPath=/dev/null"}, args...)...); err != nil {
+			return err
+		}
+	}
+	source := filepath.Join(plan.repoRoot, ".git")
+	if err := fsutil.CopyDirContext(ctx, source, layout.private, layout.excludes); err != nil {
+		return err
+	}
+	if _, exists := plan.gitFiles["index"]; exists {
+		if _, err := git.RunInWithOutputContext(ctx, wt, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "update-index", "--no-split-index"); err != nil {
+			return err
+		}
+	}
+	// Native config/index rewrites can replace inodes. Restore their metadata,
+	// then verify again after preparation and promotion through the worktree.
+	for rel, state := range plan.gitFiles {
+		for _, path := range layout.paths(rel) {
+			if state.Mode.IsDir() {
+				if err := os.MkdirAll(path, state.Mode.Perm()|0o700); err != nil {
+					return err
+				}
+			}
+			if err := os.Chmod(path, state.Mode|0o200); err != nil {
+				return err
+			}
+			if err := fsutil.CopyExtendedAttributes(filepath.Join(source, rel), path); err != nil {
+				return err
+			}
+			if err := os.Chmod(path, state.Mode); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func verifyMigrationMetadata(ctx context.Context, plan migratePlan, wt string) error {
+	layout, err := locateMigrationMetadata(ctx, wt, plan.gitFiles)
+	if err != nil {
+		return err
+	}
+	for rel, expected := range plan.gitFiles {
+		for _, path := range layout.paths(rel) {
+			actual, err := fsutil.SnapshotFile(ctx, path)
+			if err != nil {
+				return fmt.Errorf("verify migrated Git metadata %s: %w", rel, err)
+			}
+			// Index contents are verified semantically after split-index
+			// materialization. Config changes are intentional; refs are also
+			// verified through Git independently of their packed representation.
+			want := expected
+			if rel == "index" || rel == "config" || rel == "packed-refs" {
+				actual.Hash, want.Hash = [32]byte{}, [32]byte{}
+			}
+			if actual != want {
+				return fmt.Errorf("migration validation failed: Git metadata %s changed at %s", rel, path)
+			}
+		}
+	}
+	objects, err := fsutil.SnapshotMetadata(ctx, filepath.Join(layout.common, "objects"), nil)
+	if err != nil {
+		return err
+	}
+	// Git may create additional objects while checking out the default branch,
+	// but every original object path must retain its filesystem metadata.
+	for rel, expected := range plan.objectFiles {
+		if actual, exists := objects[rel]; !exists || actual != expected {
+			return fmt.Errorf("migration validation failed: Git object metadata changed at %s", rel)
+		}
+	}
+	return nil
+}

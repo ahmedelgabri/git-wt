@@ -18,6 +18,14 @@ func TestQueryVersion(t *testing.T) {
 	}
 }
 
+func TestQueryWithInputRunsInDebugMode(t *testing.T) {
+	t.Setenv("DEBUG", "1")
+	out, err := QueryWithInput(strings.NewReader("hello"), "hash-object", "--stdin")
+	if err != nil || out != "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0" {
+		t.Fatalf("hash from stdin = %q, error = %v", out, err)
+	}
+}
+
 func TestQueryRawPreservesWhitespace(t *testing.T) {
 	out, err := QueryRaw("-c", "raw.value=  value  ", "config", "--null", "--get-regexp", "^raw\\.")
 	if err != nil {

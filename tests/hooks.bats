@@ -160,13 +160,10 @@ teardown() {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 	command git config --add wt.afteradd 'touch .hook-ran'
-	command git checkout -b interactive-hook --quiet
-	create_commit "interactive-hook.txt"
-	command git push --quiet -u origin interactive-hook
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch interactive-hook
 	command git branch -D interactive-hook --quiet
 
-	run env GIT_WT_SELECT="origin/interactive-hook" "$GIT_WT" add
+	run select_remote_branch origin/interactive-hook
 	[ "$status" -eq 0 ]
 	[ -f "$TEST_DIR/myrepo/interactive-hook/.hook-ran" ]
 }

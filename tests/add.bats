@@ -42,10 +42,7 @@ teardown() {
 @test "add: interactive mode keeps stdout machine-readable" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git checkout -b remote-only --quiet
-	create_commit "remote-only.txt"
-	command git push --quiet -u origin remote-only
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch remote-only
 	command git branch -D remote-only --quiet
 
 	local stdout_file stderr_file stdout_text stderr_text
@@ -65,11 +62,7 @@ teardown() {
 @test "add: creates worktree from remote branch" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	# Create a branch on origin
-	command git checkout -b develop --quiet
-	create_commit "develop.txt"
-	command git push --quiet -u origin develop
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch develop
 
 	# Path is relative to current directory
 	run "$GIT_WT" add develop origin/develop
@@ -80,15 +73,11 @@ teardown() {
 @test "add: interactive mode creates local branch from remote (not detached HEAD)" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	# Create a branch on origin that only exists remotely
-	command git checkout -b remote-only --quiet
-	create_commit "remote-only.txt"
-	command git push --quiet -u origin remote-only
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch remote-only
 	command git branch -D remote-only --quiet
 
 	# Use GIT_WT_SELECT to bypass fzf TUI and select the branch directly
-	run env GIT_WT_SELECT="origin/remote-only" "$GIT_WT" add
+	run select_remote_branch origin/remote-only
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/remote-only"
 	assert_branch_exists "remote-only"
@@ -103,13 +92,8 @@ teardown() {
 	cd myrepo
 
 	# Create two remote branches
-	command git checkout -b feature-a --quiet
-	create_commit "feature-a.txt"
-	command git push --quiet -u origin feature-a
-	command git checkout -b feature-b --quiet
-	create_commit "feature-b.txt"
-	command git push --quiet -u origin feature-b
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch feature-a
+	create_remote_branch feature-b
 
 	# Delete local branches so they only exist on origin
 	command git branch -D feature-a --quiet
@@ -125,7 +109,7 @@ teardown() {
 	[ ! -d "$TEST_DIR/myrepo/feature-a-copy" ]
 
 	# feature-b is available, so selecting it should succeed
-	run env GIT_WT_SELECT="origin/feature-b" "$GIT_WT" add
+	run select_remote_branch origin/feature-b
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/feature-b"
 	assert_branch_exists "feature-b"
@@ -291,10 +275,9 @@ teardown() {
 	cd myrepo
 
 	# Create a branch that's already checked out
-	command git checkout -b force-test --quiet
-	command git checkout - --quiet
+	create_worktree held-force force-test
 
-	# Without --force this would fail if branch is dirty, but with --force it proceeds
+	# --force permits a branch already checked out in another worktree
 	run "$GIT_WT" add --force force-wt force-test
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/force-wt"
@@ -304,8 +287,7 @@ teardown() {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 
-	command git checkout -b force-test-short --quiet
-	command git checkout - --quiet
+	create_worktree held-force-short force-test-short
 
 	run "$GIT_WT" add -f force-wt-short force-test-short
 	[ "$status" -eq 0 ]
@@ -377,13 +359,10 @@ teardown() {
 	init_bare_repo_with_custom_remote upstream myrepo
 	cd myrepo
 	# Create a branch only on the remote
-	command git checkout -b remote-feat --quiet
-	create_commit "remote-feat.txt"
-	command git push --quiet -u upstream remote-feat
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch remote-feat upstream
 	command git branch -D remote-feat --quiet
 
-	run env GIT_WT_SELECT="upstream/remote-feat" "$GIT_WT" add
+	run select_remote_branch upstream/remote-feat
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/remote-feat"
 	assert_branch_exists "remote-feat"
@@ -401,13 +380,10 @@ teardown() {
 	command git remote add upstream "$TEST_DIR/myrepo-upstream"
 	command git push --quiet upstream HEAD:main
 
-	command git checkout -b upstream-only --quiet
-	create_commit "upstream-only.txt"
-	command git push --quiet -u upstream upstream-only
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch upstream-only upstream
 	command git branch -D upstream-only --quiet
 
-	run env GIT_WT_SELECT="upstream/upstream-only" "$GIT_WT" add
+	run select_remote_branch upstream/upstream-only
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/upstream-only"
 	assert_branch_exists "upstream-only"
@@ -416,10 +392,7 @@ teardown() {
 @test "add: interactive mode supports custom path for remote branch" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git checkout -b remote-custom --quiet
-	create_commit "remote-custom.txt"
-	command git push --quiet -u origin remote-custom
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch remote-custom
 	command git branch -D remote-custom --quiet
 
 	printf 'custom-remote-path\n' | env GIT_WT_SELECT="origin/remote-custom" "$GIT_WT" add
@@ -433,13 +406,10 @@ teardown() {
 	cd myrepo
 	local branch='feature;$(echo_shell)'
 
-	command git checkout -b "$branch" --quiet
-	create_commit "shell-branch.txt"
-	command git push --quiet -u origin "$branch"
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch "$branch"
 	command git branch -D "$branch" --quiet
 
-	run env GIT_WT_SELECT="origin/$branch" "$GIT_WT" add
+	run select_remote_branch "origin/$branch"
 	[ "$status" -eq 0 ]
 	assert_worktree_exists "$TEST_DIR/myrepo/$branch"
 	assert_branch_exists "$branch"

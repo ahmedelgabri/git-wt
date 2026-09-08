@@ -80,13 +80,16 @@ teardown() {
 	assert_worktree_exists "$TEST_DIR/myrepo/dry-run-test"
 }
 
-@test "remove: removes worktree with uncommitted changes after confirmation" {
+@test "remove: requires force to discard uncommitted changes" {
 	init_bare_repo myrepo
 	cd myrepo
 	create_worktree dirty-wt dirty-wt
 	echo "uncommitted change" >"$TEST_DIR/myrepo/dirty-wt/dirty.txt"
 
 	run bash -c 'printf "y\n" | "$1" remove "$2"' _ "$GIT_WT" "$TEST_DIR/myrepo/dirty-wt"
+	[ "$status" -ne 0 ]
+	[ -f "$TEST_DIR/myrepo/dirty-wt/dirty.txt" ]
+	run bash -c 'printf "y\n" | "$1" remove --force "$2"' _ "$GIT_WT" "$TEST_DIR/myrepo/dirty-wt"
 	[ "$status" -eq 0 ]
 	assert_worktree_not_exists "$TEST_DIR/myrepo/dirty-wt"
 }

@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
@@ -31,6 +34,12 @@ jobs:
       - name: Staticcheck
         run: nix develop --command just staticcheck
 
+      - name: Check workflow definitions
+        run: nix develop --command actionlint
+
+      - name: Check reachable vulnerabilities
+        run: nix develop --command just govulncheck
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
@@ -40,10 +49,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read Go minor version from go.mod
+        id: go-version
+        run: |
+          awk '$1 == "go" { split($2, v, "."); print "version=" v[1] "." v[2] ".x" }' go.mod >> "$GITHUB_OUTPUT"
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ steps.go-version.outputs.version }}
+          check-latest: true
 
       - name: Setup just
         uses: extractions/setup-just@v2

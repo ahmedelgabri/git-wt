@@ -40,7 +40,7 @@ teardown() {
 	# Create branch only on origin (not locally)
 	(cd "$TEST_DIR/myrepo-origin" && command git branch develop main)
 
-	run env GIT_WT_SELECT=origin/develop "$GIT_WT" add
+	run select_remote_branch origin/develop
 	[ "$status" -eq 0 ]
 	assert_branch_exists develop
 	assert_worktree_exists "$TEST_DIR/myrepo/develop"
@@ -53,7 +53,7 @@ teardown() {
 	cd myrepo
 
 	# Pipe branch name; empty second line uses default worktree path
-	echo "new-feature" | env GIT_WT_SELECT="➕ Create new branch" "$GIT_WT" add
+	printf 'new-feature\n\n' | env GIT_WT_SELECT="➕ Create new branch" "$GIT_WT" add
 
 	assert_branch_exists new-feature
 	assert_worktree_exists "$TEST_DIR/myrepo/new-feature"
@@ -62,10 +62,7 @@ teardown() {
 @test "interactive add: supports custom path for remote selection" {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
-	command git checkout -b remote-path --quiet
-	create_commit "remote-path.txt"
-	command git push --quiet -u origin remote-path
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch remote-path
 	command git branch -D remote-path --quiet
 
 	printf 'custom-path\n' | env GIT_WT_SELECT="origin/remote-path" "$GIT_WT" add

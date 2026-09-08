@@ -51,9 +51,12 @@ Inspect repository health and worktrees:
 ```shell
 git wt doctor
 git wt status
-git wt list
-git wt list --porcelain
+git wt list --json
+git wt ls --json
+git wt list --porcelain -z
 ```
+
+Migration is experimental. Stop other writers first. It restores per-worktree Git metadata into the linked Git directory, verifies copied files and extended attributes, index entries, refs, and reflogs, and retains the original repository at a printed sibling backup path. ACLs, unsupported ref backends such as reftable, and metadata that cannot be inspected or preserved must stop migration; never strip metadata to bypass a refusal. Keep the backup until the user has checked the new layout; never delete it automatically. Unsupported layouts or failed verification must stop migration. Refuse includes whose paths break on relocation; do not strip them or flatten user configuration. Effective config/remotes must survive promotion, and private refs must not leak through common packed-refs into other worktrees.
 
 Clone or migrate repositories:
 
@@ -71,7 +74,7 @@ git wt add -b new-feature new-feature
 git wt add --detach hotfix HEAD~5
 ```
 
-Update the default branch worktree:
+Update the default branch worktree using the user's Git configuration. Tag pruning follows `fetch.pruneTags`, `remote.<name>.pruneTags`, and fetch refspecs; it may delete local-only tags. Pull follows `pull.rebase`, `branch.<name>.rebase`, and `pull.ff`. Do not assume updates are fast-forward-only or override the user's settings without authorization:
 
 ```shell
 git wt update
@@ -85,8 +88,9 @@ Switch worktrees:
   cd "$(git wt switch)"
   ```
 
-- For an agent workflow, inspect `git wt list` output and `cd` to the exact
-  worktree path instead of invoking the interactive switch picker.
+- For an agent workflow, parse `git wt list --json` or `git wt ls --json` and `cd` to an object's `path` instead of invoking the interactive switch picker. JSON returns an array of non-bare worktrees with full HEAD IDs, branch names, and detached/locked/prunable flags and reasons. Empty results are `[]`; do not combine `--json` with native Git list options.
+
+Removal refuses tracked modifications, non-ignored untracked files, and commits without another retained branch or tag. Ignored files do not block removal or cleanup and are deleted with the worktree. Check for valuable ignored files such as `.env` before removing anything. Do not retry failures with `--force` unless the user explicitly authorizes discarding that work. `--gone` and `--sweep` require full merge into the cleanup base, even if the upstream was deleted. Configure an explicit base with `git config wt.cleanupBase refs/heads/main` or `git config wt.cleanupBase refs/remotes/origin/main` when `branch.<name>.remote=.` prevents default discovery. Remote-tracking bases use the last fetched tip without an implicit fetch and need no local default branch or worktree. Cleanup protects the corresponding same-name local branch if it exists and refuses to delete the base as a configured upstream. Raw remote URL discovery respects `wt.remoteTimeout`; `--stale` alone needs no base. `--delete-remote` follows the target's configured upstream and skips remote deletion when none is configured. Multiple push URLs or differing effective fetch/push URLs require Git 2.46 or newer; unsupported versions stop before hooks or local changes. One matching fetch/push URL works on older Git without destination overrides.
 
 Remove worktrees safely:
 
