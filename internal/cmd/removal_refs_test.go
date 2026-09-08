@@ -22,6 +22,7 @@ func TestSupportsRemoteURLReset(t *testing.T) {
 		{"git version 2.54.0", true},
 		{"git version 3.0.0", true},
 		{"git version 3.-1.0", false},
+		{"git version 2.46garbage", false},
 		{"git version unknown", false},
 		{"not a Git version", false},
 	} {

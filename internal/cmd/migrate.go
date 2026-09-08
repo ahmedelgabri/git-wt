@@ -28,14 +28,16 @@ func init() {
 	rootCmd.AddCommand(migrateCmd)
 }
 
+type migrationGitState struct {
+	refs, index, stashes string
+}
+
 type migratePlan struct {
+	migrationGitState
 	repoRoot      string
 	currentBranch string
 	defaultBranch string
 	defaultRemote string
-	refs          string
-	index         string
-	stashes       string
 	files         map[string]fsutil.FileState
 	gitFiles      map[string]fsutil.FileState
 	objectFiles   map[string]fsutil.FileState
@@ -149,15 +151,7 @@ func buildMigratePlan(ctx context.Context, root string) (migratePlan, error) {
 			}
 		}
 	}
-	plan.refs, err = migrationRefs(ctx, root)
-	if err != nil {
-		return plan, err
-	}
-	plan.index, err = migrationIndex(ctx, root)
-	if err != nil {
-		return plan, err
-	}
-	plan.stashes, err = migrationStashes(ctx, root)
+	plan.migrationGitState, err = readMigrationGitState(ctx, root)
 	if err != nil {
 		return plan, err
 	}
@@ -304,48 +298,43 @@ func createMigrationWorktree(ctx context.Context, root, branch, remote string, e
 
 func normalizeMigrationRemoteURLs(ctx context.Context, plan migratePlan, dest string) error {
 	prefixes := migrationURLPrefixes(plan.config.values)
-	for _, name := range strings.Split(strings.TrimSuffix(plan.config.remotes, "\n"), "\n") {
-		if name == "" {
+	for key, values := range plan.config.values {
+		if !migrationRemoteURLKey(key) {
 			continue
 		}
-		for _, setting := range []string{"url", "pushurl"} {
-			key := "remote." + name + "." + setting
-			out, err := git.QueryRawInContext(ctx, plan.repoRoot, "config", "--null", "--get-all", key)
-			if err != nil {
-				continue
-			}
-			urls := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
-			changed := false
-			for i, url := range urls {
-				urls[i] = migrationURL(plan.repoRoot, url, prefixes)
-				changed = changed || urls[i] != url
-			}
-			if !changed {
-				continue
-			}
-			if _, err := git.RunInWithOutputContext(ctx, dest, "config", "--unset-all", key); err != nil {
+		urls := make([]string, len(values))
+		changed := false
+		for i, value := range values {
+			url := strings.TrimPrefix(value, "\n")
+			urls[i] = migrationURL(plan.repoRoot, url, prefixes)
+			changed = changed || urls[i] != url
+		}
+		if !changed {
+			continue
+		}
+		if _, err := git.RunInWithOutputContext(ctx, dest, "config", "--unset-all", key); err != nil {
+			return err
+		}
+		for _, url := range urls {
+			if _, err := git.RunInWithOutputContext(ctx, dest, "config", "--add", key, url); err != nil {
 				return err
-			}
-			for _, url := range urls {
-				if _, err := git.RunInWithOutputContext(ctx, dest, "config", "--add", key, url); err != nil {
-					return err
-				}
 			}
 		}
 	}
 	return nil
 }
 
-func migrationRefs(ctx context.Context, root string) (string, error) {
-	return git.QueryInContext(ctx, root, "for-each-ref", "--format=%(refname) %(objectname) %(symref)")
-}
-
-func migrationIndex(ctx context.Context, root string) (string, error) {
-	return git.QueryRawInContext(ctx, root, "-c", "core.fsmonitor=false", "--no-optional-locks", "ls-files", "--stage", "-z")
-}
-
-func migrationStashes(ctx context.Context, root string) (string, error) {
-	return git.QueryInContext(ctx, root, "stash", "list", "--format=%H %gs")
+func readMigrationGitState(ctx context.Context, root string) (state migrationGitState, err error) {
+	state.refs, err = git.QueryInContext(ctx, root, "for-each-ref", "--format=%(refname) %(objectname) %(symref)")
+	if err != nil {
+		return state, err
+	}
+	state.index, err = git.QueryRawInContext(ctx, root, "-c", "core.fsmonitor=false", "--no-optional-locks", "ls-files", "--stage", "-z")
+	if err != nil {
+		return state, err
+	}
+	state.stashes, err = git.QueryInContext(ctx, root, "stash", "list", "--format=%H %gs")
+	return state, err
 }
 
 func verifyMigration(ctx context.Context, plan migratePlan, dest string) error {
@@ -353,19 +342,11 @@ func verifyMigration(ctx context.Context, plan migratePlan, dest string) error {
 		return err
 	}
 	// Detect changes to the source while preparation was running.
-	refs, err := migrationRefs(ctx, plan.repoRoot)
+	state, err := readMigrationGitState(ctx, plan.repoRoot)
 	if err != nil {
 		return err
 	}
-	index, err := migrationIndex(ctx, plan.repoRoot)
-	if err != nil {
-		return err
-	}
-	stashes, err := migrationStashes(ctx, plan.repoRoot)
-	if err != nil {
-		return err
-	}
-	if refs != plan.refs || index != plan.index || stashes != plan.stashes {
+	if state != plan.migrationGitState {
 		return fmt.Errorf("source repository changed during migration; original left untouched")
 	}
 	if err := fsutil.VerifySnapshot(ctx, plan.repoRoot, []string{".git"}, plan.files); err != nil {
@@ -409,23 +390,15 @@ func verifyMigrationState(ctx context.Context, plan migratePlan, dest string) er
 	if branch != plan.currentBranch {
 		return fmt.Errorf("migration validation failed: expected branch %s, got %s", plan.currentBranch, branch)
 	}
-	index, err := migrationIndex(ctx, wt)
+	state, err := readMigrationGitState(ctx, wt)
 	if err != nil {
 		return err
 	}
-	stashes, err := migrationStashes(ctx, wt)
-	if err != nil {
-		return err
-	}
-	if index != plan.index || stashes != plan.stashes {
+	if state.index != plan.index || state.stashes != plan.stashes {
 		return fmt.Errorf("migration validation failed: index or stash entries changed")
 	}
-	refs, err := migrationRefs(ctx, wt)
-	if err != nil {
-		return err
-	}
 	available := make(map[string]bool)
-	for _, ref := range strings.Split(refs, "\n") {
+	for _, ref := range strings.Split(state.refs, "\n") {
 		available[ref] = true
 	}
 	for _, ref := range strings.Split(plan.refs, "\n") {

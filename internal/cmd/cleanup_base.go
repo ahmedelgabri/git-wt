@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -57,10 +55,9 @@ func resolveCleanupBase(ctx context.Context) (cleanupBase, error) {
 	if strings.HasPrefix(ref, "refs/remotes/") {
 		// In particular, origin/HEAD must protect main, not a branch named HEAD.
 		resolved, err := git.QueryContext(ctx, "symbolic-ref", "--quiet", ref)
-		var exitErr *exec.ExitError
 		if err == nil {
 			ref = resolved
-		} else if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		} else if !git.IsExitCode(err, 1) {
 			return cleanupBase{}, fmt.Errorf("resolve cleanup base %q: %w", base, err)
 		}
 	}
@@ -94,8 +91,7 @@ func resolveCleanupBase(ctx context.Context) (cleanupBase, error) {
 
 func cleanupSetting(ctx context.Context, key string) (string, error) {
 	value, err := git.QueryContext(ctx, "config", "--get", key)
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if git.IsExitCode(err, 1) {
 		return "", nil
 	}
 	if err != nil {

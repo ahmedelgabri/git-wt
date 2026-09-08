@@ -1,11 +1,8 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
-	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -53,17 +50,11 @@ func remoteDeletionDestinations(remote string) ([]remoteDeletion, error) {
 }
 
 func supportsRemoteURLReset(version string) bool {
-	fields := strings.Fields(version)
-	if len(fields) < 3 || fields[0] != "git" || fields[1] != "version" {
+	var major, minor int
+	if _, err := fmt.Sscanf(version, "git version %d.%d.", &major, &minor); err != nil {
 		return false
 	}
-	parts := strings.Split(fields[2], ".")
-	if len(parts) < 2 {
-		return false
-	}
-	major, majorErr := strconv.Atoi(parts[0])
-	minor, minorErr := strconv.Atoi(parts[1])
-	return majorErr == nil && minorErr == nil && minor >= 0 && (major > 2 || major == 2 && minor >= 46)
+	return minor >= 0 && (major > 2 || major == 2 && minor >= 46)
 }
 
 // Check every push destination before local removal. Repeat URL discovery after
@@ -107,8 +98,7 @@ func deleteLocalBranch(branch, expectedHead string) error {
 	// Like git branch -D, remove repository-local branch settings. Inherited
 	// settings remain the user's defaults. A failed ref deletion never gets here.
 	_, err := git.Query("config", "--local", "--get-regexp", `^branch\.`+regexp.QuoteMeta(branch)+`\.`)
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if git.IsExitCode(err, 1) {
 		return nil
 	}
 	if err == nil {

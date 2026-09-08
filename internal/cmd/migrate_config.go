@@ -2,11 +2,9 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,7 +16,7 @@ type migrationConfigState struct {
 	// Keep all values in order, including the distinction between implicit
 	// booleans (empty payload) and explicit empty values (a newline payload).
 	values  map[string][]string
-	remotes string
+	remotes []string
 }
 
 func readMigrationConfig(ctx context.Context, root string) (migrationConfigState, error) {
@@ -34,11 +32,14 @@ func readMigrationConfig(ctx context.Context, root string) (migrationConfigState
 		key, _, _ := strings.Cut(record, "\n")
 		state.values[key] = append(state.values[key], record[len(key):])
 	}
-	state.remotes, err = git.QueryRawInContext(ctx, root, "remote")
+	remotes, err := git.QueryInContext(ctx, root, "remote")
+	if remotes != "" {
+		state.remotes = strings.Split(remotes, "\n")
+	}
 	return state, err
 }
 
-func migrationPathWithin(root, path string) bool {
+func pathWithin(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
@@ -51,8 +52,7 @@ func checkMigrationIncludes(ctx context.Context, root string) error {
 	// Git expands ~ and installation prefixes, traverses active nested includes,
 	// and reports even inactive includeIf directives in files it reads.
 	out, err := git.QueryRawInContext(ctx, root, "config", "--includes", "--null", "--show-origin", "--type=path", "--get-regexp", `^include(if\..*)?\.path$`)
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if git.IsExitCode(err, 1) {
 		return nil
 	}
 	if err != nil {
@@ -92,14 +92,18 @@ func checkMigrationIncludes(ctx context.Context, root string) error {
 				return err
 			}
 		}
-		if relative && migrationPathWithin(gitDir, origin) && migrationPathWithin(gitDir, target) {
+		if relative && pathWithin(gitDir, origin) && pathWithin(gitDir, target) {
 			continue
 		}
-		if migrationPathWithin(root, origin) && relative || migrationPathWithin(root, target) {
+		if pathWithin(root, origin) && relative || pathWithin(root, target) {
 			return fmt.Errorf("unsupported config include %q from %s: its path changes meaning during migration; keep included settings inside .git with relative includes, or use an absolute path outside the repository", include, fields[i])
 		}
 	}
 	return nil
+}
+
+func migrationRemoteURLKey(key string) bool {
+	return strings.HasPrefix(key, "remote.") && (strings.HasSuffix(key, ".url") || strings.HasSuffix(key, ".pushurl"))
 }
 
 func migrationURLPrefixes(values map[string][]string) []string {
@@ -127,7 +131,7 @@ func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string, s
 	if err != nil {
 		return fmt.Errorf("migration configuration verification failed at %s: %w", root, err)
 	}
-	if actual.remotes != plan.config.remotes {
+	if !slices.Equal(actual.remotes, plan.config.remotes) {
 		return fmt.Errorf("migration configuration verification failed at %s: effective remotes changed", root)
 	}
 	expected := maps.Clone(plan.config.values)
@@ -149,7 +153,7 @@ func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string, s
 		delete(expected, "core.worktree")
 		prefixes := migrationURLPrefixes(plan.config.values)
 		for key, values := range expected {
-			if strings.HasPrefix(key, "remote.") && (strings.HasSuffix(key, ".url") || strings.HasSuffix(key, ".pushurl")) {
+			if migrationRemoteURLKey(key) {
 				normalized := make([]string, len(values))
 				for i, value := range values {
 					normalized[i] = "\n" + migrationURL(plan.repoRoot, strings.TrimPrefix(value, "\n"), prefixes)

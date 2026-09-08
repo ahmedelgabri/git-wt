@@ -87,6 +87,12 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 	return "", cmd.Run()
 }
 
+// IsExitCode reports whether err came from a process exiting with code.
+func IsExitCode(err error, code int) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == code
+}
+
 // RepositoryEnv removes inherited repository selectors before changing repos.
 // Explicit ExecOptions.Env overrides are applied afterward.
 func RepositoryEnv() []string {
