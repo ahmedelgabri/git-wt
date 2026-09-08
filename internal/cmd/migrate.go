@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 
@@ -41,6 +39,7 @@ type migratePlan struct {
 	files         map[string]fsutil.FileState
 	gitFiles      map[string]fsutil.FileState
 	objectFiles   map[string]fsutil.FileState
+	config        migrationConfigState
 }
 
 func runMigrate(cmd *cobra.Command, args []string) error {
@@ -129,6 +128,11 @@ func buildMigratePlan(ctx context.Context, root string) (migratePlan, error) {
 	if err := preflightMigrateRepo(root); err != nil {
 		return plan, err
 	}
+	config, err := readMigrationConfig(ctx, root)
+	if err != nil {
+		return plan, err
+	}
+	plan.config = config
 	branch, err := git.QueryInContext(ctx, root, "branch", "--show-current")
 	if err != nil || branch == "" {
 		return plan, fmt.Errorf("detached HEAD state: check out a branch before migrating")
@@ -221,6 +225,9 @@ func preflightMigrateRepo(root string) error {
 	if _, err := git.QueryIn(root, "rev-parse", "--verify", "HEAD"); err != nil {
 		return fmt.Errorf("repository needs an initial commit before migration: %w", err)
 	}
+	if err := checkMigrationIncludes(context.Background(), root); err != nil {
+		return err
+	}
 	// Refuse active Git writes rather than copying their intermediate state.
 	return filepath.WalkDir(gitPath, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -256,7 +263,10 @@ func buildMigratedStructure(ctx context.Context, plan migratePlan, dest string) 
 			return err
 		}
 	}
-	if err := normalizeMigrationRemoteURLs(ctx, plan.repoRoot, dest); err != nil {
+	if err := normalizeMigrationRemoteURLs(ctx, plan, dest); err != nil {
+		return err
+	}
+	if err := removeMigrationCommonPrivateRefs(ctx, plan, dest); err != nil {
 		return err
 	}
 	if err := createMigrationWorktree(ctx, dest, plan.currentBranch, "", true); err != nil {
@@ -292,41 +302,23 @@ func createMigrationWorktree(ctx context.Context, root, branch, remote string, e
 	return nil
 }
 
-func normalizeMigrationRemoteURLs(ctx context.Context, source, dest string) error {
-	// A URL without a scheme may be a user-defined alias, not a local path.
-	out, err := git.QueryRawInContext(ctx, source, "config", "--null", "--get-regexp", `^url\..*\.(insteadof|pushinsteadof)$`)
-	var exitErr *exec.ExitError
-	if err != nil && !(errors.As(err, &exitErr) && exitErr.ExitCode() == 1) {
-		return err
-	}
-	var prefixes []string
-	for record := range strings.SplitSeq(out, "\x00") {
-		if _, prefix, ok := strings.Cut(record, "\n"); ok {
-			prefixes = append(prefixes, prefix)
-		}
-	}
-	names, err := git.QueryInContext(ctx, source, "remote")
-	if err != nil {
-		return err
-	}
-	for _, name := range strings.Split(names, "\n") {
+func normalizeMigrationRemoteURLs(ctx context.Context, plan migratePlan, dest string) error {
+	prefixes := migrationURLPrefixes(plan.config.values)
+	for _, name := range strings.Split(strings.TrimSuffix(plan.config.remotes, "\n"), "\n") {
 		if name == "" {
 			continue
 		}
 		for _, setting := range []string{"url", "pushurl"} {
 			key := "remote." + name + "." + setting
-			out, err := git.QueryRawInContext(ctx, source, "config", "--null", "--get-all", key)
+			out, err := git.QueryRawInContext(ctx, plan.repoRoot, "config", "--null", "--get-all", key)
 			if err != nil {
 				continue
 			}
 			urls := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
 			changed := false
 			for i, url := range urls {
-				alias := slices.ContainsFunc(prefixes, func(prefix string) bool { return strings.HasPrefix(url, prefix) })
-				if !alias && !filepath.IsAbs(url) && !strings.Contains(url, ":") {
-					urls[i] = filepath.Join(source, url)
-					changed = true
-				}
+				urls[i] = migrationURL(plan.repoRoot, url, prefixes)
+				changed = changed || urls[i] != url
 			}
 			if !changed {
 				continue
@@ -389,11 +381,19 @@ func verifyMigration(ctx context.Context, plan migratePlan, dest string) error {
 	if !maps.Equal(objects, plan.objectFiles) {
 		return fmt.Errorf("source Git object metadata changed during migration; original left untouched")
 	}
-	return nil
+	return verifyMigrationConfig(ctx, plan, plan.repoRoot, true)
 }
 
 func verifyMigrationState(ctx context.Context, plan migratePlan, dest string) error {
 	wt := filepath.Join(dest, plan.currentBranch)
+	for _, root := range []string{dest, wt} {
+		if err := verifyMigrationConfig(ctx, plan, root, false); err != nil {
+			return err
+		}
+	}
+	if err := verifyMigrationPrivateRefIsolation(ctx, dest); err != nil {
+		return err
+	}
 	// Run Git's checks before the final filesystem snapshots. Even read-only
 	// commands can refresh caches; optional index writes are disabled below.
 	if _, err := git.QueryInContext(ctx, wt, "-c", "core.fsmonitor=false", "--no-optional-locks", "status", "--porcelain=v2", "-z"); err != nil {

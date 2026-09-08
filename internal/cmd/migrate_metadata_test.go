@@ -34,6 +34,9 @@ func testMigrationMetadataDamage(t *testing.T, promoted bool, prepare, damage fu
 		t.Fatal(err)
 	}
 	check := func(dest string) error {
+		if err := verifyMigrationState(context.Background(), plan, dest); err != nil {
+			t.Fatalf("undamaged migration failed verification: %v", err)
+		}
 		if err := damage(dest); err != nil {
 			t.Fatal(err)
 		}

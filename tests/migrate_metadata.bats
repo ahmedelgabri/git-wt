@@ -52,19 +52,57 @@ for suffix in ['', 'logs', 'refs']:
 PY
 }
 
-@test "migrate: exposes originally packed per-worktree refs through the linked worktree" {
+@test "migrate: isolates packed private refs from existing and future worktrees" {
+	init_repo_with_remote repo
+	cd repo
+	command git checkout --quiet -b feature
+	head=$(command git rev-parse HEAD)
+	command git tag -a saved-tag -m saved "$head"
+	tag=$(command git rev-parse saved-tag)
+	for namespace in bisect worktree rewritten; do
+		command git update-ref --create-reflog -m saved "refs/$namespace/saved" "$head"
+		command git reflog show --format='%H %gs' "refs/$namespace/saved" >"$TEST_DIR/$namespace-log"
+		rm ".git/refs/$namespace/saved"
+	done
+	printf '# pack-refs with: peeled fully-peeled sorted\n%s refs/bisect/saved\n%s refs/heads/feature\n%s refs/heads/main\n%s refs/rewritten/saved\n%s refs/tags/saved-tag\n^%s\n%s refs/worktree/saved\n' "$head" "$head" "$head" "$head" "$tag" "$head" "$head" >.git/packed-refs
+	command git symbolic-ref refs/worktree/alias refs/worktree/saved
+	chmod 444 .git/packed-refs
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	command git worktree add --quiet -b future future main
+	gitdir=$(command git -C feature rev-parse --absolute-git-dir)
+	for namespace in bisect worktree rewritten; do
+		[ "$(command git -C feature rev-parse "refs/$namespace/saved")" = "$head" ]
+		[ -f "$gitdir/refs/$namespace/saved" ]
+		command git -C feature reflog show --format='%H %gs' "refs/$namespace/saved" >"$TEST_DIR/actual-log"
+		cmp "$TEST_DIR/$namespace-log" "$TEST_DIR/actual-log"
+		for other in . main future; do
+			run command git -C "$other" rev-parse --verify "refs/$namespace/saved"
+			[ "$status" -ne 0 ]
+		done
+	done
+	[ "$(command git -C feature symbolic-ref refs/worktree/alias)" = refs/worktree/saved ]
+	run command git -C main rev-parse --verify refs/worktree/alias
+	[ "$status" -ne 0 ]
+	! grep -E ' refs/(worktree|bisect|rewritten)/' .bare/packed-refs
+	[ "$(command git -C main rev-parse 'saved-tag^{}')" = "$head" ]
+	[ "$(command git -C main rev-parse saved-tag)" = "$tag" ]
+}
+
+@test "migrate: handles a packed file containing only private refs and a loose shadow" {
 	init_repo repo
 	cd repo
+	first=$(command git rev-parse HEAD)
+	create_commit tracked.txt
 	head=$(command git rev-parse HEAD)
-	command git update-ref --create-reflog -m saved refs/worktree/saved "$head"
-	command git reflog show --format='%H %gs' refs/worktree/saved >"$TEST_DIR/saved-log"
-	printf '# pack-refs with: sorted\n%s refs/heads/main\n%s refs/worktree/saved\n' "$head" "$head" >.git/packed-refs
-	rm .git/refs/worktree/saved
+	printf '# pack-refs with: sorted\n%s refs/worktree/saved\n' "$first" >.git/packed-refs
+	command git update-ref refs/worktree/saved "$head"
 	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	[ "$(command git -C main rev-parse refs/worktree/saved)" = "$head" ]
-	command git -C main reflog show --format='%H %gs' refs/worktree/saved >"$TEST_DIR/actual-log"
-	cmp "$TEST_DIR/saved-log" "$TEST_DIR/actual-log"
+	command git worktree add --quiet -b other other main
+	run command git -C other rev-parse --verify refs/worktree/saved
+	[ "$status" -ne 0 ]
 }
 
 @test "migrate: preserves extended attributes on working files and Git metadata" {
