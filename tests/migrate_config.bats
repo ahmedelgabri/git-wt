@@ -124,3 +124,25 @@ teardown() {
 	[ "$status" -eq 0 ]
 	[ "$(command git -C main config user.signingkey)" = project-key ]
 }
+
+@test "migrate: keeps an explicit core.logAllRefUpdates value" {
+	for value in always false; do
+		init_repo "repo-$value"
+		cd "repo-$value"
+		command git config core.logAllRefUpdates "$value"
+		run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+		[ "$status" -eq 0 ]
+		[ "$(command git -C main config core.logAllRefUpdates)" = "$value" ]
+		cd "$TEST_DIR"
+	done
+}
+
+@test "migrate: keeps reflogs enabled when core.logAllRefUpdates is unset" {
+	init_repo repo
+	cd repo
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	command git -C main branch reflogged
+	command git -C main reflog show --format=%H refs/heads/reflogged >/dev/null
+	[ "$(command git -C main config core.logAllRefUpdates)" = true ]
+}

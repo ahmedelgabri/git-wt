@@ -290,7 +290,7 @@ func moveMigrationEntries(ctx context.Context, journal *migrationJournal, src, d
 
 func configureMigratedRepository(ctx context.Context, plan migratePlan) error {
 	root := plan.repoRoot
-	for _, kv := range [][2]string{{"core.bare", "true"}, {"core.logallrefupdates", "true"}, {"worktree.useRelativePaths", "true"}} {
+	for _, kv := range migrationConfigToSet(plan) {
 		if _, err := git.RunInWithOutputContext(ctx, root, "config", kv[0], kv[1]); err != nil {
 			return err
 		}

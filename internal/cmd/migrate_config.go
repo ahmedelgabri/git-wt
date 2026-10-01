@@ -126,6 +126,16 @@ func migrationURL(source, url string, prefixes []string) string {
 	return url
 }
 
+func migrationConfigToSet(plan migratePlan) [][2]string {
+	settings := [][2]string{{"core.bare", "true"}, {"worktree.userelativepaths", "true"}}
+	// Bare repositories default to no reflogs. Keep the non-bare default, but
+	// never override a value the user chose, such as always or false.
+	if _, set := plan.config.values["core.logallrefupdates"]; !set {
+		settings = append(settings, [2]string{"core.logallrefupdates", "true"})
+	}
+	return settings
+}
+
 func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string) error {
 	actual, err := readMigrationConfig(ctx, root)
 	if err != nil {
@@ -135,13 +145,9 @@ func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string) e
 		return fmt.Errorf("migration configuration verification failed at %s: effective remotes changed", root)
 	}
 	expected := maps.Clone(plan.config.values)
-	for _, setting := range [][2]string{
-		{"core.bare", "true"},
-		{"core.logallrefupdates", "true"},
-		{"worktree.userelativepaths", "true"},
-		{"core.repositoryformatversion", "1"},
-		{"extensions.relativeworktrees", "true"},
-	} {
+	// Git adds the last two when it creates a relative worktree.
+	required := append(migrationConfigToSet(plan), [][2]string{{"core.repositoryformatversion", "1"}, {"extensions.relativeworktrees", "true"}}...)
+	for _, setting := range required {
 		values := actual.values[setting[0]]
 		if len(values) == 0 || values[len(values)-1] != "\n"+setting[1] {
 			return fmt.Errorf("migration configuration verification failed at %s: %s must be %s", root, setting[0], setting[1])
