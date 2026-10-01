@@ -104,8 +104,9 @@ func Error(msg string) {
 	fmt.Fprintf(os.Stderr, "%s %s\n", Red("Error:"), msg)
 }
 
+// Warn writes to stderr like Error, so warnings never mix with data on stdout.
 func Warn(msg string) {
-	fmt.Printf("%s %s\n", Yellow("Warning:"), msg)
+	fmt.Fprintf(os.Stderr, "%s %s\n", Yellow("Warning:"), msg)
 }
 
 func Info(msg string) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
@@ -40,8 +39,7 @@ fetch.pruneTags, remote.<name>.pruneTags, pull.rebase, and pull.ff.`,
 				remote := worktree.DefaultRemote()
 				defaultBranch = worktree.DefaultBranch(remote)
 				if defaultBranch == "" {
-					ui.Error("Could not determine default branch from remote")
-					return fmt.Errorf("could not determine default branch")
+					return fmt.Errorf("could not determine the default branch from remote %q", remote)
 				}
 
 				entries, err := worktree.List()
@@ -51,10 +49,8 @@ fetch.pruneTags, remote.<name>.pruneTags, pull.rebase, and pull.ff.`,
 
 				entry := worktree.FindByBranch(entries, defaultBranch)
 				if entry == nil {
-					ui.Errorf("No worktree found for default branch '%s'", defaultBranch)
-					fmt.Fprintln(os.Stderr, "Available worktrees:")
-					git.Run("worktree", "list")
-					return fmt.Errorf("no worktree for default branch '%s'", defaultBranch)
+					// Printing here would corrupt the running task UI; say it all in the error.
+					return fmt.Errorf("no worktree for default branch %q; create it with: git wt add %s %s", defaultBranch, shellQuote(defaultBranch), shellQuote(defaultBranch))
 				}
 				entryPath = entry.Path
 				return nil

@@ -182,8 +182,8 @@ func warnReusedLocalBranch(root, branch, selected string) {
 	if err != nil || local == remote {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "%s Using existing local branch %s at %s; %s is at %s. Compare with: git log --oneline --left-right %s...%s\n",
-		ui.Yellow("Note:"), branch, local, selected, remote, branch, selected)
+	ui.Warnf("Using existing local branch %s at %s; %s is at %s. Compare with: git log --oneline --left-right %s...%s",
+		branch, local, selected, remote, branch, selected)
 }
 
 func createNewBranch(root string) (string, error) {
@@ -193,7 +193,6 @@ func createNewBranch(root string) (string, error) {
 	}
 
 	if branchName == "" {
-		ui.Error("Branch name cannot be empty")
 		return "", fmt.Errorf("branch name cannot be empty")
 	}
 

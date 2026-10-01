@@ -29,7 +29,7 @@ SH
 	run --separate-stderr env PATH="$TEST_DIR/bin:$PATH" FAIL_CLONE_STEP="$step" NO_COLOR=1 "$GIT_WT" clone "$TEST_DIR/source" "retained clone"
 	[ "$status" -ne 0 ]
 	[[ "$stderr" == *"Warning: Repository downloaded and retained at $TEST_DIR/retained clone"* ]]
-	[[ "$stderr" == *"Inspect the downloaded branches"* ]]
+	[[ "$stderr" == *"Inspect branches"*"branch -a"* ]]
 	[[ "$stderr" == *"wt add <path> <branch>"* ]]
 	[ -f "$TEST_DIR/retained clone/.git" ]
 	command git --git-dir="$TEST_DIR/retained clone/.bare" cat-file -e "$(command git -C source rev-parse HEAD)"

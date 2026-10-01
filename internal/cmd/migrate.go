@@ -46,7 +46,6 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	}
 	repoRoot, err := git.QueryPath("rev-parse", "--show-toplevel")
 	if err != nil {
-		ui.Error("Not in a git repository")
 		return fmt.Errorf("not in a git repository: %w", err)
 	}
 	repoRoot, err = filepath.EvalSymlinks(repoRoot)
@@ -92,19 +91,20 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		ui.Success("Migration complete")
 	}
 	branches := []treeBranch{{plan.currentBranch, "current branch"}}
+	hints := []commandHint{
+		{Action: "Open your worktree", Command: "cd " + shellQuote(filepath.Join(repoRoot, plan.currentBranch))},
+		{Action: "Create another worktree", Command: fmt.Sprintf("cd %s && git wt add <branch-name> <branch-name>", shellQuote(repoRoot))},
+	}
 	if plan.defaultBranch != "" && plan.defaultBranch != plan.currentBranch {
 		if err := createMigrationWorktree(ctx, repoRoot, plan.defaultBranch, plan.defaultRemote); err != nil {
 			ui.Warnf("Could not create a worktree for default branch %s: %v", plan.defaultBranch, err)
-			fmt.Printf("Create it later with: cd %s && git wt add %s %s\n", shellQuote(repoRoot), shellQuote(plan.defaultBranch), shellQuote(plan.defaultBranch))
+			hints = append(hints, commandHint{Action: "Create the default branch worktree", Command: fmt.Sprintf("cd %s && git wt add %s %s", shellQuote(repoRoot), shellQuote(plan.defaultBranch), shellQuote(plan.defaultBranch))})
 		} else {
 			branches = append(branches, treeBranch{plan.defaultBranch, "default branch"})
 		}
 	}
 	fmt.Println(renderRepoLayoutSection(".", branches))
-	fmt.Println(renderCommandHintsSection([]commandHint{
-		{Action: "Create another worktree", Command: fmt.Sprintf("cd %s && git wt add <branch-name> <branch-name>", shellQuote(repoRoot))},
-		{Action: "Open your worktree", Command: "cd " + shellQuote(filepath.Join(repoRoot, plan.currentBranch))},
-	}))
+	fmt.Println(renderCommandHintsSection(hints))
 	return nil
 }
 

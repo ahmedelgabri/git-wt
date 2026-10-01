@@ -66,7 +66,6 @@ func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 		return err
 	}
 	if _, err := os.Lstat(destination); err == nil {
-		ui.Errorf("Directory '%s' already exists", folderName)
 		return fmt.Errorf("directory '%s' already exists", folderName)
 	}
 
@@ -85,8 +84,7 @@ func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 	}
 	if err := os.Mkdir(destination, 0o755); err != nil {
 		removeParents()
-		ui.Errorf("Failed to create directory '%s'", folderName)
-		return err
+		return fmt.Errorf("create directory '%s': %w", folderName, err)
 	}
 
 	cloned := false
@@ -97,9 +95,11 @@ func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 			}
 			removeParents()
 		} else if resultErr != nil {
-			fmt.Fprintf(os.Stderr, "%s Repository downloaded and retained at %s, but setup did not finish: %v\n", ui.Yellow("Warning:"), destination, resultErr)
-			fmt.Fprintf(os.Stderr, "Inspect the downloaded branches with: git --git-dir=%s branch -a\n", shellQuote(filepath.Join(destination, ".bare")))
-			fmt.Fprintf(os.Stderr, "Finish layout configuration if needed, then create a worktree with: git -C %s wt add <path> <branch>\n", shellQuote(destination))
+			ui.Warnf("Repository downloaded and retained at %s, but setup did not finish: %v", destination, resultErr)
+			fmt.Fprintln(os.Stderr, renderCommandHintsSectionFor(os.Stderr, []commandHint{
+				{Action: "Inspect branches", Command: "git --git-dir=" + shellQuote(filepath.Join(destination, ".bare")) + " branch -a"},
+				{Action: "Create a worktree", Command: "git -C " + shellQuote(destination) + " wt add <path> <branch>"},
+			}))
 		}
 	}()
 
@@ -139,7 +139,7 @@ func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 		},
 	}}); err != nil {
 		if !cloned {
-			ui.Error("Failed to clone repository")
+			return fmt.Errorf("clone %s: %w", repoURL, err)
 		}
 		return err
 	}

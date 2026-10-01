@@ -123,7 +123,7 @@ teardown() {
 @test "migrate: fails outside git repo" {
 	run "$GIT_WT" migrate
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"Not in a git repository"* ]]
+	[[ "$output" == *"Error: not in a git repository"* ]]
 }
 
 @test "migrate: fails in detached HEAD state" {

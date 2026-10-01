@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
+	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -111,7 +112,7 @@ func Execute() {
 			}
 			return
 		}
-		fmt.Fprintln(os.Stderr, err)
+		ui.Error(err.Error())
 		os.Exit(1)
 	}
 }
