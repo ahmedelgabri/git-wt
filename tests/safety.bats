@@ -408,3 +408,19 @@ teardown() { teardown_test_env; }
 	[[ "$output" == *"unfetched commits on deleted remote branches may be lost"* ]]
 	! command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/feature
 }
+
+@test "add: interactive selection says when the local branch differs from the remote" {
+	bats_require_minimum_version 1.5.0
+	init_bare_repo_with_remote repo
+	cd repo
+	create_remote_branch feature
+	local=$(command git rev-parse --short feature)
+	command git push --quiet origin "$(command git commit-tree "feature^{tree}" -p feature -m remote-only):refs/heads/feature"
+	command git fetch --quiet origin
+	remote=$(command git rev-parse --short origin/feature)
+	run --separate-stderr select_remote_branch origin/feature
+	[ "$status" -eq 0 ]
+	[[ "$stderr" == *"Using existing local branch feature at $local; origin/feature is at $remote"* ]]
+	[ "$(command git -C feature rev-parse --short HEAD)" = "$local" ]
+	[ "$output" = "$TEST_DIR/repo/feature" ]
+}

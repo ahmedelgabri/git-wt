@@ -154,8 +154,9 @@ func runAddInteractive(root string) (string, error) {
 			return err
 		}
 
-		// Existing branches keep their configured upstream.
+		// Existing branches keep their tip and configured upstream.
 		if existing {
+			warnReusedLocalBranch(root, branch, selected.Value)
 			return nil
 		}
 		// Set upstream tracking.
@@ -167,6 +168,21 @@ func runAddInteractive(root string) (string, error) {
 		return "", err
 	}
 	return wtPath, nil
+}
+
+// The picker showed a remote ref, so say when the worktree got a local branch
+// at a different commit instead.
+func warnReusedLocalBranch(root, branch, selected string) {
+	local, err := git.QueryIn(root, "rev-parse", "--short", "refs/heads/"+branch)
+	if err != nil {
+		return
+	}
+	remote, err := git.QueryIn(root, "rev-parse", "--short", selected)
+	if err != nil || local == remote {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s Using existing local branch %s at %s; %s is at %s. Compare with: git log --oneline --left-right %s...%s\n",
+		ui.Yellow("Note:"), branch, local, selected, remote, branch, selected)
 }
 
 func createNewBranch(root string) (string, error) {
