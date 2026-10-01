@@ -307,17 +307,13 @@ func runRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) error
 		return nil
 	}
 
-	// Check the entire selection before hooks or local mutations. A later
-	// incompatible target must not strand earlier targets in a bulk removal.
-	if opts.deleteRemote {
-		seen := make(map[string]bool)
-		for _, item := range items {
-			remote := item.Target.remote
-			if item.Action == removalActionRemove && item.Target.deletesRemote(opts, cleanup) && !seen[remote] {
-				if _, err := remoteDeletionDestinations(remote); err != nil {
-					return err
-				}
-				seen[remote] = true
+	// Check the entire selection before confirmation and hooks. A doomed
+	// removal must not run teardown hooks, and a later unsafe target must not
+	// strand earlier targets in a bulk removal.
+	for _, item := range items {
+		if item.Action == removalActionRemove {
+			if _, _, err := checkRemoval(item.Target, opts, cleanup); err != nil {
+				return err
 			}
 		}
 	}
@@ -652,6 +648,31 @@ func preflightRemoveHook(target removalTarget) (bool, error) {
 	return true, nil
 }
 
+// checkRemoval verifies that a target is safe to remove and returns what the
+// removal needs. It runs before confirmation and again after before-remove
+// hooks, which may change the worktree.
+func checkRemoval(target removalTarget, opts removeOptions, cleanup bool) (branchHead string, deletions []remoteDeletion, err error) {
+	if _, err := preflightRemoveHook(target); err != nil {
+		return "", nil, err
+	}
+	if target.hasBranch() {
+		branchHead, err = git.Query("rev-parse", "--verify", "refs/heads/"+target.branch)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	deleteRemote := target.deletesRemote(opts, cleanup)
+	if !opts.force {
+		if err := validateRemovalSafety(target, deleteRemote, cleanup); err != nil {
+			return "", nil, err
+		}
+	}
+	if deleteRemote {
+		deletions, err = planRemoteDeletions(target, branchHead, opts.force)
+	}
+	return branchHead, deletions, err
+}
+
 func removeSingleWorktree(target removalTarget, opts removeOptions, cleanup bool) error {
 	name := filepath.Base(target.path)
 
@@ -709,32 +730,14 @@ func removeSingleWorktree(target removalTarget, opts removeOptions, cleanup bool
 			return fmt.Errorf("branch %s is also checked out at %s", target.branch, other.Path)
 		}
 	}
-	if _, err := preflightRemoveHook(fresh); err != nil {
-		return err
-	}
 	if fresh.remote != target.remote || fresh.remoteBranch != target.remoteBranch {
 		return fmt.Errorf("upstream changed since selection: %s", target.path)
 	}
-	branchHead := ""
-	if target.hasBranch() {
-		branchHead, err = git.Query("rev-parse", "--verify", "refs/heads/"+target.branch)
-		if err != nil {
-			return err
-		}
+	branchHead, deletions, err := checkRemoval(fresh, opts, cleanup)
+	if err != nil {
+		return err
 	}
 	deleteRemote := target.deletesRemote(opts, cleanup)
-	if !opts.force {
-		if err := validateRemovalSafety(fresh, deleteRemote, cleanup); err != nil {
-			return err
-		}
-	}
-	var deletions []remoteDeletion
-	if deleteRemote {
-		deletions, err = planRemoteDeletions(target, branchHead, opts.force)
-		if err != nil {
-			return err
-		}
-	}
 	if err := ui.SpinWithOutputContext(fmt.Sprintf("Removing worktree %s", ui.Accent(name)), func(ctx context.Context, w io.Writer) error {
 		args := []string{"worktree", "remove"}
 		if opts.force {

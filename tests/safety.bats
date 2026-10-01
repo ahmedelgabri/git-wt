@@ -147,6 +147,24 @@ teardown() { teardown_test_env; }
 	assert_branch_exists feature
 }
 
+@test "remove: unsafe targets are refused before the prompt and hooks" {
+	init_bare_repo repo
+	cd repo
+	create_worktree dirty dirty
+	create_worktree unique unique
+	echo local >dirty/untracked.txt
+	command git -C unique -c user.name=Test -c user.email=test@test.com commit --quiet --allow-empty -m unique
+	command git config wt.beforeremove 'touch "$TEST_DIR/hook-ran"'
+	for target in dirty unique; do
+		run bash -c 'printf "y\n" | "$1" remove "$2"' _ "$GIT_WT" "$target"
+		[ "$status" -ne 0 ]
+		[[ "$output" != *"[y/N]"* ]]
+		[ ! -e "$TEST_DIR/hook-ran" ]
+		[ -d "$target" ]
+	done
+	[[ "$output" == *"commits without another retained branch or tag"* ]]
+}
+
 @test "remove: remote deletion follows target upstream including renamed branches" {
 	init_bare_repo_with_remote repo
 	init_repo upstream

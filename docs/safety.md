@@ -37,7 +37,7 @@ Migration refuses submodules, existing linked worktrees or stale `.git/worktrees
 
 ## Removal
 
-Explicit removal and cleanup refuse tracked modifications, non-ignored untracked files, and commits that have no other retained branch or tag. Ignored files do not block removal and are deleted with the worktree, as with native Git. This includes `node_modules/`, `target/`, build output, and ignored `.env` files. Save any valuable ignored files before removing or cleaning up a worktree. `--force` permits discarding protected changes and unpreserved commits only for explicit targets. Current and locked worktrees remain protected. The plan warns when force is enabled, and the command checks identity and safety again after before-remove hooks run.
+Explicit removal and cleanup refuse tracked modifications, non-ignored untracked files, and commits that have no other retained branch or tag. Ignored files do not block removal and are deleted with the worktree, as with native Git. This includes `node_modules/`, `target/`, build output, and ignored `.env` files. Save any valuable ignored files before removing or cleaning up a worktree. `--force` permits discarding protected changes and unpreserved commits only for explicit targets. Current and locked worktrees remain protected. The plan warns when force is enabled. Every target is checked before the confirmation prompt, so an unsafe removal stops before any hook runs, and checked again after before-remove hooks run.
 
 Cleanup filters remain conservative:
 

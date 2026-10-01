@@ -222,7 +222,7 @@ git wt remove feature-branch
 git wt remove --dry-run feature-branch
 ```
 
-Removal refuses tracked modifications, non-ignored untracked files, and commits without another retained branch or tag. Ignored files do not block removal and are deleted with the worktree, including build output and ignored `.env` files. This also applies to cleanup filters. To deliberately discard protected work, use `git wt remove --force <worktree>` and confirm the warning. Hooks cannot bypass these checks; removal checks again after before-hooks run.
+Removal refuses tracked modifications, non-ignored untracked files, and commits without another retained branch or tag. Ignored files do not block removal and are deleted with the worktree, including build output and ignored `.env` files. This also applies to cleanup filters. To deliberately discard protected work, use `git wt remove --force <worktree>` and confirm the warning. These checks run before the confirmation prompt, so an unsafe removal stops before any hook runs. Hooks cannot bypass them; removal checks again after before-hooks run.
 
 ### Remove a worktree and local + remote branch
 
