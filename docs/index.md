@@ -219,7 +219,7 @@ the interactive prompt non-interactively.
 
 ## Dependencies
 
-- `git` (`2.48.0+` for relative worktree support)
+- `git` `2.36.0+` (`2.48.0+` for relative worktree support)
 
 ## License
 
