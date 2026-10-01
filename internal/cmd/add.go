@@ -144,7 +144,7 @@ func runAddInteractive(root string) (string, error) {
 	wtPath = addPath(root, wtPath)
 	_, existsErr := git.QueryIn(root, "show-ref", "--verify", "refs/heads/"+branch)
 	existing := existsErr == nil
-	err = runAddLifecycle(wtPath, branch, func() error {
+	err = runAddLifecycle(root, wtPath, branch, func() error {
 		// Create worktree from selected remote branch.
 		if err := ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(ctx context.Context, w io.Writer) error {
 			if existing {
@@ -203,7 +203,7 @@ func createNewBranch(root string) (string, error) {
 	}
 
 	wtPath = addPath(root, wtPath)
-	err = runAddLifecycle(wtPath, branchName, func() error {
+	err = runAddLifecycle(root, wtPath, branchName, func() error {
 		return ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(branchName)), func(ctx context.Context, w io.Writer) error {
 			return git.RunInToContext(ctx, root, w, "worktree", "add", "-b", branchName, "--", wtPath)
 		})
@@ -272,7 +272,7 @@ func runAddDirect(cmd *cobra.Command, args []string, remote, root string) (strin
 	}
 
 	fullArgs := append([]string{"worktree", "add"}, gitArgs...)
-	err := runAddLifecycle(createdPath, trackBranch, func() error {
+	err := runAddLifecycle(root, createdPath, trackBranch, func() error {
 		// Create the worktree.
 		if err := ui.SpinWithOutputContext("Creating worktree", func(ctx context.Context, w io.Writer) error {
 			return git.RunInToContext(ctx, root, w, fullArgs...)
@@ -309,7 +309,7 @@ func splitRemoteBranchRef(remoteRef string) (remote string, branch string) {
 	return remote, branch
 }
 
-func runAddLifecycle(wtPath, branch string, create func() error) error {
+func runAddLifecycle(bareRoot, wtPath, branch string, create func() error) error {
 	if wtPath == "" {
 		return create()
 	}
@@ -327,11 +327,6 @@ func runAddLifecycle(wtPath, branch string, create func() error) error {
 	if err != nil {
 		return err
 	}
-	bareRoot, err := worktree.BareRoot()
-	if err != nil {
-		return err
-	}
-
 	invocation := hook.Invocation{
 		Event:        hook.BeforeAdd,
 		Dir:          bareRoot,

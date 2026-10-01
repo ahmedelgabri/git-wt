@@ -2,7 +2,6 @@ package hook
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -35,11 +34,10 @@ func Load(event Event) ([]string, error) {
 
 func LoadConfig(key string) ([]string, error) {
 	out, err := git.QueryRaw("config", "--null", "--get-all", key)
+	if git.IsExitCode(err, 1) {
+		return nil, nil
+	}
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return nil, nil
-		}
 		return nil, err
 	}
 	out = strings.TrimSuffix(out, "\x00")
