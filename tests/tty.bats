@@ -34,7 +34,7 @@ tty_remove_fixture() {
 
 @test "TTY: typing the name discards a dirty worktree in a multi-target removal" {
 	tty_remove_fixture
-	run python3 "$BATS_TEST_DIRNAME/tty_remove.py" "$GIT_WT" remove clean dirty -- "Type dirty to discard" 'dirty\r' "[y/N]" y
+	run python3 "$BATS_TEST_DIRNAME/tty_answer.py" "$GIT_WT" remove clean dirty -- "Type dirty to discard" 'dirty\r' "[y/N]" y
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"dirty has work that removal would discard"* ]]
 	[[ "$output" == *"contains local files or changes"* ]]
@@ -45,10 +45,30 @@ tty_remove_fixture() {
 
 @test "TTY: Enter skips a dirty worktree and removes the rest" {
 	tty_remove_fixture
-	run python3 "$BATS_TEST_DIRNAME/tty_remove.py" "$GIT_WT" remove clean dirty -- "Type dirty to discard" '\r' "[y/N]" y
+	run python3 "$BATS_TEST_DIRNAME/tty_answer.py" "$GIT_WT" remove clean dirty -- "Type dirty to discard" '\r' "[y/N]" y
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Skipped ./dirty"* ]]
 	[ ! -e clean ]
 	[ -f dirty/untracked.txt ]
 	assert_branch_exists dirty
+}
+
+@test "TTY: Ctrl-C during migration rolls back" {
+	cd "$TEST_DIR"
+	init_repo standard
+	cd standard
+	mkdir "$TEST_DIR/bin"
+	# Slow down one step so Ctrl-C arrives mid-migration.
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add "*) sleep 2 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" python3 "$BATS_TEST_DIRNAME/tty_answer.py" "$GIT_WT" migrate -- "[y/N]" y "Migrating repository in place" '\x03'
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"original repository restored"* ]]
+	[ -d .git ]
+	[ ! -e .bare ]
+	[ ! -e .git-wt-migrate ]
 }

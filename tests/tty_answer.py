@@ -1,4 +1,4 @@
-"""Answer removal prompts through a real controlling terminal."""
+"""Answer prompts through a real controlling terminal."""
 
 import errno
 import fcntl
@@ -59,7 +59,7 @@ try:
             status = code
             break
     assert not steps, f"Prompt not reached: {steps[0][0]!r} in {output!r}"
-    assert status is not None, f"Removal hung: {output!r}"
+    assert status is not None, f"Command hung: {output!r}"
     sys.stdout.write(output.decode(errors="replace"))
     sys.exit(os.waitstatus_to_exitcode(status))
 finally:

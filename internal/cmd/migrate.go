@@ -59,11 +59,10 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Repository: %s\nCurrent branch: %s\n", repoRoot, plan.currentBranch)
-	fmt.Println("The Git database and working directory will be moved in place, not copied.")
-	fmt.Println("Stop other Git operations and file writers before continuing. An interrupted migration is rolled back on the next run.")
+	fmt.Println(renderMigrationPlan(plan, dryRun))
+	fmt.Println()
 	if dryRun {
-		fmt.Println("[DRY RUN] No changes made")
+		fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
 		return nil
 	}
 	if !ui.Confirm("This will restructure the repository. Continue? [y/N]:") {
@@ -77,9 +76,16 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Conversion runs synchronously and checks for signals between steps, so
-	// rollback never races a concurrent cleanup.
-	if err := convertRepository(ctx, journal, plan); err != nil {
+	// Conversion checks for cancellation between steps and returns before
+	// rollback starts, so rollback never races it. Ctrl-C in the task UI and
+	// signals both cancel it.
+	err = ui.SpinContext("Migrating repository in place", func(taskCtx context.Context) error {
+		convertCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(taskCtx, cancel)()
+		return convertRepository(convertCtx, journal, plan)
+	})
+	if err != nil {
 		if rollbackErr := journal.rollback(); rollbackErr != nil {
 			return fmt.Errorf("%w; rollback incomplete: %v; stop other writers and run git wt migrate again in %s to finish restoring", err, rollbackErr, repoRoot)
 		}
@@ -96,7 +102,10 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		{Action: "Create another worktree", Command: fmt.Sprintf("cd %s && git wt add <branch-name> <branch-name>", shellQuote(repoRoot))},
 	}
 	if plan.defaultBranch != "" && plan.defaultBranch != plan.currentBranch {
-		if err := createMigrationWorktree(ctx, repoRoot, plan.defaultBranch, plan.defaultRemote); err != nil {
+		err := ui.SpinContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(plan.defaultBranch)), func(ctx context.Context) error {
+			return createMigrationWorktree(ctx, repoRoot, plan.defaultBranch, plan.defaultRemote)
+		})
+		if err != nil {
 			ui.Warnf("Could not create a worktree for default branch %s: %v", plan.defaultBranch, err)
 			hints = append(hints, commandHint{Action: "Create the default branch worktree", Command: fmt.Sprintf("cd %s && git wt add %s %s", shellQuote(repoRoot), shellQuote(plan.defaultBranch), shellQuote(plan.defaultBranch))})
 		} else {
@@ -108,11 +117,34 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func renderMigrationPlan(plan migratePlan, dryRun bool) string {
+	rows := [][]string{
+		{ui.Path("./.git"), ui.Path("./.bare"), ui.Subtle("git database")},
+		{ui.Subtle("working files"), ui.Path("./" + plan.currentBranch), ui.Subtle("current branch worktree")},
+	}
+	if plan.defaultBranch != "" && plan.defaultBranch != plan.currentBranch {
+		rows = append(rows, []string{"", ui.Path("./" + plan.defaultBranch), ui.Subtle("default branch worktree, created after")})
+	}
+	notes := []string{
+		ui.Subtle("Files are moved in place, not copied; no extra disk space is needed."),
+		ui.Yellow("Stop editors, builds, and other Git commands before continuing."),
+		ui.Subtle("If migration is interrupted, run git wt migrate again to restore the original layout."),
+	}
+	if dryRun {
+		notes = append([]string{ui.Yellow("[DRY RUN] Preview only")}, notes...)
+	}
+	return renderTableSection([]ui.TableColumn{
+		{Title: "FROM", MinWidth: 14, MaxWidth: 24},
+		{Title: "TO", MinWidth: 14, MaxWidth: 40},
+		{Title: "ROLE", MinWidth: 18, MaxWidth: 40},
+	}, rows, notes, ui.Subtle(plan.repoRoot))
+}
+
 func recoverInterruptedMigration(root string, dryRun bool) error {
 	if dryRun {
 		return fmt.Errorf("found an interrupted migration in %s; run git wt migrate without --dry-run to restore the original layout", root)
 	}
-	ui.Info("Restoring the original layout of an interrupted migration in " + root)
+	ui.Warnf("Found an interrupted migration in %s; restoring the original layout", root)
 	if err := recoverMigration(root); err != nil {
 		return fmt.Errorf("restore interrupted migration in %s: %w", root, err)
 	}
