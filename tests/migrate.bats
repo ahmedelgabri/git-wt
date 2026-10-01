@@ -429,3 +429,23 @@ SH
 	[ -d feature ]
 	[ ! -e main ]
 }
+
+@test "migrate: rolls back when its terminal hangs up" {
+	init_repo repo
+	cd repo
+	create_commit tracked.txt
+	mkdir "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add "*) kill -HUP \$PPID; sleep 1 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"original repository restored"* ]]
+	[ -d .git ]
+	[ -f tracked.txt ]
+	[ ! -e .bare ]
+	[ ! -e .git-wt-migrate ]
+}

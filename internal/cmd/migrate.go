@@ -53,7 +53,8 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	// A closed terminal sends SIGHUP; it must roll back like an interrupt.
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	plan, err := buildMigratePlan(ctx, repoRoot)
 	if err != nil {

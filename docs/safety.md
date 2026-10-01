@@ -25,7 +25,7 @@ Configuration includes must keep their meaning after relocation. Relative includ
 
 ### Recovery
 
-Every step is written to `.git-wt-migrate/journal` and synced before it runs. If a step or the verification fails, or migration receives SIGINT or SIGTERM, it replays the journal in reverse: moves go back, created paths are removed, and saved files are restored. The original repository is then back in place, byte for byte, and the journal is removed.
+Every step is written to `.git-wt-migrate/journal` and synced before it runs. If a step or the verification fails, or migration receives SIGINT, SIGTERM, or SIGHUP (for example when its terminal closes), it replays the journal in reverse: moves go back, created paths are removed, and saved files are restored. The original repository is then back in place, byte for byte, and the journal is removed.
 
 If the process is killed or the machine loses power, the journal stays. Run `git wt migrate` again from anywhere inside the repository. It finds the journal, restores the original layout, and exits with an error telling you to run it again to migrate. `--dry-run` only reports the interrupted migration. A lock on the journal stops a second `git wt migrate` from undoing one that is still running. Undo never removes a non-empty directory it did not create, and it stops if a path it needs to restore already exists, for example because an editor recreated a file. Resolve the conflict and run `git wt migrate` again.
 
