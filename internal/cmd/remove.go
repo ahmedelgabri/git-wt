@@ -54,8 +54,9 @@ var removeCmd = &cobra.Command{
 
 By default, removing a worktree also deletes its local branch, provided its
 commits are preserved by another branch or tag. Dirty worktrees and unique
-commits require --force with explicit targets. Current and locked worktrees
-remain protected. Ignored files do not block removal and are deleted with the
+commits require --force with explicit targets. With --delete-remote, --force
+also deletes remote branches that have commits you have not fetched. Current
+and locked worktrees remain protected. Ignored files do not block removal and are deleted with the
 worktree, as with native Git. Use --delete-remote to delete the target's
 configured upstream. An upstream with a different name than the local branch,
 such as origin/release for a branch created from it, must be confirmed by
@@ -92,7 +93,7 @@ With no arguments and no cleanup filters, an interactive picker is shown.`,
 func init() {
 	removeCmd.Flags().BoolP("dry-run", "n", false, "Preview what would be removed without making changes")
 	removeCmd.Flags().Bool("delete-remote", false, "Also delete each worktree branch's configured upstream branch")
-	removeCmd.Flags().Bool("force", false, "Allow explicit removal of dirty worktrees and commits without another retained ref")
+	removeCmd.Flags().Bool("force", false, "Allow explicit removal of dirty worktrees and commits without another retained ref; with --delete-remote, also unfetched remote commits")
 	removeCmd.Flags().Bool("merged", false, "Select worktrees whose branches are fully merged into the cleanup base")
 	removeCmd.Flags().Bool("gone", false, "Select fully merged worktrees whose upstream is gone")
 	removeCmd.Flags().Bool("stale", false, "Select missing, unlocked worktree paths with attached branches")
@@ -483,7 +484,9 @@ func renderRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) st
 	if removeCount > 0 {
 		notes = append(notes, ui.Yellow("Ignored files, including .env files and build output, are deleted with the worktree."))
 	}
-	if opts.force {
+	if opts.force && opts.deleteRemote {
+		notes = append(notes, ui.Red("FORCE: dirty files, commits without another retained ref, and unfetched commits on deleted remote branches may be lost."))
+	} else if opts.force {
 		notes = append(notes, ui.Red("FORCE: dirty files and commits without another retained ref may be lost."))
 	}
 	if opts.deleteRemote {

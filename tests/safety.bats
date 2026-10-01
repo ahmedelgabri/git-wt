@@ -388,3 +388,23 @@ teardown() { teardown_test_env; }
 	run bash -c 'printf "y\n" | "$1" remove --force unique' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 }
+
+@test "remove: --force with --delete-remote deletes unfetched remote commits" {
+	init_bare_repo_with_remote repo
+	cd repo
+	create_worktree feature feature
+	command git push --quiet -u origin feature
+	command git clone --quiet "$TEST_DIR/repo-origin" "$TEST_DIR/collaborator"
+	command git -C "$TEST_DIR/collaborator" checkout --quiet feature
+	command git -C "$TEST_DIR/collaborator" -c user.name=Other -c user.email=other@test.com commit --quiet --allow-empty -m collaborator
+	command git -C "$TEST_DIR/collaborator" push --quiet origin feature
+	run bash -c 'printf "feature\n" | "$1" remove feature --delete-remote' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"has commits not preserved by the selected local branch"* ]]
+	[ -d feature ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/feature
+	run bash -c 'printf "feature\n" | "$1" remove --force feature --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"unfetched commits on deleted remote branches may be lost"* ]]
+	! command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/feature
+}
