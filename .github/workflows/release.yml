@@ -35,35 +35,35 @@ jobs:
           echo "version=$VERSION" >>"$GITHUB_OUTPUT"
           echo "Version: $VERSION"
 
-      - name: Check if tag exists
-        id: check_tag
+      - name: Check whether to skip the release
+        id: check_release
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           MESSAGE=$(git log -1 --format=%B)
           TAG=$(git ls-remote --tags origin "refs/tags/v${VERSION}")
           if [[ "$MESSAGE" == *'[skip release]'* || -n "$TAG" ]]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Release skipped by commit message or existing tag"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Read Go minor version from go.mod
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.skip == 'false'
         id: go-version
         run: |
           awk '$1 == "go" { split($2, v, "."); print "version=" v[1] "." v[2] ".x" }' go.mod >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.skip == 'false'
         uses: actions/setup-go@v5
         with:
           go-version: ${{ steps.go-version.outputs.version }}
           check-latest: true
 
       - name: Build native binary for completions and man pages
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.skip == 'false'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -78,7 +78,7 @@ jobs:
           rm git-wt-native
 
       - name: Cross-compile and package
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.skip == 'false'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -98,7 +98,7 @@ jobs:
           done
 
       - name: Generate checksums
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.skip == 'false'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -106,7 +106,7 @@ jobs:
           sha256sum git-wt-"${VERSION}"-*.tar.gz > "git-wt-${VERSION}-checksums.txt"
 
       - name: Upload artifacts
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.skip == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: release-assets
@@ -116,7 +116,7 @@ jobs:
 
     outputs:
       version: ${{ steps.version.outputs.version }}
-      tag_exists: ${{ steps.check_tag.outputs.exists }}
+      skip_release: ${{ steps.check_release.outputs.skip }}
 
   release:
     name: Create Release
@@ -124,7 +124,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: needs.build.outputs.tag_exists == 'false'
+    if: needs.build.outputs.skip_release == 'false'
     steps:
       - uses: actions/checkout@v4
         with:
