@@ -146,3 +146,19 @@ teardown() {
 	command git -C main reflog show --format=%H refs/heads/reflogged >/dev/null
 	[ "$(command git -C main config core.logAllRefUpdates)" = true ]
 }
+
+@test "migrate: refuses core.hooksPath inside .git with a clear message" {
+	for hooks in .git/hooks "$TEST_DIR/repo/.git/hooks"; do
+		rm -rf "$TEST_DIR/repo"
+		init_repo repo
+		cd repo
+		command git config core.hooksPath "$hooks"
+		run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+		[ "$status" -ne 0 ]
+		[[ "$output" == *"core.hooksPath \"$hooks\" points inside .git"* ]]
+		[[ "$output" == *"$TEST_DIR/repo/.bare/hooks"* ]]
+		[ -d .git ]
+		[ ! -e .bare ]
+		cd "$TEST_DIR"
+	done
+}

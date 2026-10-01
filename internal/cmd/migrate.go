@@ -210,6 +210,9 @@ func preflightMigrateRepo(root string) error {
 	if err := checkMigrationIncludes(context.Background(), root); err != nil {
 		return err
 	}
+	if err := checkMigrationHooksPath(root); err != nil {
+		return err
+	}
 	// Refuse active Git writes rather than moving their intermediate state.
 	return filepath.WalkDir(gitPath, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -223,6 +226,23 @@ func preflightMigrateRepo(root string) error {
 		}
 		return nil
 	})
+}
+
+// A hooks path inside .git, often .git/hooks to opt out of a global hooksPath,
+// stops resolving once .git becomes a file.
+func checkMigrationHooksPath(root string) error {
+	hooksPath, err := git.QueryIn(root, "config", "--type=path", "--get", "core.hooksPath")
+	if err != nil || hooksPath == "" {
+		return nil
+	}
+	resolved := hooksPath
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(root, resolved)
+	}
+	if !pathWithin(filepath.Join(root, ".git"), resolved) {
+		return nil
+	}
+	return fmt.Errorf("core.hooksPath %q points inside .git, which becomes a file after migration; unset it or point it outside .git, then after migrating set it to %s", hooksPath, filepath.Join(root, ".bare", "hooks"))
 }
 
 // convertRepository restructures the repository with renames only, so file

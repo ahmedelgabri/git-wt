@@ -33,7 +33,7 @@ After a successful migration the journal and saved files are removed. There is n
 
 If the extra worktree for the default branch cannot be created after the conversion, migration still succeeds and prints a warning with the `git wt add` command to create it later.
 
-Migration refuses submodules, existing linked worktrees or stale `.git/worktrees` metadata, linked-worktree control files in the original `.git`, sparse checkout, alternate object directories, per-worktree configuration, unborn branches, Git lock files, symlinked Git metadata, and in-progress merge, rebase, cherry-pick, revert, or sequencer operations. Only the files ref backend is supported. `--dry-run` and `DEBUG=1` do not change the filesystem.
+Migration refuses submodules, existing linked worktrees or stale `.git/worktrees` metadata, linked-worktree control files in the original `.git`, sparse checkout, alternate object directories, per-worktree configuration, unborn branches, Git lock files, symlinked Git metadata, a `core.hooksPath` inside `.git` (set it to `<repo>/.bare/hooks` after migrating instead), and in-progress merge, rebase, cherry-pick, revert, or sequencer operations. Only the files ref backend is supported. `--dry-run` and `DEBUG=1` do not change the filesystem.
 
 ## Removal
 
