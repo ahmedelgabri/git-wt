@@ -39,7 +39,6 @@ func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) err
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	var err error
 	if cleanup {
 		base, err := resolveCleanupBase(context.Background())
 		if err != nil {
@@ -56,10 +55,8 @@ func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) err
 	}
 	ref := "refs/heads/" + target.branch
 	if target.detached {
-		ref, err = git.QueryIn(target.path, "rev-parse", "HEAD")
-		if err != nil {
-			return err
-		}
+		// Git's listing has the HEAD even when the worktree path is missing.
+		ref = target.head
 	}
 	refs, err := git.Query("for-each-ref", "--format=%(refname)\t%(symref)", "refs/heads", "refs/remotes", "refs/tags")
 	if err != nil {

@@ -369,3 +369,22 @@ teardown() { teardown_test_env; }
 	[ "$(cat "$TEST_DIR/external-config")" = "$before" ]
 	[ -d .git ]
 }
+
+@test "remove: missing detached worktree is checked using its listed HEAD" {
+	init_bare_repo repo
+	cd repo
+	command git worktree add --quiet --detach retained main
+	command git worktree add --quiet --detach unique main
+	command git -C unique -c user.name=Test -c user.email=test@test.com commit --quiet --allow-empty -m unique
+	rm -rf retained unique
+	run bash -c 'printf "y\n" | "$1" remove retained' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"chdir"* ]]
+	run command git worktree list --porcelain
+	[[ "$output" != *"/retained"* ]]
+	run bash -c 'printf "y\n" | "$1" remove unique' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"commits without another retained branch or tag"* ]]
+	run bash -c 'printf "y\n" | "$1" remove --force unique' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+}

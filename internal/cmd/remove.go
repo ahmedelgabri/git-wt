@@ -381,6 +381,7 @@ func confirmRenamedUpstream(target removalTarget) bool {
 type removalTarget struct {
 	path         string
 	branch       string
+	head         string
 	detached     bool
 	locked       bool
 	lockedReason string
@@ -395,6 +396,7 @@ func newRemovalTargetFromEntry(entry worktree.Entry) removalTarget {
 	return removalTarget{
 		path:         entry.Path,
 		branch:       entry.Branch,
+		head:         entry.Head,
 		detached:     entry.Detached,
 		locked:       entry.Locked,
 		lockedReason: entry.LockedReason,
