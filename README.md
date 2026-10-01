@@ -39,7 +39,7 @@ separate directories. They are useful for:
 - **Machine-readable output** with `git wt list --json` or native `--porcelain -z`
 - **Agent skill installer** with `git wt agent-skill`
 - **Dry-run support** for destructive operations
-- **Verified migration with a retained backup** of the original repository
+- **In-place migration** that rolls back if it fails or is interrupted
 
 ## Dependencies
 
@@ -157,9 +157,9 @@ cd existing-repo
 git wt migrate
 ```
 
-Migration is experimental. Stop other Git operations and file writers first. It copies the complete Git database, including packed refs, stashes, reflogs, hooks, and local configuration, then restores the current worktree without checking out committed files over local deletions. It restores worktree-specific metadata, including HEAD reflogs, pseudorefs, and private ref namespaces, into the linked worktree's Git directory. Private refs are removed from common storage so other worktrees cannot resolve them. Includes whose paths break on relocation are refused, and effective config/remotes are verified before and after promotion. It verifies file contents, modes, extended attributes, index entries, refs, stashes, and object connectivity before accepting the new layout. ACLs and filesystem metadata that cannot be inspected or preserved stop migration rather than being discarded.
+Migration is experimental. Stop other Git operations and file writers first. It converts the repository in place by moving files, not copying them, so it needs no extra disk space and keeps file modes, extended attributes, and ACLs. `.git` becomes `.bare`, the working files move into a worktree for the current branch, and worktree-specific metadata (index, HEAD reflog, pseudorefs such as `ORIG_HEAD`, and private ref namespaces) moves into that worktree's Git directory. Private refs are removed from common storage so other worktrees cannot resolve them. Includes whose paths break on relocation are refused. Effective config, remotes, refs, index entries, stashes, and working tree status are verified at the final paths.
 
-The original repository remains in a sibling `<repo>-backup-*` directory. Keep it until you have checked your worktrees and configuration. Migration requires enough free space for a full copy and refuses unsupported layouts or in-progress Git operations. See [migration and removal safety](docs/safety.md) for limitations and recovery.
+Every step is recorded in a journal under `.git-wt-migrate/` before it happens. If a step or the verification fails, or the command is interrupted, migration moves everything back. If the process is killed, run `git wt migrate` again: it finds the journal, restores the original layout, and stops. See [migration and removal safety](docs/safety.md) for limitations and recovery.
 
 ### Create a worktree
 

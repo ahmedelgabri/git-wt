@@ -36,7 +36,6 @@ teardown() { teardown_test_env; }
 	[ ! -e main/staged.txt ]
 	[ -x main/script.sh ]
 	[ "$(command git -C main status --porcelain)" = "$before" ]
-	[ -d "$TEST_DIR"/repo-backup-*/.git ]
 }
 
 @test "migrate: replacing a symlink never overwrites its external target" {

@@ -38,18 +38,17 @@ teardown() {
 	[ "$(command git -C main rev-parse ORIG_HEAD)" = "$first" ]
 	[ "$(command git -C main rev-parse FETCH_HEAD)" = "$first" ]
 	[ -f "$gitdir/BISECT_LOG" ]
-	[ -f "$gitdir/tool-state/saved" ]
+	[ ! -e .bare/BISECT_LOG ]
+	# Unknown directories stay shared, where tools such as git-lfs look for them.
+	[ -f .bare/tool-state/saved ]
+	[ ! -e "$gitdir/tool-state" ]
 	for namespace in bisect worktree rewritten; do
 		[ "$(command git -C main rev-parse "refs/$namespace/saved")" = "$first" ]
 		command git -C main reflog show --format='%H %gs' "refs/$namespace/saved" >"$TEST_DIR/actual-$namespace-log"
 		cmp "$TEST_DIR/$namespace-log" "$TEST_DIR/actual-$namespace-log"
 	done
 	[ "$(command git -C main symbolic-ref refs/worktree/alias)" = refs/worktree/saved ]
-	python3 - "$gitdir" <<'PY'
-import os, stat, sys
-for suffix in ['', 'logs', 'refs']:
-    assert stat.S_IMODE(os.stat(os.path.join(sys.argv[1], suffix)).st_mode) == 0o700
-PY
+	[ "$(stat -c %a .bare 2>/dev/null || stat -f %Lp .bare)" = 700 ]
 }
 
 @test "migrate: isolates packed private refs from existing and future worktrees" {
@@ -123,10 +122,12 @@ PY
 	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	gitdir=$(command git -C main rev-parse --absolute-git-dir)
+	# Paths are moved, so they keep their attributes. Git itself rewrites
+	# .git/config, and the worktree directories are new.
 	python3 - "$gitdir" <<'PY'
 import os, platform, subprocess, sys
-paths = ['.', 'main', 'main/tracked.txt', 'main/ignored.txt', '.bare', '.bare/config', '.bare/objects']
-paths += [os.path.join(sys.argv[1], suffix) for suffix in ['', 'index', 'logs', 'logs/HEAD']]
+paths = ['.', 'main/tracked.txt', 'main/ignored.txt', '.bare', '.bare/objects', '.bare/logs']
+paths += [os.path.join(sys.argv[1], suffix) for suffix in ['index', 'logs/HEAD']]
 for path in paths:
     if platform.system() == 'Darwin':
         value = bytes.fromhex(subprocess.check_output(['/usr/bin/xattr', '-px', 'user.git-wt-test', path], text=True))
@@ -136,40 +137,81 @@ for path in paths:
 PY
 }
 
-migration_acl_refusal() {
+migration_acl_preserved() {
 	local target="$1"
 	init_repo repo
 	cd repo
 	create_commit tracked.txt
-	python3 - "$target" <<'PY'
+	local after="${2:-$target}"
+	python3 - "$target" <<'PY' || skip "filesystem does not support ACLs"
 import os, platform, struct, subprocess, sys
 path = sys.argv[1]
 if platform.system() == 'Darwin':
     subprocess.run(['/bin/chmod', '+a', 'everyone allow read', path], check=True)
 else:
-    entries = [(1, 6, 0xffffffff), (2, 4, 12345), (4, 4, 0xffffffff), (16, 4, 0xffffffff), (32, 0, 0xffffffff)]
+    # Directories need execute permission, or Git cannot use what it creates there.
+    owner, named = (7, 5) if os.path.isdir(path) else (6, 4)
+    entries = [(1, owner, 0xffffffff), (2, named, 12345), (4, named, 0xffffffff), (16, named, 0xffffffff), (32, 0, 0xffffffff)]
     acl = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *entry) for entry in entries)
     name = 'system.posix_acl_default' if os.path.isdir(path) else 'system.posix_acl_access'
     os.setxattr(path, name, acl)
 PY
-	run "$GIT_WT" migrate --dry-run
-	[ "$status" -ne 0 ]
-	[[ "$output" == *"unsupported ACL metadata"* ]]
-	[ -d .git ]
-	[ ! -e .bare ]
-	[ -f tracked.txt ]
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	python3 - "$after" <<'PY'
+import os, platform, subprocess, sys
+path = sys.argv[1]
+if platform.system() == 'Darwin':
+    assert 'group:everyone allow' in subprocess.check_output(['/bin/ls', '-led', path], text=True), path
+else:
+    name = 'system.posix_acl_default' if os.path.isdir(path) else 'system.posix_acl_access'
+    assert os.getxattr(path, name), path
+PY
 }
 
-@test "migrate: refuses file ACLs without restructuring" {
-	migration_acl_refusal tracked.txt
+@test "migrate: preserves file ACLs" {
+	migration_acl_preserved tracked.txt main/tracked.txt
 }
 
-@test "migrate: refuses root directory ACLs without restructuring" {
-	migration_acl_refusal .
+@test "migrate: preserves root directory ACLs" {
+	migration_acl_preserved .
 }
 
-@test "migrate: refuses ACLs inside the Git database" {
-	migration_acl_refusal .git/config
+@test "migrate: preserves ACLs inside the Git database" {
+	migration_acl_preserved .git/objects .bare/objects
+}
+
+@test "migrate: preserves special mode bits and symlink modes" {
+	init_repo repo
+	cd repo
+	command git config core.sharedRepository group
+	mkdir shared sticky
+	chmod 2775 shared
+	chmod 1777 sticky
+	chmod g+s .git/objects/*/
+	(umask 077 && ln -s tracked.txt private-link)
+	before=$(ls -ld shared sticky private-link | awk '{print $1}')
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[ "$(cd main && ls -ld shared sticky private-link | awk '{print $1}')" = "$before" ]
+}
+
+@test "migrate: keeps unknown Git directories shared without duplicating them" {
+	init_repo repo
+	cd repo
+	mkdir -p .git/lfs/objects/aa
+	printf 'large\n' >.git/lfs/objects/aa/blob
+	command git update-ref ORIG_HEAD HEAD
+	printf 'bisect\n' >.git/BISECT_LOG
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	gitdir=$(command git -C main rev-parse --absolute-git-dir)
+	[ -f .bare/lfs/objects/aa/blob ]
+	[ ! -e "$gitdir/lfs" ]
+	for stale in index ORIG_HEAD BISECT_LOG logs/HEAD; do
+		[ ! -e ".bare/$stale" ]
+	done
+	[ -f "$gitdir/BISECT_LOG" ]
 }
 
 @test "migrate: metadata restoration does not execute native Git hooks" {

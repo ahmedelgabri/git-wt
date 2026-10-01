@@ -10,109 +10,6 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 )
 
-func TestMigrationMoves(t *testing.T) {
-	src := t.TempDir()
-	dst := t.TempDir()
-
-	os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0o644)
-	os.MkdirAll(filepath.Join(src, "subdir"), 0o755)
-	os.WriteFile(filepath.Join(src, "subdir", "nested.txt"), []byte("world"), 0o644)
-
-	moved, err := (migrationMoves{rename: renameEntry}).move(src, dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(moved, ",") != "file.txt,subdir" {
-		t.Fatalf("moved entries = %v", moved)
-	}
-
-	// Entries should exist in dst
-	if _, err := os.Stat(filepath.Join(dst, "file.txt")); err != nil {
-		t.Error("file.txt should exist in dst")
-	}
-	if _, err := os.Stat(filepath.Join(dst, "subdir", "nested.txt")); err != nil {
-		t.Error("subdir/nested.txt should exist in dst")
-	}
-
-	// Entries should be absent from src
-	entries, _ := os.ReadDir(src)
-	if len(entries) != 0 {
-		t.Errorf("src should be empty, got %d entries", len(entries))
-	}
-}
-
-func TestMigrationMovesEmptySource(t *testing.T) {
-	src := t.TempDir()
-	dst := t.TempDir()
-
-	moved, err := (migrationMoves{rename: renameEntry}).move(src, dst)
-	if err != nil || len(moved) != 0 {
-		t.Fatalf("empty source: moved %v, error %v", moved, err)
-	}
-
-	entries, _ := os.ReadDir(dst)
-	if len(entries) != 0 {
-		t.Errorf("dst should be empty, got %d entries", len(entries))
-	}
-}
-
-func TestMigrationMovesMissingSource(t *testing.T) {
-	_, err := (migrationMoves{rename: renameEntry}).move(filepath.Join(t.TempDir(), "nonexistent"), t.TempDir())
-	if err == nil {
-		t.Error("moving a nonexistent source should return an error")
-	}
-}
-
-func TestFinalizeMigrationRollbackOnValidationFailure(t *testing.T) {
-	repoRoot := t.TempDir()
-	newStructure := t.TempDir()
-	tempBackup := filepath.Join(t.TempDir(), "backup")
-
-	os.WriteFile(filepath.Join(repoRoot, "original.txt"), []byte("original"), 0o644)
-	os.MkdirAll(filepath.Join(newStructure, ".bare"), 0o755)
-	os.WriteFile(filepath.Join(newStructure, ".git"), []byte("gitdir: ./.bare\n"), 0o644)
-
-	err := finalizeMigration(repoRoot, newStructure, tempBackup, []string{".git", ".bare", "main"}, migrationMoves{rename: renameEntry}, func() error { return nil })
-	if err == nil {
-		t.Fatal("finalizeMigration should fail validation when required entries are missing")
-	}
-
-	data, readErr := os.ReadFile(filepath.Join(repoRoot, "original.txt"))
-	if readErr != nil {
-		t.Fatalf("original repo contents should be restored: %v", readErr)
-	}
-	if string(data) != "original" {
-		t.Fatalf("original repo contents = %q, want %q", data, "original")
-	}
-	if _, statErr := os.Stat(filepath.Join(repoRoot, ".git")); !os.IsNotExist(statErr) {
-		t.Fatalf("repoRoot should not retain promoted .git after rollback")
-	}
-}
-
-func TestMigrationRestoreNamedEntries(t *testing.T) {
-	backup := t.TempDir()
-	repoRoot := t.TempDir()
-
-	os.WriteFile(filepath.Join(backup, "file.txt"), []byte("backup"), 0o644)
-	os.MkdirAll(filepath.Join(backup, "subdir"), 0o755)
-	os.WriteFile(filepath.Join(backup, "retained.txt"), []byte("recovery data"), 0o600)
-
-	if err := (migrationMoves{rename: renameEntry}).restore(backup, repoRoot, []string{"file.txt", "subdir"}); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := os.Stat(filepath.Join(repoRoot, "file.txt")); err != nil {
-		t.Error("file.txt should exist in repoRoot after restore")
-	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "subdir")); err != nil {
-		t.Error("subdir should exist in repoRoot after restore")
-	}
-
-	if data, err := os.ReadFile(filepath.Join(backup, "retained.txt")); err != nil || string(data) != "recovery data" {
-		t.Fatalf("unselected recovery data changed: %q, %v", data, err)
-	}
-}
-
 func TestIsKnownCommand(t *testing.T) {
 	known := []string{"add", "clone", "help", "--help", "-h"}
 	for _, name := range known {
@@ -237,20 +134,6 @@ func initGitRepo(t *testing.T) string {
 	run("add", "README.md")
 	run("-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init")
 	return dir
-}
-
-func TestMigrationMovesIntoFileFails(t *testing.T) {
-	src := t.TempDir()
-	os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0o644)
-
-	// dst is a file, not a directory - rename into it will fail
-	dstFile := filepath.Join(t.TempDir(), "not-a-dir")
-	os.WriteFile(dstFile, []byte("x"), 0o644)
-
-	_, err := (migrationMoves{rename: renameEntry}).move(src, dstFile)
-	if err == nil {
-		t.Error("moving entries into a file should return an error")
-	}
 }
 
 func TestEntriesToPickerItemsWithBareRoot(t *testing.T) {

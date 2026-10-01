@@ -126,7 +126,7 @@ func migrationURL(source, url string, prefixes []string) string {
 	return url
 }
 
-func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string, source bool) error {
+func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string) error {
 	actual, err := readMigrationConfig(ctx, root)
 	if err != nil {
 		return fmt.Errorf("migration configuration verification failed at %s: %w", root, err)
@@ -135,41 +135,29 @@ func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string, s
 		return fmt.Errorf("migration configuration verification failed at %s: effective remotes changed", root)
 	}
 	expected := maps.Clone(plan.config.values)
-	if !source {
-		for _, setting := range [][2]string{
-			{"core.bare", "true"},
-			{"core.logallrefupdates", "true"},
-			{"worktree.userelativepaths", "true"},
-			{"core.repositoryformatversion", "1"},
-			{"extensions.relativeworktrees", "true"},
-		} {
-			values := actual.values[setting[0]]
-			if len(values) == 0 || values[len(values)-1] != "\n"+setting[1] {
-				return fmt.Errorf("migration configuration verification failed at %s: %s must be %s", root, setting[0], setting[1])
-			}
-			delete(expected, setting[0])
-			delete(actual.values, setting[0])
+	for _, setting := range [][2]string{
+		{"core.bare", "true"},
+		{"core.logallrefupdates", "true"},
+		{"worktree.userelativepaths", "true"},
+		{"core.repositoryformatversion", "1"},
+		{"extensions.relativeworktrees", "true"},
+	} {
+		values := actual.values[setting[0]]
+		if len(values) == 0 || values[len(values)-1] != "\n"+setting[1] {
+			return fmt.Errorf("migration configuration verification failed at %s: %s must be %s", root, setting[0], setting[1])
 		}
-		delete(expected, "core.worktree")
-		prefixes := migrationURLPrefixes(plan.config.values)
-		for key, values := range expected {
-			if migrationRemoteURLKey(key) {
-				normalized := make([]string, len(values))
-				for i, value := range values {
-					normalized[i] = "\n" + migrationURL(plan.repoRoot, strings.TrimPrefix(value, "\n"), prefixes)
-				}
-				expected[key] = normalized
+		delete(expected, setting[0])
+		delete(actual.values, setting[0])
+	}
+	delete(expected, "core.worktree")
+	prefixes := migrationURLPrefixes(plan.config.values)
+	for key, values := range expected {
+		if migrationRemoteURLKey(key) {
+			normalized := make([]string, len(values))
+			for i, value := range values {
+				normalized[i] = "\n" + migrationURL(plan.repoRoot, strings.TrimPrefix(value, "\n"), prefixes)
 			}
-		}
-		// Git may configure tracking for a newly created default branch. Never
-		// exempt a pre-existing setting, or unrelated branch configuration.
-		if plan.defaultBranch != "" && plan.defaultBranch != plan.currentBranch && !strings.Contains(plan.refs, "refs/heads/"+plan.defaultBranch+" ") {
-			for _, setting := range []string{"remote", "merge", "rebase"} {
-				key := "branch." + plan.defaultBranch + "." + setting
-				if _, exists := expected[key]; !exists {
-					delete(actual.values, key)
-				}
-			}
+			expected[key] = normalized
 		}
 	}
 	for _, key := range slices.Sorted(maps.Keys(expected)) {

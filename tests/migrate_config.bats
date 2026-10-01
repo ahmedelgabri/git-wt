@@ -81,7 +81,7 @@ teardown() {
 	[ "$status" -eq 1 ]
 }
 
-@test "migrate: refuses conditional settings lost during preparation" {
+@test "migrate: rolls back when conditional settings are lost" {
 	init_repo repo
 	cd repo
 	command git config --file "$TEST_DIR/shared.config" custom.secret do-not-print-this
@@ -96,13 +96,12 @@ teardown() {
 	[ "$(command git config custom.secret)" = do-not-print-this ]
 }
 
-@test "migrate: rolls back conditional remotes lost only after promotion" {
+@test "migrate: rolls back when conditional remotes are lost" {
 	init_repo_with_remote repo
 	cd repo
 	root=$(pwd -P)
 	command git config --file "$TEST_DIR/shared.config" remote.included.url "$TEST_DIR/repo-origin"
 	command git config "includeIf.gitdir:$root/.git.path" "$TEST_DIR/shared.config"
-	command git config "includeIf.gitdir:$(dirname "$root")/repo-new-*/.path" "$TEST_DIR/shared.config"
 	[ "$(command git remote)" = $'included\norigin' ]
 	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
 	[ "$status" -ne 0 ]
@@ -111,4 +110,17 @@ teardown() {
 	[ -d .git ]
 	[ ! -e .bare ]
 	[ "$(command git remote)" = $'included\norigin' ]
+}
+
+@test "migrate: keeps settings from a global includeIf on the repository directory" {
+	init_repo repo
+	cd repo
+	root=$(pwd -P)
+	command git config --file "$TEST_DIR/project.config" user.signingkey project-key
+	printf '[includeIf "gitdir:%s/"]\n\tpath = %s\n' "$root" "$TEST_DIR/project.config" >"$TEST_DIR/global.config"
+	export GIT_CONFIG_GLOBAL="$TEST_DIR/global.config"
+	[ "$(command git config user.signingkey)" = project-key ]
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[ "$(command git -C main config user.signingkey)" = project-key ]
 }

@@ -353,3 +353,79 @@ teardown() {
 	# Either shows help or fails gracefully
 	true
 }
+
+@test "migrate: the next run restores a killed migration" {
+	init_repo repo
+	cd repo
+	create_commit tracked.txt
+	echo modified >tracked.txt
+	echo untracked >untracked.txt
+	before=$(command git status --porcelain)
+	mkdir "$TEST_DIR/bin"
+	# Kill git-wt mid-migration, after the working files and .git have moved.
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add "*) kill -9 \$PPID; exit 1 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[ -d .bare ]
+	[ -f .git-wt-migrate/journal ]
+	run "$GIT_WT" migrate --dry-run
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"interrupted migration"* ]]
+	[ -d .bare ]
+	run "$GIT_WT" migrate
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"original repository restored"* ]]
+	[ -d .git ]
+	[ ! -e .bare ]
+	[ ! -e .git-wt-migrate ]
+	[ "$(cat tracked.txt)" = modified ]
+	[ "$(command git status --porcelain)" = "$before" ]
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[ "$(command git -C main status --porcelain)" = "$before" ]
+}
+
+@test "migrate: rolls back and reports a failed step" {
+	init_repo repo
+	cd repo
+	create_commit tracked.txt
+	mkdir "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add "*) echo "injected failure" >&2; exit 1 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"injected failure"* ]]
+	[[ "$output" == *"original repository restored"* ]]
+	[ -d .git ]
+	[ -f tracked.txt ]
+	[ ! -e .bare ]
+	[ ! -e .git-wt-migrate ]
+}
+
+@test "migrate: warns but succeeds when the default branch worktree cannot be created" {
+	init_repo_with_remote repo
+	cd repo
+	command git checkout --quiet -b feature
+	mkdir "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add -- main "*) echo "injected failure" >&2; exit 1 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Could not create a worktree for default branch main"* ]]
+	[[ "$output" == *"git wt add 'main' 'main'"* ]]
+	[ -d feature ]
+	[ ! -e main ]
+}

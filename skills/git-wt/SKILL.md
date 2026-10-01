@@ -56,7 +56,7 @@ git wt ls --json
 git wt list --porcelain -z
 ```
 
-Migration is experimental. Stop other writers first. It restores per-worktree Git metadata into the linked Git directory, verifies copied files and extended attributes, index entries, refs, and reflogs, and retains the original repository at a printed sibling backup path. ACLs, unsupported ref backends such as reftable, and metadata that cannot be inspected or preserved must stop migration; never strip metadata to bypass a refusal. Keep the backup until the user has checked the new layout; never delete it automatically. Unsupported layouts or failed verification must stop migration. Refuse includes whose paths break on relocation; do not strip them or flatten user configuration. Effective config/remotes must survive promotion, and private refs must not leak through common packed-refs into other worktrees.
+Migration is experimental. Stop other writers first. It converts the repository in place with renames, moves per-worktree Git metadata into the linked Git directory, and verifies config, remotes, refs, index entries, stashes, and status at the final paths. Every step is journaled under `.git-wt-migrate/`: failures and interrupts roll back automatically, and after a crash the next `git wt migrate` restores the original layout. Never delete `.git-wt-migrate/` by hand; run `git wt migrate` to recover instead. Unsupported layouts such as reftable, or failed verification, must stop migration. Refuse includes whose paths break on relocation; do not strip them or flatten user configuration. Effective config/remotes must survive promotion, and private refs must not leak through common packed-refs into other worktrees.
 
 Clone or migrate repositories:
 
