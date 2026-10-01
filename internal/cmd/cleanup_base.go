@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
@@ -40,7 +41,7 @@ func resolveCleanupBase(ctx context.Context) (cleanupBase, error) {
 		if remote == "." {
 			return cleanupBase{}, fmt.Errorf("cannot determine cleanup base for branch %q: branch.%s.remote is . and its HEAD is the current branch; %s", branch, branch, remedy)
 		}
-		base = worktree.DefaultBranchInContext(ctx, "", remote)
+		base = discoverCleanupBase(ctx, remote)
 		if err := ctx.Err(); err != nil {
 			return cleanupBase{}, err
 		}
@@ -87,6 +88,28 @@ func resolveCleanupBase(ctx context.Context) (cleanupBase, error) {
 		}
 	}
 	return cleanupBase{ref: ref, protectedBranch: branch}, nil
+}
+
+// Cleanup resolves its base for every candidate, before confirmation and again
+// after hooks. Remember the remote's default branch for the rest of the
+// command, since discovery can need a network round trip. wt.cleanupBase and
+// local refs are still read every time, so hooks that change them are caught.
+var discoveredCleanupBases sync.Map
+
+func discoverCleanupBase(ctx context.Context, remote string) string {
+	commonDir, err := git.QueryContext(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return worktree.DefaultBranchInContext(ctx, "", remote)
+	}
+	key := commonDir + "\x00" + remote
+	if branch, ok := discoveredCleanupBases.Load(key); ok {
+		return branch.(string)
+	}
+	branch := worktree.DefaultBranchInContext(ctx, "", remote)
+	if branch != "" {
+		discoveredCleanupBases.Store(key, branch)
+	}
+	return branch
 }
 
 func cleanupSetting(ctx context.Context, key string) (string, error) {

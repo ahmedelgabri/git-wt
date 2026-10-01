@@ -111,3 +111,24 @@ cleanup_base_fixture() {
 	[[ "$output" == *"No matching cleanup candidates"* ]]
 	[ -d ../feature ]
 }
+
+@test "cleanup: discovers the remote default branch once per run" {
+	init_bare_repo_with_remote repo
+	cd repo
+	for name in one two three; do
+		create_worktree "$name" "$name"
+		command git push --quiet -u origin "$name"
+	done
+	! command git show-ref --verify --quiet refs/remotes/origin/HEAD
+	mkdir "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" ls-remote "*) echo ls-remote >>"$TEST_DIR/ls-remote.log" ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "cleanup\n" | "$1" remove --merged' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"3 succeeded"* ]]
+	[ "$(wc -l <"$TEST_DIR/ls-remote.log")" -eq 1 ]
+}
