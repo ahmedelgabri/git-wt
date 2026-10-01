@@ -171,20 +171,15 @@ func Confirm(msg string) bool {
 	return result.(confirmModel).confirmed
 }
 
-// PromptInput prints a styled prompt and returns the trimmed user input.
-// Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
-func PromptInput(msg string) string {
-	value, _ := PromptInputResult(msg)
-	return value
-}
-
 // IsCanceled reports whether a prompt or picker was canceled with Escape,
 // Ctrl-C, or end of input.
 func IsCanceled(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)
 }
 
-// PromptInputResult distinguishes accepting a blank default from cancellation.
+// PromptInputResult prints a styled prompt and returns the trimmed user input.
+// It distinguishes accepting a blank default from cancellation. Uses bubbletea
+// on TTYs; falls back to simple stdin reading otherwise.
 func PromptInputResult(msg string) (string, error) {
 	if useSimpleIO() {
 		fmt.Fprintf(os.Stderr, "%s %s ", Accent("?"), msg)

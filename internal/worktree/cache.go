@@ -31,7 +31,7 @@ func ListContext(ctx context.Context) ([]Entry, error) {
 	return ParsePorcelain(out), nil
 }
 
-// ParsePorcelain parses the output of git worktree list --porcelain into
+// ParsePorcelain parses the output of git worktree list --porcelain -z into
 // a slice of Entry, excluding the .bare entry.
 func ParsePorcelain(output string) []Entry {
 	if output == "" {
@@ -41,12 +41,7 @@ func ParsePorcelain(output string) []Entry {
 	var entries []Entry
 	var current Entry
 	bare := false
-	separator := "\n"
-	if strings.Contains(output, "\x00") {
-		separator = "\x00"
-	}
-
-	for line := range strings.SplitSeq(output, separator) {
+	for line := range strings.SplitSeq(output, "\x00") {
 		key, value, _ := strings.Cut(line, " ")
 		switch key {
 		case "worktree":

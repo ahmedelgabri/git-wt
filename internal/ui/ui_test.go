@@ -138,37 +138,37 @@ func TestConfirmEmpty(t *testing.T) {
 	}
 }
 
-func TestPromptInput(t *testing.T) {
+func TestPromptInputResult(t *testing.T) {
 	cleanup := mockStdin("my-branch\n")
 	defer cleanup()
 
-	got := PromptInput("Enter branch name:")
-	if got != "my-branch" {
-		t.Errorf("PromptInput() = %q, want %q", got, "my-branch")
+	got, err := PromptInputResult("Enter branch name:")
+	if err != nil || got != "my-branch" {
+		t.Errorf("PromptInputResult() = %q, want %q", got, "my-branch")
 	}
 }
 
-func TestPromptInputTrimmed(t *testing.T) {
+func TestPromptInputResultTrimmed(t *testing.T) {
 	cleanup := mockStdin("  spaces  \n")
 	defer cleanup()
 
-	got := PromptInput("Enter value:")
-	if got != "spaces" {
-		t.Errorf("PromptInput() = %q, want %q", got, "spaces")
+	got, err := PromptInputResult("Enter value:")
+	if err != nil || got != "spaces" {
+		t.Errorf("PromptInputResult() = %q, want %q", got, "spaces")
 	}
 }
 
-func TestPromptInputSequentialReads(t *testing.T) {
+func TestPromptInputResultSequentialReads(t *testing.T) {
 	reader := bufio.NewReader(strings.NewReader("first\nsecond\n"))
 	old := stdinReader
 	stdinReader = func() *bufio.Reader { return reader }
 	defer func() { stdinReader = old }()
 
-	if got := PromptInput("First:"); got != "first" {
-		t.Fatalf("first PromptInput() = %q, want %q", got, "first")
+	if got, _ := PromptInputResult("First:"); got != "first" {
+		t.Fatalf("first PromptInputResult() = %q, want %q", got, "first")
 	}
-	if got := PromptInput("Second:"); got != "second" {
-		t.Fatalf("second PromptInput() = %q, want %q", got, "second")
+	if got, _ := PromptInputResult("Second:"); got != "second" {
+		t.Fatalf("second PromptInputResult() = %q, want %q", got, "second")
 	}
 }
 
