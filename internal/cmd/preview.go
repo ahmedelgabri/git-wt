@@ -105,7 +105,7 @@ func generateWorktreePreview(wtPath string, mode string) string {
 			if remote != "" {
 				b.WriteString(ui.Yellow(fmt.Sprintf("  - Delete remote branch (%s/%s)", remote, remoteBranch)) + "\n")
 			} else {
-				b.WriteString(ui.Yellow("  - No remote configured; remote branch deletion skipped") + "\n")
+				b.WriteString(ui.Yellow("  - No remote upstream; remote branch deletion skipped") + "\n")
 			}
 		}
 	}

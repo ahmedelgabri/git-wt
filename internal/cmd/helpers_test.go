@@ -255,12 +255,17 @@ func TestGenerateWorktreePreviewDeleteRemoteMode(t *testing.T) {
 	c.Dir = dir
 	c.CombinedOutput()
 
+	// A configured remote is not an upstream for this branch.
+	if out, err := exec.Command("git", "--git-dir", bareDir, "remote", "add", "origin", "https://example.invalid/repo.git").CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %v\n%s", err, out)
+	}
+
 	out := generateWorktreePreview(wtPath, previewModeDeleteRemote)
 	if !strings.Contains(out, "Actions") {
 		t.Errorf("remove-remote mode should contain 'Actions', got %q", out)
 	}
-	if !strings.Contains(out, "Delete remote branch") && !strings.Contains(out, "No remote configured") {
-		t.Errorf("remove-remote mode should describe remote branch handling, got %q", out)
+	if !strings.Contains(out, "No remote upstream; remote branch deletion skipped") {
+		t.Errorf("remove-remote mode should say the branch has no upstream, got %q", out)
 	}
 }
 
