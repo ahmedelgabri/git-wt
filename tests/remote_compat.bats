@@ -105,7 +105,7 @@ remote_compat_refusal() {
 	remote_compat_refusal multiple
 }
 
-@test "remove: checks compatibility for the entire selection before the first removal" {
+@test "remove: skips incompatible targets before the first removal" {
 	remote_compat_fixture
 	create_worktree second second
 	command git remote add other "$TEST_DIR/repo-origin"
@@ -116,11 +116,16 @@ remote_compat_refusal() {
 	legacy_git
 	run bash -c 'printf "remove\n" | "$1" remove feature second --delete-remote' _ "$GIT_WT"
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"remote other has multiple push URLs"* ]]
+	[[ "$output" == *"Skipped ./second: remote other has multiple push URLs"* ]]
+	[[ "$output" == *"Cancelled"* ]]
 	[ -d feature ]
 	[ -d second ]
-	assert_branch_exists feature
-	assert_branch_exists second
 	cmp .bare/config "$TEST_DIR/config-before"
 	[ ! -e "$TEST_DIR/hook-ran" ]
+	run bash -c 'printf "feature\n" | "$1" remove feature second --delete-remote' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[ ! -d feature ]
+	[ -d second ]
+	assert_branch_exists second
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/second
 }

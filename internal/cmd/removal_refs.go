@@ -64,6 +64,7 @@ func planRemoteDeletions(target removalTarget, branchHead string, force bool) ([
 	if err != nil {
 		return nil, err
 	}
+	var problems []string
 	for i := range deletions {
 		deletion := &deletions[i]
 		var args []string
@@ -84,9 +85,12 @@ func planRemoteDeletions(target removalTarget, branchHead string, force bool) ([
 		deletion.head, _, _ = strings.Cut(out, "\t")
 		if deletion.head != "" && !force {
 			if _, err := git.Query("merge-base", "--is-ancestor", deletion.head, branchHead); err != nil {
-				return nil, fmt.Errorf("remote branch at %s has commits not preserved by the selected local branch; fetch and review before removal", deletion.url)
+				problems = append(problems, fmt.Sprintf("remote branch %s/%s at %s has commits not preserved by the selected local branch; fetch to review them", target.remote, target.remoteBranch, deletion.url))
 			}
 		}
+	}
+	if len(problems) > 0 {
+		return nil, &unsafeRemovalError{problems: problems}
 	}
 	return deletions, nil
 }

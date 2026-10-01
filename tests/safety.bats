@@ -440,3 +440,18 @@ teardown() { teardown_test_env; }
 	[ "$(command git -C feature rev-parse --short HEAD)" = "$local" ]
 	[ "$output" = "$TEST_DIR/repo/feature" ]
 }
+
+@test "remove: without a terminal, unsafe targets are skipped and the rest removed" {
+	init_bare_repo repo
+	cd repo
+	create_worktree clean clean
+	create_worktree dirty dirty
+	echo local >dirty/untracked.txt
+	run bash -c 'printf "y\n" | "$1" remove clean dirty' _ "$GIT_WT"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"Skipped ./dirty: worktree $TEST_DIR/repo/dirty contains local files or changes"* ]]
+	[[ "$output" == *"1 target(s) skipped"* ]]
+	[ ! -e clean ]
+	[ -f dirty/untracked.txt ]
+	assert_branch_exists dirty
+}

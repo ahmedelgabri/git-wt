@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -24,7 +25,29 @@ func removalUpstream(branch string) (remote, branchName, trackingRef string) {
 	return fields[0], strings.TrimPrefix(fields[1], "refs/heads/"), fields[2]
 }
 
+// unsafeRemovalError lists work a removal would discard. --force, or typing the
+// worktree name at the per-target prompt, overrides it.
+type unsafeRemovalError struct {
+	problems []string
+}
+
+func (e *unsafeRemovalError) Error() string {
+	return strings.Join(e.problems, "; ") + "; use --force with an explicit target to discard them"
+}
+
+// addUnsafeRemoval collects err's problems into problems, and returns any
+// other error unchanged.
+func addUnsafeRemoval(problems *[]string, err error) error {
+	var unsafe *unsafeRemovalError
+	if errors.As(err, &unsafe) {
+		*problems = append(*problems, unsafe.problems...)
+		return nil
+	}
+	return err
+}
+
 func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) error {
+	var problems []string
 	if _, err := os.Stat(target.path); err == nil {
 		if target.prunable {
 			return fmt.Errorf("worktree %s is marked prunable but its path still exists; inspect its files and run git wt repair %s before removal", target.path, shellQuote(target.path))
@@ -34,7 +57,7 @@ func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) err
 			return err
 		}
 		if dirty {
-			return fmt.Errorf("worktree %s contains local files or changes; use --force with an explicit target to discard them", target.path)
+			problems = append(problems, fmt.Sprintf("worktree %s contains local files or changes", target.path))
 		}
 	} else if !os.IsNotExist(err) {
 		return err
@@ -83,7 +106,10 @@ func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) err
 		return err
 	}
 	if unique != "" {
-		return fmt.Errorf("%s has commits without another retained branch or tag, including %s; use --force with an explicit target to discard them", target.path, unique)
+		problems = append(problems, fmt.Sprintf("%s has commits without another retained branch or tag, including %s", target.path, unique))
+	}
+	if len(problems) > 0 {
+		return &unsafeRemovalError{problems: problems}
 	}
 	return nil
 }

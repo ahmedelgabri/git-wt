@@ -28,6 +28,8 @@ type removalItem struct {
 	Action removalAction
 	Target removalTarget
 	Reason string
+	// force is set when the user confirmed discarding this target's work.
+	force bool
 }
 
 type removeOptions struct {
@@ -53,8 +55,11 @@ var removeCmd = &cobra.Command{
 	Long: `Remove worktrees directly or by safe cleanup filters.
 
 By default, removing a worktree also deletes its local branch, provided its
-commits are preserved by another branch or tag. Dirty worktrees and unique
-commits require --force with explicit targets. With --delete-remote, --force
+commits are preserved by another branch or tag. On a terminal, each dirty
+worktree or branch with unique commits asks you to type its name to discard
+that work, or press Enter to skip it; the rest of the selection continues.
+Without a terminal such targets are skipped and the command exits 1. --force
+discards without asking, for explicit targets. With --delete-remote, --force
 also deletes remote branches that have commits you have not fetched. Current
 and locked worktrees remain protected. Ignored files do not block removal and are deleted with the
 worktree, as with native Git. Use --delete-remote to delete the target's
@@ -308,24 +313,64 @@ func runRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) error
 		return nil
 	}
 
-	// Check the entire selection before confirmation and hooks. A doomed
-	// removal must not run teardown hooks, and a later unsafe target must not
-	// strand earlier targets in a bulk removal.
-	for _, item := range items {
-		if item.Action == removalActionRemove {
-			if _, _, err := checkRemoval(item.Target, opts, cleanup); err != nil {
-				return err
-			}
-		}
+	ready, skipped := checkRemovalItems(items, opts, cleanup)
+	var skippedErr error
+	if skipped > 0 {
+		skippedErr = fmt.Errorf("%d target(s) skipped", skipped)
+	}
+	if len(ready) == 0 {
+		fmt.Println("Nothing to remove")
+		return skippedErr
 	}
 
-	if !confirmRemoval(items, opts, cleanup) {
+	if !confirmRemoval(ready, opts, cleanup) {
 		fmt.Println("Cancelled")
-		return nil
+		return skippedErr
 	}
 
 	fmt.Println()
-	return executeRemovalItems(items, opts, cleanup)
+	return errors.Join(executeRemovalItems(ready, opts, cleanup), skippedErr)
+}
+
+// checkRemovalItems checks every target before confirmation and hooks, so a
+// doomed removal never runs teardown hooks. On a terminal, each target with
+// work to discard gets its own confirmation; skipping it keeps the rest of the
+// selection. Without a terminal, and in cleanup, which never forces, such
+// targets are skipped and counted, as are targets that fail other checks.
+func checkRemovalItems(items []removalItem, opts removeOptions, cleanup bool) (ready []removalItem, skipped int) {
+	for _, item := range items {
+		if item.Action != removalActionRemove {
+			ready = append(ready, item)
+			continue
+		}
+		_, _, err := checkRemoval(item.Target, opts, cleanup)
+		var unsafe *unsafeRemovalError
+		switch {
+		case err == nil:
+			ready = append(ready, item)
+		case errors.As(err, &unsafe) && !cleanup && ui.CanPrompt():
+			if confirmDiscard(item.Target, unsafe) {
+				item.force = true
+				ready = append(ready, item)
+			} else {
+				fmt.Printf("%s Skipped %s\n", ui.Muted("·"), displayWorktreePath(item.Target.path))
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "%s Skipped %s: %v\n", ui.Yellow("!"), displayWorktreePath(item.Target.path), err)
+			skipped++
+		}
+	}
+	return ready, skipped
+}
+
+// confirmDiscard asks for the worktree's name, not y/N: approving it loses work.
+func confirmDiscard(target removalTarget, unsafe *unsafeRemovalError) bool {
+	name := filepath.Base(target.path)
+	fmt.Println(ui.Red(name + " has work that removal would discard:"))
+	for _, problem := range unsafe.problems {
+		fmt.Println("  " + ui.Subtle("-") + " " + problem)
+	}
+	return ui.PromptDangerous(fmt.Sprintf("Type %s to discard it and remove the worktree, or press Enter to skip:", ui.Bold(name)), name)
 }
 
 func confirmRemoval(items []removalItem, opts removeOptions, cleanup bool) bool {
@@ -577,7 +622,9 @@ func executeRemovalItems(items []removalItem, opts removeOptions, cleanup bool) 
 		case removalActionPrune:
 			err = pruneStaleWorktree(item.Target)
 		default:
-			err = removeSingleWorktree(item.Target, opts, cleanup)
+			itemOpts := opts
+			itemOpts.force = opts.force || item.force
+			err = removeSingleWorktree(item.Target, itemOpts, cleanup)
 		}
 		if err != nil {
 			failedCount++
@@ -666,16 +713,24 @@ func checkRemoval(target removalTarget, opts removeOptions, cleanup bool) (branc
 			return "", nil, err
 		}
 	}
+	// Collect everything a removal would discard, so one confirmation covers it.
+	var problems []string
 	deleteRemote := target.deletesRemote(opts, cleanup)
 	if !opts.force {
-		if err := validateRemovalSafety(target, deleteRemote, cleanup); err != nil {
+		if err := addUnsafeRemoval(&problems, validateRemovalSafety(target, deleteRemote, cleanup)); err != nil {
 			return "", nil, err
 		}
 	}
 	if deleteRemote {
 		deletions, err = planRemoteDeletions(target, branchHead, opts.force)
+		if err := addUnsafeRemoval(&problems, err); err != nil {
+			return "", nil, err
+		}
 	}
-	return branchHead, deletions, err
+	if len(problems) > 0 {
+		return "", nil, &unsafeRemovalError{problems: problems}
+	}
+	return branchHead, deletions, nil
 }
 
 func removeSingleWorktree(target removalTarget, opts removeOptions, cleanup bool) error {
