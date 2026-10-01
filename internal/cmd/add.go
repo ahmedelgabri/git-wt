@@ -67,7 +67,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		createdPath, err = runAddInteractive(root)
 		// Cancelling the picker or a prompt is a choice, not a failure.
 		if ui.IsCanceled(err) {
-			fmt.Fprintln(os.Stderr, "Cancelled")
+			ui.Cancelled()
 			return nil
 		}
 		if err != nil {

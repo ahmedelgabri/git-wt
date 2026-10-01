@@ -26,6 +26,7 @@ Use with cd to change directories: cd $(git wt switch)`,
 			return worktree.List()
 		})
 		if errors.Is(err, context.Canceled) {
+			ui.Cancelled()
 			return nil
 		}
 		if err != nil {
@@ -48,6 +49,9 @@ Use with cd to change directories: cd $(git wt switch)`,
 			return err
 		}
 
+		if result.Canceled {
+			ui.Cancelled()
+		}
 		if !result.Canceled && len(result.Items) > 0 {
 			// Output the path for cd integration
 			fmt.Println(result.Items[0].Value)

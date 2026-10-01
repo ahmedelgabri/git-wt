@@ -158,6 +158,7 @@ func removeInteractivePreloaded(opts removeOptions) error {
 		return worktree.ListContext(ctx)
 	})
 	if errors.Is(err, context.Canceled) {
+		ui.Cancelled()
 		return nil
 	}
 	if err != nil {
@@ -188,6 +189,9 @@ func removeInteractive(entries []worktree.Entry, opts removeOptions) error {
 	})
 	if err != nil {
 		return err
+	}
+	if result.Canceled {
+		ui.Cancelled()
 	}
 	if result.Canceled || len(result.Items) == 0 {
 		return nil
@@ -238,6 +242,7 @@ func removeByFilterPreloaded(filters removeFilters, opts removeOptions) error {
 		return findRemovalCandidates(ctx, entries, filters)
 	})
 	if errors.Is(err, context.Canceled) {
+		ui.Cancelled()
 		return nil
 	}
 	if err != nil {
@@ -286,6 +291,9 @@ func selectRemovalCandidates(items []removalItem, deleteRemote bool) ([]removalI
 	if err != nil {
 		return nil, err
 	}
+	if result.Canceled {
+		ui.Cancelled()
+	}
 	if result.Canceled || len(result.Items) == 0 {
 		return nil, nil
 	}
@@ -324,7 +332,7 @@ func runRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) error
 	}
 
 	if !confirmRemoval(ready, opts, cleanup) {
-		fmt.Println("Cancelled")
+		ui.Cancelled()
 		return skippedErr
 	}
 

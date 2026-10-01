@@ -172,6 +172,12 @@ func Confirm(msg string) bool {
 	return result.(confirmModel).confirmed
 }
 
+// Cancelled reports a cancelled picker, prompt, or confirmation. It writes to
+// stderr so commands whose stdout is data, such as add and switch, stay clean.
+func Cancelled() {
+	fmt.Fprintln(os.Stderr, Subtle("Cancelled"))
+}
+
 // IsCanceled reports whether a prompt or picker was canceled with Escape,
 // Ctrl-C, or end of input.
 func IsCanceled(err error) bool {

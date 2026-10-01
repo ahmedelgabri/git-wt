@@ -455,3 +455,17 @@ teardown() { teardown_test_env; }
 	[ -f dirty/untracked.txt ]
 	assert_branch_exists dirty
 }
+
+@test "pickers: cancelling says Cancelled on stderr and keeps stdout clean" {
+	bats_require_minimum_version 1.5.0
+	init_bare_repo repo
+	cd repo
+	create_worktree feature feature
+	for command in switch remove; do
+		run --separate-stderr env GIT_WT_SELECT=missing "$GIT_WT" "$command"
+		[ "$status" -eq 0 ]
+		[[ "$stderr" == *"Cancelled"* ]]
+		[[ "$output" != *"Cancelled"* ]]
+	done
+	[ -d feature ]
+}
