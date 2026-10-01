@@ -31,6 +31,29 @@ func init() {
 	rootCmd.AddCommand(cloneCmd)
 }
 
+// mkdirMissingParents creates dir and its missing ancestors, returning the
+// directories it created, outermost first.
+func mkdirMissingParents(dir string) ([]string, error) {
+	var missing []string
+	for ; ; dir = filepath.Dir(dir) {
+		if _, err := os.Lstat(dir); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+		missing = append([]string{dir}, missing...)
+		if filepath.Dir(dir) == dir {
+			break
+		}
+	}
+	for i, path := range missing {
+		if err := os.Mkdir(path, 0o755); err != nil {
+			return missing[:i], err
+		}
+	}
+	return missing, nil
+}
+
 func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 	repoURL := args[0]
 	folderName := strings.TrimSuffix(filepath.Base(repoURL), ".git")
@@ -48,12 +71,20 @@ func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 	}
 
 	if git.Debug() {
-		return git.Run("clone", "--bare", repoURL, filepath.Join(destination, ".bare"))
+		return git.Run("clone", "--progress", "--bare", "--", repoURL, filepath.Join(destination, ".bare"))
 	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+	parents, err := mkdirMissingParents(filepath.Dir(destination))
+	if err != nil {
 		return err
 	}
+	// Remove only parents this clone created; Remove refuses non-empty ones.
+	removeParents := func() {
+		for i := len(parents) - 1; i >= 0; i-- {
+			_ = os.Remove(parents[i])
+		}
+	}
 	if err := os.Mkdir(destination, 0o755); err != nil {
+		removeParents()
 		ui.Errorf("Failed to create directory '%s'", folderName)
 		return err
 	}
@@ -64,6 +95,7 @@ func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 			if err := os.RemoveAll(destination); err != nil {
 				ui.Errorf("Could not clean up %s: %v", destination, err)
 			}
+			removeParents()
 		} else if resultErr != nil {
 			fmt.Fprintf(os.Stderr, "%s Repository downloaded and retained at %s, but setup did not finish: %v\n", ui.Yellow("Warning:"), destination, resultErr)
 			fmt.Fprintf(os.Stderr, "Inspect the downloaded branches with: git --git-dir=%s branch -a\n", shellQuote(filepath.Join(destination, ".bare")))

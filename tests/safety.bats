@@ -14,6 +14,20 @@ teardown() { teardown_test_env; }
 	[ ! -e parent/new ]
 }
 
+@test "clone: failed clone removes the parent directories it created" {
+	mkdir existing
+	run "$GIT_WT" clone "$TEST_DIR/missing" existing/a/b/c
+	[ "$status" -ne 0 ]
+	[ -d existing ]
+	[ ! -e existing/a ]
+}
+
+@test "clone: DEBUG prints the clone command that would run" {
+	run env DEBUG=1 "$GIT_WT" clone "$TEST_DIR/source" dest
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"clone --progress --bare -- $TEST_DIR/source $TEST_DIR/dest/.bare"* ]]
+}
+
 @test "clone: refuses a dangling destination symlink" {
 	ln -s absent destination
 	run "$GIT_WT" clone "$TEST_DIR/missing" destination
