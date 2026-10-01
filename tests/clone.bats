@@ -57,6 +57,16 @@ SH
 	command git --git-dir="$TEST_DIR/retained/.bare" cat-file -e "$(command git -C source rev-parse main)"
 }
 
+@test "clone: no input at the branch prompt skips worktree creation" {
+	init_repo source
+	command git -C source symbolic-ref HEAD refs/heads/missing
+	run "$GIT_WT" clone "$TEST_DIR/source" "$TEST_DIR/scripted" </dev/null
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"No worktree created"* ]]
+	[[ "$output" != *"EOF"* ]]
+	command git --git-dir="$TEST_DIR/scripted/.bare" cat-file -e "$(command git -C source rev-parse main)"
+}
+
 @test "clone: clones repo with bare structure" {
 	# Create a source repo to clone from
 	init_repo source-repo

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -66,6 +65,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	interactive := len(args) == 0 && !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("force-branch")
 	if interactive {
 		createdPath, err = runAddInteractive(root)
+		// Cancelling the picker or a prompt is a choice, not a failure.
+		if ui.IsCanceled(err) {
+			fmt.Fprintln(os.Stderr, "Cancelled")
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -101,9 +105,6 @@ func fetchInteractiveBranches() error {
 
 func runAddInteractive(root string) (string, error) {
 	items, err := loadInteractiveAddItems(context.Background())
-	if errors.Is(err, context.Canceled) {
-		return "", nil
-	}
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +122,7 @@ func runAddInteractive(root string) (string, error) {
 	}
 
 	if result.Canceled || len(result.Items) == 0 {
-		return "", nil
+		return "", context.Canceled
 	}
 
 	selected := result.Items[0]

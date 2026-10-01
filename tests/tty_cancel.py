@@ -57,10 +57,9 @@ try:
     assert sent, f"Prompt not reached: {output!r}"
     assert status is not None, f"Cancellation hung: {output!r}"
     assert not os.path.exists("feature"), f"Cancellation created a worktree: {output!r}"
-    if stage == "path":
-        assert os.waitstatus_to_exitcode(status) != 0, output
-    else:
-        assert os.waitstatus_to_exitcode(status) == 0, output
+    # Cancelling is a choice, at either stage: exit 0 and say so.
+    assert os.waitstatus_to_exitcode(status) == 0, output
+    assert b"Cancelled" in output, output
 finally:
     if status is None:
         os.killpg(pid, signal.SIGKILL)

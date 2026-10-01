@@ -117,7 +117,8 @@ func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 		fmt.Println("Available branches:")
 		_ = git.RunIn(destination, "branch", "-r")
 		defaultBranch, err = ui.PromptInputResult("Enter default branch name (or press Enter to skip):")
-		if err != nil {
+		// Without input, as in scripts, skip worktree creation like a blank answer.
+		if err != nil && !ui.IsCanceled(err) {
 			return err
 		}
 	}

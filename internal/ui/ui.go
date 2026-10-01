@@ -178,6 +178,12 @@ func PromptInput(msg string) string {
 	return value
 }
 
+// IsCanceled reports whether a prompt or picker was canceled with Escape,
+// Ctrl-C, or end of input.
+func IsCanceled(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)
+}
+
 // PromptInputResult distinguishes accepting a blank default from cancellation.
 func PromptInputResult(msg string) (string, error) {
 	if useSimpleIO() {

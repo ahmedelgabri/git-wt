@@ -294,7 +294,9 @@ teardown() { teardown_test_env; }
 	cd repo
 	command git --git-dir="$TEST_DIR/repo-origin" branch feature main
 	run bash -c 'GIT_WT_SELECT=origin/feature "$1" add </dev/null' _ "$GIT_WT"
-	[ "$status" -ne 0 ]
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Cancelled"* ]]
+	[[ "$output" != *"EOF"* ]]
 	[ ! -e feature ]
 }
 
