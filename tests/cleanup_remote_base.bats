@@ -73,13 +73,12 @@ remote_base_fixture() {
 	[ "$(command git rev-parse refs/heads/feature)" = "$new" ]
 }
 
-@test "cleanup: remote-tracking base cannot be deleted as a target upstream" {
+@test "cleanup: remote-tracking base is never deleted as a target upstream" {
 	remote_base_fixture
 	command git config branch.feature.merge refs/heads/main
 	run bash -c 'printf "cleanup\n" | "$1" remove --merged --delete-remote' _ "$GIT_WT"
-	[ "$status" -ne 0 ]
-	[[ "$output" == *"cannot delete cleanup base refs/remotes/origin/main as an upstream"* ]]
-	[ -d feature ]
-	[ "$(command git rev-parse refs/heads/feature)" = "$new" ]
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Kept origin/main"* ]]
+	[ ! -d feature ]
 	[ "$(command git -C "$TEST_DIR/repo-origin" rev-parse main)" = "$new" ]
 }

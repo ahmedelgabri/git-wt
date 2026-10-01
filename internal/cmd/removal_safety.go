@@ -45,11 +45,10 @@ func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) err
 		if err != nil {
 			return err
 		}
+		// Cleanup deletes only same-name upstreams, so protecting the base
+		// branch here also protects its remote counterpart.
 		if base.protectedBranch == target.branch {
 			return fmt.Errorf("cannot remove cleanup base %s", base.ref)
-		}
-		if deleteRemote && target.upstreamRef == base.ref {
-			return fmt.Errorf("cannot delete cleanup base %s as an upstream", base.ref)
 		}
 		if !branchMergedIntoDefault(target.branch, base.ref) {
 			return fmt.Errorf("branch %s is no longer merged into cleanup base %s", target.branch, base.ref)

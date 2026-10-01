@@ -230,7 +230,7 @@ Removal refuses tracked modifications, non-ignored untracked files, and commits 
 git wt remove feature-branch --delete-remote
 ```
 
-Remote deletion uses each target branch's configured upstream remote and branch name, not the invoking worktree's default remote. Targets without a remote upstream keep remote branches untouched. A lease prevents deleting a remote branch that changed after verification. A single push URL matching the effective fetch URL works on older Git without URL overrides. Multiple push URLs or differing fetch/push URLs require Git 2.46 or newer. Unsupported configurations stop before hooks or local changes; use local-only removal or native Git instead.
+Remote deletion uses each target branch's configured upstream remote and branch name, not the invoking worktree's default remote. Targets without a remote upstream keep remote branches untouched. If the upstream has a different name than the local branch, as when `feat` was created from `origin/release`, you must type the remote name (`origin/release`) to delete it, and cleanup filters keep it. A lease prevents deleting a remote branch that changed after verification. A single push URL matching the effective fetch URL works on older Git without URL overrides. Multiple push URLs or differing fetch/push URLs require Git 2.46 or newer. Unsupported configurations stop before hooks or local changes; use local-only removal or native Git instead.
 
 ### Sweep safe cleanup candidates
 

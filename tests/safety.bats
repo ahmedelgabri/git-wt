@@ -157,8 +157,52 @@ teardown() { teardown_test_env; }
 	command git push --quiet -u upstream local:remote-name
 	run bash -c 'printf "local\n" | "$1" remove local --delete-remote' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
+	[[ "$output" == *"Cancelled"* ]]
+	assert_branch_exists local
+	command git -C "$TEST_DIR/upstream" show-ref --verify refs/heads/remote-name
+	run bash -c 'printf "upstream/remote-name\n" | "$1" remove local --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
 	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/local
 	! command git -C "$TEST_DIR/upstream" show-ref --verify refs/heads/remote-name
+}
+
+@test "remove: a branch created from a shared branch never deletes it by its own name" {
+	init_bare_repo_with_remote repo
+	cd repo
+	command git push --quiet origin main:release
+	command git fetch --quiet origin
+	run "$GIT_WT" add -b feat feat origin/release
+	[ "$status" -eq 0 ]
+	[ "$(command git rev-parse --abbrev-ref feat@{upstream})" = origin/release ]
+	run bash -c 'printf "feat\n" | "$1" remove feat --delete-remote' _ "$GIT_WT"
+	[[ "$output" == *"feat tracks origin/release"* ]]
+	[[ "$output" == *"Cancelled"* ]]
+	[ -d feat ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
+	create_worktree other other
+	run bash -c 'printf "remove\nfeat\n" | "$1" remove other feat --delete-remote' _ "$GIT_WT"
+	[[ "$output" == *"Cancelled"* ]]
+	[ -d feat ]
+	[ -d other ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
+	run bash -c 'printf "origin/release\n" | "$1" remove feat --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	! command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
+}
+
+@test "remove: cleanup keeps a differently named upstream such as the base branch" {
+	init_bare_repo_with_remote repo
+	cd repo
+	command git fetch --quiet origin
+	command git config wt.cleanupBase refs/heads/main
+	run "$GIT_WT" add -b feat feat origin/main
+	[ "$status" -eq 0 ]
+	run bash -c 'printf "cleanup\n" | "$1" remove --merged --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"keeps origin/main: different name"* ]]
+	[[ "$output" == *"Kept origin/main"* ]]
+	[ ! -d feat ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/main
 }
 
 @test "remove: remote query failure is not reported as success" {
