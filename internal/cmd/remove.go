@@ -327,7 +327,7 @@ func runRemovalPlan(items []removalItem, opts removeOptions, cleanup bool) error
 		skippedErr = fmt.Errorf("%d target(s) skipped", skipped)
 	}
 	if len(ready) == 0 {
-		fmt.Println("Nothing to remove")
+		fmt.Println(ui.Subtle("Nothing to remove"))
 		return skippedErr
 	}
 
@@ -364,7 +364,7 @@ func checkRemovalItems(items []removalItem, opts removeOptions, cleanup bool) (r
 				fmt.Printf("%s Skipped %s\n", ui.Muted("·"), displayWorktreePath(item.Target.path))
 			}
 		default:
-			fmt.Fprintf(os.Stderr, "%s Skipped %s: %v\n", ui.Yellow("!"), displayWorktreePath(item.Target.path), err)
+			ui.Warnf("Skipped %s: %v", displayWorktreePath(item.Target.path), err)
 			skipped++
 		}
 	}
@@ -428,7 +428,7 @@ func confirmRemoval(items []removalItem, opts removeOptions, cleanup bool) bool 
 // shared, remote branch. Require its full remote name instead.
 func confirmRenamedUpstream(target removalTarget) bool {
 	upstream := target.upstreamLabel()
-	fmt.Printf("%s tracks %s, which has a different name and may be shared.\n", ui.Bold(target.branch), ui.Red(upstream))
+	fmt.Println(ui.Red(fmt.Sprintf("%s tracks %s, a differently named branch that may be shared.", target.branch, upstream)))
 	return ui.PromptDangerous(fmt.Sprintf("Type %s to delete it:", ui.Bold(upstream)), upstream)
 }
 
@@ -639,7 +639,7 @@ func executeRemovalItems(items []removalItem, opts removeOptions, cleanup bool) 
 			if len(items) == 1 {
 				singleErr = err
 			} else {
-				fmt.Fprintf(os.Stderr, "%s: %v\n", item.Target.path, err)
+				ui.Errorf("%s: %v", item.Target.path, err)
 			}
 		} else {
 			successCount++
