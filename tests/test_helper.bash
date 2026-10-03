@@ -21,6 +21,9 @@ setup_test_env() {
 	# Use realpath to resolve symlinks (macOS /tmp -> /private/tmp)
 	TEST_DIR=$(cd "$(mktemp -d)" && pwd -P)
 	export TEST_DIR
+	# Migration registers journals in the user's state directory.
+	XDG_STATE_HOME=$(mktemp -d)
+	export XDG_STATE_HOME
 	cd "$TEST_DIR" || exit 1
 }
 
@@ -54,6 +57,9 @@ init_repo_with_remote() {
 teardown_test_env() {
 	if [[ -n ${TEST_DIR:-} && -d $TEST_DIR ]]; then
 		rm -rf "$TEST_DIR"
+	fi
+	if [[ -n ${XDG_STATE_HOME:-} && -d $XDG_STATE_HOME ]]; then
+		rm -rf "$XDG_STATE_HOME"
 	fi
 }
 

@@ -16,13 +16,31 @@ import (
 // by the next `git wt migrate`, even after a crash or power loss.
 const migrationStateDir = ".git-wt-migrate"
 
-// migrationIDName is written inside the Git directory with the journal's ID.
-// A clone or checkout can put a journal in the working tree, but never this
-// file, so recovery only replays journals whose ID it matches.
-const migrationIDName = "git-wt-migration"
+// migrationIDPath is where migration records a journal's ID and repository.
+// It is in the user's state directory: a clone, checkout, or archive can put
+// a journal and any other file in the working tree, but not here. Recovery
+// only replays journals registered here.
+func migrationIDPath(id string) (string, error) {
+	base := os.Getenv("XDG_STATE_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		base = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(base, "git-wt", "migrations", id), nil
+}
+
+// validMigrationID keeps a journal's ID from naming any other path.
+func validMigrationID(id string) bool {
+	decoded, err := hex.DecodeString(id)
+	return err == nil && len(decoded) == 16
+}
 
 type migrationJournal struct {
 	root    string
+	id      string
 	file    *os.File
 	unlock  func()
 	backups int
@@ -55,29 +73,57 @@ func startMigrationJournal(root string) (*migrationJournal, error) {
 		return nil, err
 	}
 	j := &migrationJournal{root: root, file: file, unlock: unlock}
-	if err := j.writeID(); err != nil {
+	if err := j.register(); err != nil {
 		// Nothing has moved yet; leave no journal that recovery would refuse.
 		unlock()
 		_ = file.Close()
-		_ = os.Remove(filepath.Join(root, ".git", migrationIDName))
-		return nil, errors.Join(err, removeMigrationState(root))
+		return nil, errors.Join(err, j.unregister(), removeMigrationState(root))
 	}
 	return j, nil
 }
 
-func (j *migrationJournal) writeID() error {
+// register records the journal's ID in the user's state directory, then in
+// the journal itself.
+func (j *migrationJournal) register() error {
 	id := make([]byte, 16)
 	if _, err := rand.Read(id); err != nil {
 		return err
 	}
-	if _, err := j.file.WriteString("id " + hex.EncodeToString(id) + "\n"); err != nil {
+	j.id = hex.EncodeToString(id)
+	path, err := migrationIDPath(j.id)
+	if err != nil {
 		return err
 	}
-	idFile := filepath.Join(".git", migrationIDName)
-	if err := j.create(idFile); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return writeSyncedFile(j.path(idFile), []byte(hex.EncodeToString(id)), 0o600)
+	if err := writeSyncedFile(path, []byte(j.root), 0o600); err != nil {
+		return err
+	}
+	if _, err := j.file.WriteString("id " + j.id + "\n"); err != nil {
+		return err
+	}
+	return j.file.Sync()
+}
+
+// unregister runs only after the journal is gone, so a journal can always be
+// recovered while it exists.
+func (j *migrationJournal) unregister() error {
+	return removeMigrationID(j.id)
+}
+
+func removeMigrationID(id string) error {
+	if id == "" {
+		return nil
+	}
+	path, err := migrationIDPath(id)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (j *migrationJournal) path(rel string) string {
@@ -187,11 +233,7 @@ func (j *migrationJournal) finish() error {
 	if err := removeMigrationState(j.root); err != nil {
 		return err
 	}
-	// Removed last: until the journal is gone, recovery needs it.
-	if err := os.Remove(j.path(filepath.Join(".bare", migrationIDName))); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
+	return j.unregister()
 }
 
 func (j *migrationJournal) rollback() error {
@@ -204,6 +246,14 @@ func (j *migrationJournal) rollback() error {
 // interrupted migration, or finishes cleaning up a completed one, which it
 // reports with completed.
 func recoverMigration(root string) (completed bool, err error) {
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return false, err
+	}
+	// A symlinked state directory would lead cleanup outside the repository.
+	if info, err := os.Lstat(filepath.Join(root, migrationStateDir)); err != nil || !info.IsDir() {
+		return false, fmt.Errorf("%s is not a directory created by git wt migrate; nothing was changed", filepath.Join(root, migrationStateDir))
+	}
 	file, err := os.OpenFile(migrationJournalPath(root), os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
 		return false, err
@@ -230,10 +280,7 @@ func recoverMigration(root string) (completed bool, err error) {
 		if err := removeMigrationState(root); err != nil {
 			return true, err
 		}
-		if err := os.Remove(filepath.Join(root, ".bare", migrationIDName)); err != nil && !os.IsNotExist(err) {
-			return true, err
-		}
-		return true, nil
+		return true, removeMigrationID(state.id)
 	}
 	return false, undoMigration(root, file)
 }
@@ -241,16 +288,12 @@ func recoverMigration(root string) (completed bool, err error) {
 // checkMigrationJournalID refuses journals this repository's migration did
 // not write, such as one tracked in a cloned repository.
 func checkMigrationJournalID(root string, state migrationJournalState) error {
-	if state.id != "" {
-		// .git before the Git directory moves, .bare after.
-		for _, dir := range []string{".git", ".bare"} {
-			if id, err := os.ReadFile(filepath.Join(root, dir, migrationIDName)); err == nil && string(id) == state.id {
-				return nil
-			}
+	if validMigrationID(state.id) {
+		path, err := migrationIDPath(state.id)
+		if err != nil {
+			return err
 		}
-		// Undo removes the ID file last, so a fully undone journal has none,
-		// and nothing left to replay.
-		if !state.committed && state.undone == len(state.records) {
+		if registered, err := os.ReadFile(path); err == nil && string(registered) == root {
 			return nil
 		}
 	}
@@ -351,8 +394,9 @@ func validMigrationRecord(record migrationRecord) bool {
 	return false
 }
 
-// migrationUndoHook lets tests interrupt rollback at every step.
-var migrationUndoHook func() error
+// migrationUndoHook lets tests interrupt rollback before each step, and after
+// each step before its progress is recorded.
+var migrationUndoHook func(afterStep bool) error
 
 // undoMigration reverses journal entries newest first and appends an undo
 // entry after each one, so a stopped rollback resumes where it left off.
@@ -375,12 +419,17 @@ func undoMigration(root string, journal *os.File) error {
 	}
 	for i := len(state.records) - 1 - state.undone; i >= 0; i-- {
 		if migrationUndoHook != nil {
-			if err := migrationUndoHook(); err != nil {
+			if err := migrationUndoHook(false); err != nil {
 				return err
 			}
 		}
 		if err := undoMigrationRecord(root, state.records[i]); err != nil {
 			return err
+		}
+		if migrationUndoHook != nil {
+			if err := migrationUndoHook(true); err != nil {
+				return err
+			}
 		}
 		if _, err := journal.WriteString("undo\n"); err != nil {
 			return err
@@ -389,12 +438,18 @@ func undoMigration(root string, journal *os.File) error {
 			return err
 		}
 	}
-	return removeMigrationState(root)
+	if err := removeMigrationState(root); err != nil {
+		return err
+	}
+	return removeMigrationID(state.id)
 }
 
 func undoMigrationRecord(root string, record migrationRecord) error {
 	paths := make([]string, len(record.paths))
 	for i, path := range record.paths {
+		if err := checkNoSymlinkParents(root, path); err != nil {
+			return err
+		}
 		paths[i] = filepath.Join(root, path)
 	}
 	switch {
@@ -443,6 +498,22 @@ func renameEntry(src, dst string) error {
 		return fmt.Errorf("refusing to overwrite %s", dst)
 	}
 	return os.Rename(src, dst)
+}
+
+// checkNoSymlinkParents refuses a path whose parent directories include a
+// symlink, which could lead outside the repository although the path itself
+// is local. Migration only records paths through real directories.
+func checkNoSymlinkParents(root, rel string) error {
+	for dir := filepath.Dir(rel); dir != "."; dir = filepath.Dir(dir) {
+		info, err := os.Lstat(filepath.Join(root, dir))
+		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to follow symlinked directory %s in migration journal", filepath.Join(root, dir))
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func pathExists(path string) (bool, error) {

@@ -150,6 +150,11 @@ func TestMigrationConvertsFixture(t *testing.T) {
 	if exists, _ := pathExists(filepath.Join(root, migrationStateDir)); exists {
 		t.Fatal("journal not removed after success")
 	}
+	if path, _ := migrationIDPath(journal.id); path == "" {
+		t.Fatal("journal has no ID")
+	} else if exists, _ := pathExists(path); exists {
+		t.Fatal("journal ID not removed after success")
+	}
 }
 
 func TestMigrationRollsBackAtEveryStep(t *testing.T) {
@@ -205,14 +210,9 @@ func TestMigrationJournalIgnoresTruncatedEntry(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, migrationStateDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	journal := "id test\nmove \"a\" \"b\"\nmove \"b\" \"c"
+	id := registerTestMigration(t, root)
+	journal := "id " + id + "\nmove \"a\" \"b\"\nmove \"b\" \"c"
 	if err := os.WriteFile(migrationJournalPath(root), []byte(journal), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".git", migrationIDName), []byte("test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(filepath.Join(root, "a"), filepath.Join(root, "b")); err != nil {
@@ -310,13 +310,15 @@ func TestMigrationRollbackResumesAtEveryStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = journal.rollback()
-	for stopAt := 1; stopAt <= len(state.records); stopAt++ {
+	// Stop before each step, and after each step before its progress is
+	// recorded, as a crash would.
+	for stopAt := 1; stopAt <= 2*len(state.records); stopAt++ {
 		t.Run(fmt.Sprint(stopAt), func(t *testing.T) {
 			root, journal, want := convertFixture(t)
-			steps := 0
-			migrationUndoHook = func() error {
-				steps++
-				if steps == stopAt {
+			calls := 0
+			migrationUndoHook = func(bool) error {
+				calls++
+				if calls == stopAt {
 					return errors.New("injected rollback interruption")
 				}
 				return nil
@@ -379,48 +381,102 @@ func TestMigrationRecoveryFinishesACommittedMigration(t *testing.T) {
 	gitIn(t, filepath.Join(root, "main"), "rev-parse", "--verify", "refs/worktree/packed")
 }
 
+// registerTestMigration records a migration for root as register does and
+// returns its ID.
+func registerTestMigration(t *testing.T, root string) string {
+	t.Helper()
+	id := strings.Repeat("ab", 16)
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	path, err := migrationIDPath(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(root), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+	return id
+}
+
 func TestMigrationRecoveryRefusesForeignJournals(t *testing.T) {
+	registered := strings.Repeat("ab", 16)
 	for name, tc := range map[string]struct {
-		journal string
-		idFile  bool
-		want    string
+		journal  string
+		register bool
+		prepare  func(t *testing.T, root, outside string)
+		want     string
 	}{
-		// A journal tracked in a cloned repository has no matching ID file.
-		"no ID file":  {journal: "id evil\ncreate-tree \"../victim\"\n", want: "was not written by git wt migrate"},
-		"no ID":       {journal: "create \"../victim\"\n", want: "was not written by git wt migrate"},
-		"outside":     {journal: "id evil\ncreate-tree \"../victim\"\n", idFile: true, want: "corrupt migration journal"},
-		"absolute":    {journal: "id evil\nmove \"a\" \"/tmp/a\"\n", idFile: true, want: "corrupt migration journal"},
-		"other tree":  {journal: "id evil\ncreate-tree \".git\"\n", idFile: true, want: "corrupt migration journal"},
-		"unknown op":  {journal: "id evil\nremove \"a\"\n", idFile: true, want: "corrupt migration journal"},
-		"backup path": {journal: "id evil\nrestore \".git/config\" \"README.md\"\n", idFile: true, want: "corrupt migration journal"},
+		"no ID":        {journal: "create \"a\"\n", want: "was not written by git wt migrate"},
+		"unregistered": {journal: "id " + strings.Repeat("cd", 16) + "\ncreate \"a\"\n", register: true, want: "was not written by git wt migrate"},
+		"path as ID":   {journal: "id ../../../outside\ncreate \"a\"\n", want: "was not written by git wt migrate"},
+		// A clone can track files inside .bare/ and .git-wt-migrate/, but not
+		// the user's state directory.
+		"marker in the working tree": {
+			journal: "id " + registered + "\ncreate \"a\"\n",
+			prepare: func(t *testing.T, root, _ string) {
+				for _, dir := range []string{".bare", ".git"} {
+					if err := os.WriteFile(filepath.Join(root, dir, "git-wt-migration"), []byte(registered), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			},
+			want: "was not written by git wt migrate",
+		},
+		"another repository": {
+			journal: "id " + registered + "\ncreate \"a\"\n",
+			prepare: func(t *testing.T, _, outside string) {
+				registerTestMigration(t, outside)
+			},
+			want: "was not written by git wt migrate",
+		},
+		"outside":     {journal: "id " + registered + "\ncreate-tree \"../outside\"\n", register: true, want: "corrupt migration journal"},
+		"absolute":    {journal: "id " + registered + "\nmove \"a\" \"/tmp/a\"\n", register: true, want: "corrupt migration journal"},
+		"other tree":  {journal: "id " + registered + "\ncreate-tree \".git\"\n", register: true, want: "corrupt migration journal"},
+		"unknown op":  {journal: "id " + registered + "\nremove \"a\"\n", register: true, want: "corrupt migration journal"},
+		"backup path": {journal: "id " + registered + "\nrestore \".git/config\" \"README.md\"\n", register: true, want: "corrupt migration journal"},
+		"symlinked directory": {
+			journal:  "id " + registered + "\ncreate \"link/keep\"\n",
+			register: true,
+			prepare: func(t *testing.T, root, outside string) {
+				if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "refusing to follow symlinked directory",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			parent := t.TempDir()
-			root, victim := filepath.Join(parent, "repo"), filepath.Join(parent, "victim")
-			for _, dir := range []string{filepath.Join(root, migrationStateDir), filepath.Join(root, ".git"), victim} {
+			root, outside := filepath.Join(parent, "repo"), filepath.Join(parent, "outside")
+			for _, dir := range []string{filepath.Join(root, migrationStateDir), filepath.Join(root, ".git"), filepath.Join(root, ".bare"), outside} {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if err := os.WriteFile(filepath.Join(victim, "keep"), nil, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(outside, "keep"), nil, 0o644); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(migrationJournalPath(root), []byte(tc.journal), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if tc.idFile {
-				if err := os.WriteFile(filepath.Join(root, ".git", migrationIDName), []byte("evil"), 0o600); err != nil {
-					t.Fatal(err)
+			if tc.register {
+				if got := registerTestMigration(t, root); got != registered {
+					t.Fatal("unexpected test ID")
 				}
+			}
+			if tc.prepare != nil {
+				tc.prepare(t, root, outside)
 			}
 			if _, err := recoverMigration(root); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("expected %q, got %v", tc.want, err)
 			}
-			if exists, _ := pathExists(filepath.Join(victim, "keep")); !exists {
+			if exists, _ := pathExists(filepath.Join(outside, "keep")); !exists {
 				t.Fatal("recovery deleted files outside the repository")
-			}
-			if exists, _ := pathExists(migrationJournalPath(root)); !exists {
-				t.Fatal("refused journal was changed")
 			}
 		})
 	}

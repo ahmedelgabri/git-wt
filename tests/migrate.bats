@@ -468,3 +468,24 @@ SH
 	[ ! -e .bare ]
 	[ -z "$(command git status --porcelain)" ]
 }
+
+@test "migrate: ignores a tracked ID marker and symlinked journal paths in a clone" {
+	init_repo source
+	mkdir outside
+	echo keep >outside/keep
+	mkdir source/.git-wt-migrate source/.bare
+	id=abababababababababababababababab
+	printf '%s' "$id" >source/.bare/git-wt-migration
+	printf 'id %s\ncreate "link/keep"\n' "$id" >source/.git-wt-migrate/journal
+	ln -s "$TEST_DIR/outside" source/link
+	command git -C source add -f .bare/git-wt-migration .git-wt-migrate/journal link
+	command git -C source -c user.name=Test -c user.email=test@test.com commit --quiet -m journal
+	command git clone --quiet source clone
+	cd clone
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"was not written by git wt migrate"* ]]
+	[ -f "$TEST_DIR/outside/keep" ]
+	[ -d .git ]
+	[ -z "$(command git status --porcelain)" ]
+}
