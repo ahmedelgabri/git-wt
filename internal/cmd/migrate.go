@@ -37,6 +37,9 @@ type migratePlan struct {
 	defaultBranch string
 	defaultRemote string
 	config        migrationConfigState
+	// relativeWorktrees is set when Git records relative worktree paths in
+	// the repository format, which Git 2.48 introduced.
+	relativeWorktrees bool
 }
 
 func runMigrate(cmd *cobra.Command, args []string) error {
@@ -166,6 +169,11 @@ func buildMigratePlan(ctx context.Context, root string) (migratePlan, error) {
 		return plan, err
 	}
 	plan.config = config
+	version, err := git.QueryContext(ctx, "--version")
+	if err != nil {
+		return plan, err
+	}
+	plan.relativeWorktrees = gitVersionAtLeast(version, 2, 48)
 	branch, err := git.QueryInContext(ctx, root, "branch", "--show-current")
 	if err != nil || branch == "" {
 		return plan, fmt.Errorf("detached HEAD state: check out a branch before migrating")

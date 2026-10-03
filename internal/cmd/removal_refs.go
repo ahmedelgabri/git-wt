@@ -34,7 +34,7 @@ func remoteDeletionDestinations(remote string) ([]remoteDeletion, error) {
 		if err != nil {
 			return nil, fmt.Errorf("remote %s %s; cannot check the Git 2.46 minimum for destination selection: %w", remote, reason, err)
 		}
-		if !supportsRemoteURLReset(version) {
+		if !gitVersionAtLeast(version, 2, 46) {
 			return nil, fmt.Errorf("remote %s %s; destination selection requires Git 2.46 or newer, found %q; refusing before local removal to avoid partial completion. Upgrade Git on PATH, remove without --delete-remote, or review and delete the remote branch with native Git", remote, reason, version)
 		}
 	}
@@ -47,14 +47,6 @@ func remoteDeletionDestinations(remote string) ([]remoteDeletion, error) {
 		}
 	}
 	return deletions, nil
-}
-
-func supportsRemoteURLReset(version string) bool {
-	var major, minor int
-	if _, err := fmt.Sscanf(version, "git version %d.%d.", &major, &minor); err != nil {
-		return false
-	}
-	return minor >= 0 && (major > 2 || major == 2 && minor >= 46)
 }
 
 // Check every push destination before local removal. Repeat URL discovery after

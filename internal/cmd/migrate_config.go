@@ -136,6 +136,17 @@ func migrationConfigToSet(plan migratePlan) [][2]string {
 	return settings
 }
 
+// migrationRequiredConfig lists the settings verification requires. Git 2.48
+// and newer add the last two when creating a relative worktree; older Git
+// ignores worktree.useRelativePaths and writes neither.
+func migrationRequiredConfig(plan migratePlan) [][2]string {
+	required := migrationConfigToSet(plan)
+	if plan.relativeWorktrees {
+		required = append(required, [][2]string{{"core.repositoryformatversion", "1"}, {"extensions.relativeworktrees", "true"}}...)
+	}
+	return required
+}
+
 func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string) error {
 	actual, err := readMigrationConfig(ctx, root)
 	if err != nil {
@@ -145,9 +156,7 @@ func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string) e
 		return fmt.Errorf("migration configuration verification failed at %s: effective remotes changed", root)
 	}
 	expected := maps.Clone(plan.config.values)
-	// Git adds the last two when it creates a relative worktree.
-	required := append(migrationConfigToSet(plan), [][2]string{{"core.repositoryformatversion", "1"}, {"extensions.relativeworktrees", "true"}}...)
-	for _, setting := range required {
+	for _, setting := range migrationRequiredConfig(plan) {
 		values := actual.values[setting[0]]
 		if len(values) == 0 || values[len(values)-1] != "\n"+setting[1] {
 			return fmt.Errorf("migration configuration verification failed at %s: %s must be %s", root, setting[0], setting[1])
