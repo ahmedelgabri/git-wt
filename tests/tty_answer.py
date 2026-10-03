@@ -11,7 +11,8 @@ import sys
 import termios
 import time
 
-# Each step waits for a prompt, then types an answer.
+# Each step waits for a prompt, then types an answer. An answer such as
+# signal:SIGTERM sends that signal to the process instead.
 binary, *args = sys.argv[1:]
 separator = args.index("--")
 command, answers = args[:separator], args[separator + 1 :]
@@ -51,6 +52,9 @@ try:
             prompt, answer = steps.pop(0)
             searched = output.find(prompt, searched) + len(prompt)
             time.sleep(0.2)
+            if answer.startswith(b"signal:"):
+                os.kill(pid, getattr(signal, answer[len(b"signal:"):].decode()))
+                continue
             for key in answer:
                 os.write(master, bytes([key]))
                 time.sleep(0.02)

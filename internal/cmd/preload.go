@@ -33,6 +33,7 @@ type preloadModel[T any] struct {
 	cancel  context.CancelFunc
 	send    func(tea.Msg)
 	load    preloadFunc[T]
+	done    bool
 }
 
 func canUseSelectionPreloadUI() bool {
@@ -82,6 +83,7 @@ func (m *preloadModel[T]) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = msg.message
 		return m, nil
 	case preloadDoneMsg[T]:
+		m.done = true
 		m.value = msg.value
 		m.err = msg.err
 		switch {
@@ -135,9 +137,15 @@ func runPreload[T any](ctx context.Context, message string, load preloadFunc[T])
 	if err != nil {
 		return zero, err
 	}
-	r := result.(*preloadModel[T])
-	if errors.Is(r.err, context.Canceled) {
+	return result.(*preloadModel[T]).result()
+}
+
+func (m *preloadModel[T]) result() (T, error) {
+	var zero T
+	// A signal ends the program before loading finishes; that is a cancel,
+	// not an empty result.
+	if !m.done || errors.Is(m.err, context.Canceled) {
 		return zero, context.Canceled
 	}
-	return r.value, r.err
+	return m.value, m.err
 }

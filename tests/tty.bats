@@ -53,22 +53,40 @@ tty_remove_fixture() {
 	assert_branch_exists dirty
 }
 
-@test "TTY: Ctrl-C during migration rolls back" {
+tty_migration_fixture() {
 	cd "$TEST_DIR"
 	init_repo standard
 	cd standard
 	mkdir "$TEST_DIR/bin"
-	# Slow down one step so Ctrl-C arrives mid-migration.
+	# Slow down one step so the interruption arrives mid-migration.
 	cat >"$TEST_DIR/bin/git" <<SH
 #!/bin/sh
 case " \$* " in *" worktree add "*) sleep 2 ;; esac
 exec $(command -v git) "\$@"
 SH
 	chmod +x "$TEST_DIR/bin/git"
-	run env PATH="$TEST_DIR/bin:$PATH" python3 "$BATS_TEST_DIRNAME/tty_answer.py" "$GIT_WT" migrate -- "[y/N]" y "Migrating repository in place" '\x03'
+}
+
+assert_migration_rolled_back() {
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"original repository restored"* ]]
 	[ -d .git ]
 	[ ! -e .bare ]
 	[ ! -e .git-wt-migrate ]
+	[ "$(command git status --porcelain)" = "" ]
+}
+
+@test "TTY: Ctrl-C during migration rolls back" {
+	tty_migration_fixture
+	run env PATH="$TEST_DIR/bin:$PATH" python3 "$BATS_TEST_DIRNAME/tty_answer.py" "$GIT_WT" migrate -- "[y/N]" y "Migrating repository in place" '\x03'
+	assert_migration_rolled_back
+}
+
+@test "TTY: SIGTERM and SIGINT during migration roll back" {
+	for sig in SIGTERM SIGINT; do
+		rm -rf "$TEST_DIR/standard" "$TEST_DIR/bin"
+		tty_migration_fixture
+		run env PATH="$TEST_DIR/bin:$PATH" python3 "$BATS_TEST_DIRNAME/tty_answer.py" "$GIT_WT" migrate -- "[y/N]" y "Migrating repository in place" "signal:$sig"
+		assert_migration_rolled_back
+	done
 }

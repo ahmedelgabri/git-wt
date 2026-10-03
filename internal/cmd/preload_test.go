@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ahmedelgabri/git-wt/internal/ui"
@@ -60,5 +61,21 @@ func TestRunPreloadFallback(t *testing.T) {
 	}
 	if value != 7 {
 		t.Fatalf("value = %d, want %d", value, 7)
+	}
+}
+
+func TestPreloadEndedBeforeLoadingIsCanceled(t *testing.T) {
+	m := newPreloadModel(context.Background(), "Loading", func(context.Context, func(ui.AsyncPhase, string)) ([]string, error) {
+		return []string{"loaded"}, nil
+	})
+	defer m.cancel()
+	// Bubble Tea's signal handler quits without the loader's result.
+	m.Update(tea.QuitMsg{})
+	if _, err := m.result(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	m.Update(preloadDoneMsg[[]string]{value: []string{"loaded"}})
+	if value, err := m.result(); err != nil || len(value) != 1 {
+		t.Fatalf("finished load = %v, %v", value, err)
 	}
 }
