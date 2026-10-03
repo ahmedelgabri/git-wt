@@ -154,7 +154,12 @@ func writeSyncedFile(path string, data []byte, perm os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	_, err = file.Write(data)
+	// OpenFile applies the umask. A saved copy is renamed back over the
+	// original on rollback, so it needs the original's exact mode.
+	err = file.Chmod(perm)
+	if err == nil {
+		_, err = file.Write(data)
+	}
 	if err == nil {
 		err = file.Sync()
 	}
