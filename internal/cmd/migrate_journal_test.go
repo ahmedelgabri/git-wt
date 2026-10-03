@@ -212,7 +212,7 @@ func TestMigrationJournalIgnoresTruncatedEntry(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, "a"), filepath.Join(root, "b")); err != nil {
 		t.Fatal(err)
 	}
-	if err := undoMigration(root); err != nil {
+	if err := recoverMigration(root); err != nil {
 		t.Fatal(err)
 	}
 	if exists, _ := pathExists(filepath.Join(root, "a")); !exists {
@@ -282,4 +282,67 @@ func TestMigrationVerificationDetectsDamage(t *testing.T) {
 			_ = journal.finish()
 		})
 	}
+}
+
+// convertFixture converts a fixture without finishing, as if verification
+// failed, and returns the journal and the original tree.
+func convertFixture(t *testing.T) (string, *migrationJournal, map[string]string) {
+	t.Helper()
+	root := migrationFixture(t)
+	want := snapshotTree(t, root)
+	journal, _, err := convertWithFailure(t, root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, journal, want
+}
+
+func TestMigrationRollbackResumesAtEveryStep(t *testing.T) {
+	_, journal, _ := convertFixture(t)
+	state, err := readMigrationJournal(journal.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = journal.rollback()
+	for stopAt := 1; stopAt <= len(state.records); stopAt++ {
+		t.Run(fmt.Sprint(stopAt), func(t *testing.T) {
+			root, journal, want := convertFixture(t)
+			steps := 0
+			migrationUndoHook = func() error {
+				steps++
+				if steps == stopAt {
+					return errors.New("injected rollback interruption")
+				}
+				return nil
+			}
+			err := journal.rollback()
+			migrationUndoHook = nil
+			if err == nil {
+				t.Fatal("expected interrupted rollback")
+			}
+			if err := recoverMigration(root); err != nil {
+				t.Fatal(err)
+			}
+			requireSameTree(t, want, snapshotTree(t, root))
+		})
+	}
+}
+
+func TestMigrationRollbackResumesAfterConflict(t *testing.T) {
+	root, journal, want := convertFixture(t)
+	// An editor recreates a moved file while the repository is migrated.
+	conflict := filepath.Join(root, "README.md")
+	if err := os.WriteFile(conflict, []byte("recreated"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.rollback(); err == nil || !strings.Contains(err.Error(), "both") {
+		t.Fatalf("expected a conflict, got %v", err)
+	}
+	if err := os.Remove(conflict); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverMigration(root); err != nil {
+		t.Fatal(err)
+	}
+	requireSameTree(t, want, snapshotTree(t, root))
 }

@@ -136,14 +136,14 @@ func (j *migrationJournal) finish() error {
 }
 
 func (j *migrationJournal) rollback() error {
-	err := undoMigration(j.root)
+	err := undoMigration(j.root, j.file)
 	j.unlock()
 	return errors.Join(err, j.file.Close())
 }
 
 // recoverMigration undoes a migration interrupted in an earlier process.
 func recoverMigration(root string) error {
-	file, err := os.OpenFile(migrationJournalPath(root), os.O_RDWR, 0)
+	file, err := os.OpenFile(migrationJournalPath(root), os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func recoverMigration(root string) error {
 		return err
 	}
 	defer unlock()
-	return undoMigration(root)
+	return undoMigration(root, file)
 }
 
 func removeMigrationState(root string) error {
@@ -177,40 +177,79 @@ type migrationRecord struct {
 	paths []string
 }
 
-func readMigrationJournal(root string) ([]migrationRecord, error) {
+type migrationJournalState struct {
+	records []migrationRecord
+	// undone counts records already reversed, newest first.
+	undone int
+	// complete is the length of the journal up to its last complete entry.
+	complete int64
+}
+
+func readMigrationJournal(root string) (migrationJournalState, error) {
+	var state migrationJournalState
 	data, err := os.ReadFile(migrationJournalPath(root))
 	if err != nil {
-		return nil, err
+		return state, err
 	}
-	var records []migrationRecord
+	state.complete = int64(strings.LastIndexByte(string(data), '\n') + 1)
 	lines := strings.Split(string(data), "\n")
 	// The last element is empty, or an entry cut off before its newline.
 	for _, line := range lines[:len(lines)-1] {
+		if line == "undo" {
+			state.undone++
+			continue
+		}
 		op, rest, _ := strings.Cut(line, " ")
 		record := migrationRecord{op: op}
 		for rest != "" {
 			quoted, err := strconv.QuotedPrefix(rest)
 			if err != nil {
-				return nil, fmt.Errorf("corrupt migration journal entry %q", line)
+				return state, fmt.Errorf("corrupt migration journal entry %q", line)
 			}
 			path, _ := strconv.Unquote(quoted)
 			record.paths = append(record.paths, path)
 			rest = strings.TrimPrefix(rest[len(quoted):], " ")
 		}
-		records = append(records, record)
+		state.records = append(state.records, record)
 	}
-	return records, nil
+	if state.undone > len(state.records) {
+		return state, fmt.Errorf("corrupt migration journal: more undo entries than steps")
+	}
+	return state, nil
 }
 
-// undoMigration reverses journal entries newest first. Each step checks the
-// current state, so undo can be repeated after it is itself interrupted.
-func undoMigration(root string) error {
-	records, err := readMigrationJournal(root)
+// migrationUndoHook lets tests interrupt rollback at every step.
+var migrationUndoHook func() error
+
+// undoMigration reverses journal entries newest first and appends an undo
+// entry after each one, so a stopped rollback resumes where it left off.
+// Replaying from the end would fail: undoing a later move, such as .bare back
+// to .git, changes the paths that earlier, already undone entries name. A
+// crash before an undo entry is written repeats only that step, which checks
+// the current state and is safe to repeat.
+func undoMigration(root string, journal *os.File) error {
+	state, err := readMigrationJournal(root)
 	if err != nil {
 		return err
 	}
-	for i := len(records) - 1; i >= 0; i-- {
-		if err := undoMigrationRecord(root, records[i]); err != nil {
+	// Drop an entry cut off mid-write, which was never acted on, so undo
+	// entries start on a line of their own.
+	if err := journal.Truncate(state.complete); err != nil {
+		return err
+	}
+	for i := len(state.records) - 1 - state.undone; i >= 0; i-- {
+		if migrationUndoHook != nil {
+			if err := migrationUndoHook(); err != nil {
+				return err
+			}
+		}
+		if err := undoMigrationRecord(root, state.records[i]); err != nil {
+			return err
+		}
+		if _, err := journal.WriteString("undo\n"); err != nil {
+			return err
+		}
+		if err := journal.Sync(); err != nil {
 			return err
 		}
 	}
