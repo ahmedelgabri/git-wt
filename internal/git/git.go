@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"time"
 )
 
 // ExecOptions configures git command execution.
@@ -58,7 +59,7 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 		if cmd.Stdin == nil {
 			cmd.Stdin = os.Stdin
 		}
-		return "", cmd.Run()
+		return "", ignoreHelperWait(cmd, cmd.Run())
 	}
 
 	if opts.Capture {
@@ -69,6 +70,7 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 		} else {
 			out, err = cmd.Output()
 		}
+		err = ignoreHelperWait(cmd, err)
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 			err = fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(exitErr.Stderr)), err)
@@ -84,7 +86,7 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 	if cmd.Stdin == nil {
 		cmd.Stdin = os.Stdin
 	}
-	return "", cmd.Run()
+	return "", ignoreHelperWait(cmd, cmd.Run())
 }
 
 // IsExitCode reports whether err came from a process exiting with code.
@@ -122,11 +124,29 @@ func QueryRawInContext(ctx context.Context, dir string, args ...string) (string,
 	return execGit(ExecOptions{Dir: dir, Capture: true, Raw: true, Context: ctx}, args...)
 }
 
+// helperWaitDelay bounds how long a finished or cancelled Git command waits
+// for helpers, such as upload-pack or ssh, that inherited its output pipes.
+// Without it, a cancelled ls-remote waits for a slow helper to exit, and a
+// helper that never exits blocks forever.
+const helperWaitDelay = 250 * time.Millisecond
+
 func newCommand(ctx context.Context, args ...string) *exec.Cmd {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.WaitDelay = helperWaitDelay
+	return cmd
+}
+
+// ignoreHelperWait treats a successful Git run as successful even when a
+// helper, such as a persistent ssh master, kept a pipe open past
+// helperWaitDelay. Git's own output is complete once it has exited.
+func ignoreHelperWait(cmd *exec.Cmd, err error) error {
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		return nil
+	}
+	return err
 }
 
 func formatDebugCommand(dir string, args []string) string {

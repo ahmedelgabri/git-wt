@@ -46,6 +46,34 @@ func TestDefaultBranchUsesConfiguredTimeout(t *testing.T) {
 	}
 }
 
+// The deadline must also hold once a helper has started: killing git leaves
+// upload-pack holding git's output pipe.
+func TestDefaultBranchTimeoutDoesNotWaitForHelpers(t *testing.T) {
+	origin, dir := t.TempDir(), t.TempDir()
+	initTestRepo(t, origin)
+	initTestRepo(t, dir)
+	for _, args := range [][]string{
+		{"remote", "add", "origin", origin},
+		{"config", "remote.origin.uploadpack", "sleep 5; git-upload-pack"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "wt.remoteTimeout")
+	t.Setenv("GIT_CONFIG_VALUE_0", "100ms")
+	start := time.Now()
+	if got := DefaultBranchIn(dir, "origin"); got != "" {
+		t.Fatalf("expired lookup returned %q", got)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("lookup waited %s for the helper", elapsed)
+	}
+}
+
 func TestRemoteTimeoutConfiguration(t *testing.T) {
 	for _, tc := range []struct {
 		value string
