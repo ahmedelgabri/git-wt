@@ -34,7 +34,7 @@
 
             src = lib.cleanSource ./.;
 
-            vendorHash = "sha256-0nGYE3qHmkMQJMyEfeU8lMORFNGdKHA78qxV49Goxks=";
+            vendorHash = "sha256-4oGxkBdKUARLPbsl0lUdTZ3x4tyYD014dBaB6tyxI1w=";
 
             ldflags = [
               "-s"
