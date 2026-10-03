@@ -186,7 +186,11 @@ PY
 	cd repo
 	command git config core.sharedRepository group
 	mkdir shared sticky
-	chmod 2775 shared
+	# macOS refuses setgid when the user is not in the directory's group, as
+	# in temporary directories that belong to wheel.
+	if ! chmod 2775 shared 2>/dev/null || [ ! -g shared ]; then
+		skip "cannot set the setgid bit in this temporary directory"
+	fi
 	chmod 1777 sticky
 	chmod g+s .git/objects/*/
 	(umask 077 && ln -s tracked.txt private-link)
