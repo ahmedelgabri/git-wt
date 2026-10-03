@@ -405,7 +405,9 @@ func confirmRemoval(items []removalItem, opts removeOptions, cleanup bool) bool 
 		if !ui.PromptDangerous(fmt.Sprintf("Type %s to confirm:", ui.Bold(expect)), expect) {
 			return false
 		}
-		for _, item := range items[1:] {
+		// A single target returned above; here every target needs checking,
+		// including the first.
+		for _, item := range items {
 			if item.Target.hasBranch() && item.Target.renamedUpstream() && !confirmRenamedUpstream(item.Target) {
 				return false
 			}

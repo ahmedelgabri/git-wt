@@ -212,11 +212,15 @@ teardown() { teardown_test_env; }
 	[ -d feat ]
 	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
 	create_worktree other other
-	run bash -c 'printf "remove\nfeat\n" | "$1" remove other feat --delete-remote' _ "$GIT_WT"
-	[[ "$output" == *"Cancelled"* ]]
-	[ -d feat ]
-	[ -d other ]
-	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
+	# The renamed upstream needs its own confirmation in either position.
+	for targets in "other feat" "feat other"; do
+		run bash -c 'printf "remove\nfeat\n" | "$1" remove $2 --delete-remote' _ "$GIT_WT" "$targets"
+		[[ "$output" == *"feat tracks origin/release"* ]]
+		[[ "$output" == *"Cancelled"* ]]
+		[ -d feat ]
+		[ -d other ]
+		command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
+	done
 	run bash -c 'printf "origin/release\n" | "$1" remove feat --delete-remote' _ "$GIT_WT"
 	[ "$status" -eq 0 ]
 	! command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
