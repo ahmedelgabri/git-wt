@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +15,11 @@ import (
 // before it happens, so an interrupted run can be undone by the same process or
 // by the next `git wt migrate`, even after a crash or power loss.
 const migrationStateDir = ".git-wt-migrate"
+
+// migrationIDName is written inside the Git directory with the journal's ID.
+// A clone or checkout can put a journal in the working tree, but never this
+// file, so recovery only replays journals whose ID it matches.
+const migrationIDName = "git-wt-migration"
 
 type migrationJournal struct {
 	root    string
@@ -28,6 +35,12 @@ func migrationJournalPath(root string) string {
 }
 
 func startMigrationJournal(root string) (*migrationJournal, error) {
+	// Git reports resolved paths; recorded paths must be relative to the
+	// same root to stay inside the repository.
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
 	// Mkdir is atomic, so two migrations of one repository cannot both start.
 	if err := os.Mkdir(filepath.Join(root, migrationStateDir), 0o700); err != nil {
 		return nil, err
@@ -41,7 +54,30 @@ func startMigrationJournal(root string) (*migrationJournal, error) {
 		_ = file.Close()
 		return nil, err
 	}
-	return &migrationJournal{root: root, file: file, unlock: unlock}, nil
+	j := &migrationJournal{root: root, file: file, unlock: unlock}
+	if err := j.writeID(); err != nil {
+		// Nothing has moved yet; leave no journal that recovery would refuse.
+		unlock()
+		_ = file.Close()
+		_ = os.Remove(filepath.Join(root, ".git", migrationIDName))
+		return nil, errors.Join(err, removeMigrationState(root))
+	}
+	return j, nil
+}
+
+func (j *migrationJournal) writeID() error {
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return err
+	}
+	if _, err := j.file.WriteString("id " + hex.EncodeToString(id) + "\n"); err != nil {
+		return err
+	}
+	idFile := filepath.Join(".git", migrationIDName)
+	if err := j.create(idFile); err != nil {
+		return err
+	}
+	return writeSyncedFile(j.path(idFile), []byte(hex.EncodeToString(id)), 0o600)
 }
 
 func (j *migrationJournal) path(rel string) string {
@@ -143,7 +179,14 @@ func (j *migrationJournal) finish() error {
 	if err := j.commit(); err != nil {
 		return err
 	}
-	return removeMigrationState(j.root)
+	if err := removeMigrationState(j.root); err != nil {
+		return err
+	}
+	// Removed last: until the journal is gone, recovery needs it.
+	if err := os.Remove(j.path(filepath.Join(".bare", migrationIDName))); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (j *migrationJournal) rollback() error {
@@ -170,10 +213,43 @@ func recoverMigration(root string) (completed bool, err error) {
 	if err != nil {
 		return false, err
 	}
+	if err := checkMigrationJournalID(root, state); err != nil {
+		return false, err
+	}
+	for _, record := range state.records {
+		if !validMigrationRecord(record) {
+			return false, fmt.Errorf("corrupt migration journal entry %s %q; nothing was changed", record.op, record.paths)
+		}
+	}
 	if state.committed {
-		return true, removeMigrationState(root)
+		if err := removeMigrationState(root); err != nil {
+			return true, err
+		}
+		if err := os.Remove(filepath.Join(root, ".bare", migrationIDName)); err != nil && !os.IsNotExist(err) {
+			return true, err
+		}
+		return true, nil
 	}
 	return false, undoMigration(root, file)
+}
+
+// checkMigrationJournalID refuses journals this repository's migration did
+// not write, such as one tracked in a cloned repository.
+func checkMigrationJournalID(root string, state migrationJournalState) error {
+	if state.id != "" {
+		// .git before the Git directory moves, .bare after.
+		for _, dir := range []string{".git", ".bare"} {
+			if id, err := os.ReadFile(filepath.Join(root, dir, migrationIDName)); err == nil && string(id) == state.id {
+				return nil
+			}
+		}
+		// Undo removes the ID file last, so a fully undone journal has none,
+		// and nothing left to replay.
+		if !state.committed && state.undone == len(state.records) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s was not written by git wt migrate for this repository; nothing was changed. Remove it if you did not start a migration here", migrationJournalPath(root))
 }
 
 func removeMigrationState(root string) error {
@@ -198,6 +274,7 @@ type migrationRecord struct {
 }
 
 type migrationJournalState struct {
+	id      string
 	records []migrationRecord
 	// undone counts records already reversed, newest first.
 	undone int
@@ -225,6 +302,10 @@ func readMigrationJournal(root string) (migrationJournalState, error) {
 			state.committed = true
 			continue
 		}
+		if id, ok := strings.CutPrefix(line, "id "); ok && len(state.records) == 0 && state.id == "" {
+			state.id = id
+			continue
+		}
 		op, rest, _ := strings.Cut(line, " ")
 		record := migrationRecord{op: op}
 		for rest != "" {
@@ -242,6 +323,27 @@ func readMigrationJournal(root string) (migrationJournalState, error) {
 		return state, fmt.Errorf("corrupt migration journal: more undo entries than steps")
 	}
 	return state, nil
+}
+
+// validMigrationRecord accepts only the entries migration writes, with paths
+// inside the repository, so replay cannot touch anything outside it.
+func validMigrationRecord(record migrationRecord) bool {
+	for _, path := range record.paths {
+		if !filepath.IsLocal(path) {
+			return false
+		}
+	}
+	switch record.op {
+	case "move":
+		return len(record.paths) == 2
+	case "create":
+		return len(record.paths) == 1
+	case "create-tree":
+		return len(record.paths) == 1 && record.paths[0] == filepath.Join(".bare", "worktrees")
+	case "restore":
+		return len(record.paths) == 2 && strings.HasPrefix(record.paths[1], filepath.Join(migrationStateDir, "backup")+string(filepath.Separator))
+	}
+	return false
 }
 
 // migrationUndoHook lets tests interrupt rollback at every step.

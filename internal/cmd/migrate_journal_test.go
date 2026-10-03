@@ -205,8 +205,14 @@ func TestMigrationJournalIgnoresTruncatedEntry(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, migrationStateDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	journal := "move \"a\" \"b\"\nmove \"b\" \"c"
+	journal := "id test\nmove \"a\" \"b\"\nmove \"b\" \"c"
 	if err := os.WriteFile(migrationJournalPath(root), []byte(journal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git", migrationIDName), []byte("test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(filepath.Join(root, "a"), filepath.Join(root, "b")); err != nil {
@@ -371,4 +377,51 @@ func TestMigrationRecoveryFinishesACommittedMigration(t *testing.T) {
 		t.Fatalf("migrated worktree damaged: on %q", branch)
 	}
 	gitIn(t, filepath.Join(root, "main"), "rev-parse", "--verify", "refs/worktree/packed")
+}
+
+func TestMigrationRecoveryRefusesForeignJournals(t *testing.T) {
+	for name, tc := range map[string]struct {
+		journal string
+		idFile  bool
+		want    string
+	}{
+		// A journal tracked in a cloned repository has no matching ID file.
+		"no ID file":  {journal: "id evil\ncreate-tree \"../victim\"\n", want: "was not written by git wt migrate"},
+		"no ID":       {journal: "create \"../victim\"\n", want: "was not written by git wt migrate"},
+		"outside":     {journal: "id evil\ncreate-tree \"../victim\"\n", idFile: true, want: "corrupt migration journal"},
+		"absolute":    {journal: "id evil\nmove \"a\" \"/tmp/a\"\n", idFile: true, want: "corrupt migration journal"},
+		"other tree":  {journal: "id evil\ncreate-tree \".git\"\n", idFile: true, want: "corrupt migration journal"},
+		"unknown op":  {journal: "id evil\nremove \"a\"\n", idFile: true, want: "corrupt migration journal"},
+		"backup path": {journal: "id evil\nrestore \".git/config\" \"README.md\"\n", idFile: true, want: "corrupt migration journal"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			parent := t.TempDir()
+			root, victim := filepath.Join(parent, "repo"), filepath.Join(parent, "victim")
+			for _, dir := range []string{filepath.Join(root, migrationStateDir), filepath.Join(root, ".git"), victim} {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(victim, "keep"), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(migrationJournalPath(root), []byte(tc.journal), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.idFile {
+				if err := os.WriteFile(filepath.Join(root, ".git", migrationIDName), []byte("evil"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := recoverMigration(root); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+			if exists, _ := pathExists(filepath.Join(victim, "keep")); !exists {
+				t.Fatal("recovery deleted files outside the repository")
+			}
+			if exists, _ := pathExists(migrationJournalPath(root)); !exists {
+				t.Fatal("refused journal was changed")
+			}
+		})
+	}
 }

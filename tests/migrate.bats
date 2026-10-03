@@ -449,3 +449,22 @@ SH
 	[ ! -e .bare ]
 	[ ! -e .git-wt-migrate ]
 }
+
+@test "migrate: ignores a journal that arrives with a cloned repository" {
+	init_repo source
+	mkdir source/.git-wt-migrate
+	printf 'id evil\ncreate-tree "../victim"\n' >source/.git-wt-migrate/journal
+	command git -C source add -f .git-wt-migrate/journal
+	command git -C source -c user.name=Test -c user.email=test@test.com commit --quiet -m journal
+	command git clone --quiet source clone
+	mkdir victim
+	echo keep >victim/file
+	cd clone
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"was not written by git wt migrate"* ]]
+	[ -f "$TEST_DIR/victim/file" ]
+	[ -d .git ]
+	[ ! -e .bare ]
+	[ -z "$(command git status --porcelain)" ]
+}
