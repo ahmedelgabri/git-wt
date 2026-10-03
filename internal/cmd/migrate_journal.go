@@ -125,11 +125,22 @@ func writeSyncedFile(path string, data []byte, perm os.FileMode) error {
 	return errors.Join(err, file.Close())
 }
 
-// finish removes the journal after a successful migration or undo. Only
-// migration's own files are removed; a non-empty staging directory is an error.
+// commit marks the migration complete. From then on, recovery finishes the
+// cleanup instead of undoing the migration, whose saved files cleanup deletes.
+func (j *migrationJournal) commit() error {
+	if _, err := j.file.WriteString("commit\n"); err != nil {
+		return err
+	}
+	return j.file.Sync()
+}
+
+// finish commits and removes the journal after a successful migration,
+// holding the lock until the journal is gone. Only migration's own files are
+// removed; a non-empty staging directory is an error.
 func (j *migrationJournal) finish() error {
-	j.unlock()
-	if err := j.file.Close(); err != nil {
+	defer j.file.Close()
+	defer j.unlock()
+	if err := j.commit(); err != nil {
 		return err
 	}
 	return removeMigrationState(j.root)
@@ -141,19 +152,28 @@ func (j *migrationJournal) rollback() error {
 	return errors.Join(err, j.file.Close())
 }
 
-// recoverMigration undoes a migration interrupted in an earlier process.
-func recoverMigration(root string) error {
+// recoverMigration handles a journal left by an earlier process. It undoes an
+// interrupted migration, or finishes cleaning up a completed one, which it
+// reports with completed.
+func recoverMigration(root string) (completed bool, err error) {
 	file, err := os.OpenFile(migrationJournalPath(root), os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer file.Close()
 	unlock, err := lockMigrationJournal(file)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer unlock()
-	return undoMigration(root, file)
+	state, err := readMigrationJournal(root)
+	if err != nil {
+		return false, err
+	}
+	if state.committed {
+		return true, removeMigrationState(root)
+	}
+	return false, undoMigration(root, file)
 }
 
 func removeMigrationState(root string) error {
@@ -183,6 +203,8 @@ type migrationJournalState struct {
 	undone int
 	// complete is the length of the journal up to its last complete entry.
 	complete int64
+	// committed is set once the migration succeeded; it must not be undone.
+	committed bool
 }
 
 func readMigrationJournal(root string) (migrationJournalState, error) {
@@ -197,6 +219,10 @@ func readMigrationJournal(root string) (migrationJournalState, error) {
 	for _, line := range lines[:len(lines)-1] {
 		if line == "undo" {
 			state.undone++
+			continue
+		}
+		if line == "commit" {
+			state.committed = true
 			continue
 		}
 		op, rest, _ := strings.Cut(line, " ")
@@ -231,6 +257,9 @@ func undoMigration(root string, journal *os.File) error {
 	state, err := readMigrationJournal(root)
 	if err != nil {
 		return err
+	}
+	if state.committed {
+		return fmt.Errorf("migration already completed; refusing to undo it")
 	}
 	// Drop an entry cut off mid-write, which was never acted on, so undo
 	// entries start on a line of their own.

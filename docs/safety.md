@@ -29,7 +29,7 @@ Every step is written to `.git-wt-migrate/journal` and synced before it runs. If
 
 If the process is killed or the machine loses power, the journal stays. Run `git wt migrate` again from anywhere inside the repository. It finds the journal, restores the original layout, and exits with an error telling you to run it again to migrate. `--dry-run` only reports the interrupted migration. A lock on the journal stops a second `git wt migrate` from undoing one that is still running. Undo never removes a non-empty directory it did not create, and it stops if a path it needs to restore already exists, for example because an editor recreated a file. Rollback records each step it completes in the journal, so after you resolve the conflict, `git wt migrate` resumes where it stopped.
 
-After a successful migration the journal and saved files are removed. There is no backup copy: migration rewrote nothing but `config` and `packed-refs`, and verification compared the result with the original. Absolute paths in custom commands or configuration may need manual adjustment.
+After a successful migration, the journal is marked complete and then removed with the saved files. If that cleanup is interrupted, the next `git wt migrate` finishes it instead of undoing the migration. There is no backup copy: migration rewrote nothing but `config` and `packed-refs`, and verification compared the result with the original. Absolute paths in custom commands or configuration may need manual adjustment.
 
 If the extra worktree for the default branch cannot be created after the conversion, migration still succeeds and prints a warning with the `git wt add` command to create it later.
 

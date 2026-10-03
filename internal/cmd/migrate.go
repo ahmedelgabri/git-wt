@@ -144,9 +144,14 @@ func recoverInterruptedMigration(root string, dryRun bool) error {
 	if dryRun {
 		return fmt.Errorf("found an interrupted migration in %s; run git wt migrate without --dry-run to restore the original layout", root)
 	}
-	ui.Warnf("Found an interrupted migration in %s; restoring the original layout", root)
-	if err := recoverMigration(root); err != nil {
+	ui.Warnf("Found the journal of an unfinished migration in %s", root)
+	completed, err := recoverMigration(root)
+	if err != nil {
 		return fmt.Errorf("restore interrupted migration in %s: %w", root, err)
+	}
+	if completed {
+		ui.Success("Migration was already complete; removed its leftover journal")
+		return nil
 	}
 	return fmt.Errorf("interrupted migration rolled back; original repository restored at %s; run git wt migrate again to migrate", root)
 }

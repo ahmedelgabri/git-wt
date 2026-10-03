@@ -172,7 +172,7 @@ func TestMigrationRollsBackAtEveryStep(t *testing.T) {
 					// Simulate a killed process: nothing undone, lock released.
 					journal.unlock()
 					_ = journal.file.Close()
-					err = recoverMigration(root)
+					_, err = recoverMigration(root)
 				} else {
 					err = journal.rollback()
 				}
@@ -192,7 +192,7 @@ func TestMigrationRefusesConcurrentRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer journal.rollback()
-	if err := recoverMigration(root); err == nil || !strings.Contains(err.Error(), "another git wt migrate is running") {
+	if _, err := recoverMigration(root); err == nil || !strings.Contains(err.Error(), "another git wt migrate is running") {
 		t.Fatalf("expected a running migration to block recovery, got %v", err)
 	}
 }
@@ -212,7 +212,7 @@ func TestMigrationJournalIgnoresTruncatedEntry(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, "a"), filepath.Join(root, "b")); err != nil {
 		t.Fatal(err)
 	}
-	if err := recoverMigration(root); err != nil {
+	if _, err := recoverMigration(root); err != nil {
 		t.Fatal(err)
 	}
 	if exists, _ := pathExists(filepath.Join(root, "a")); !exists {
@@ -320,7 +320,7 @@ func TestMigrationRollbackResumesAtEveryStep(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected interrupted rollback")
 			}
-			if err := recoverMigration(root); err != nil {
+			if _, err := recoverMigration(root); err != nil {
 				t.Fatal(err)
 			}
 			requireSameTree(t, want, snapshotTree(t, root))
@@ -341,8 +341,34 @@ func TestMigrationRollbackResumesAfterConflict(t *testing.T) {
 	if err := os.Remove(conflict); err != nil {
 		t.Fatal(err)
 	}
-	if err := recoverMigration(root); err != nil {
+	if _, err := recoverMigration(root); err != nil {
 		t.Fatal(err)
 	}
 	requireSameTree(t, want, snapshotTree(t, root))
+}
+
+func TestMigrationRecoveryFinishesACommittedMigration(t *testing.T) {
+	root, journal, _ := convertFixture(t)
+	if err := journal.commit(); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a crash part way through cleanup: saved files are gone.
+	for _, dir := range []string{"work", "backup"} {
+		if err := os.RemoveAll(filepath.Join(root, migrationStateDir, dir)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	journal.unlock()
+	_ = journal.file.Close()
+	completed, err := recoverMigration(root)
+	if err != nil || !completed {
+		t.Fatalf("expected cleanup of a completed migration, got %v, %v", completed, err)
+	}
+	if exists, _ := pathExists(filepath.Join(root, migrationStateDir)); exists {
+		t.Fatal("journal not removed")
+	}
+	if branch := gitIn(t, filepath.Join(root, "main"), "branch", "--show-current"); branch != "main" {
+		t.Fatalf("migrated worktree damaged: on %q", branch)
+	}
+	gitIn(t, filepath.Join(root, "main"), "rev-parse", "--verify", "refs/worktree/packed")
 }
