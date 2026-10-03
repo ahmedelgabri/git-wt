@@ -277,7 +277,11 @@ teardown() {
 	# Manually remove the worktree directory to make it stale
 	rm -rf "$TEST_DIR/myrepo/stale-prune"
 
-	run "$GIT_WT" remove --stale
+	# Confirm the cleanup so the prune runs; without input the prompt waits.
+	run bash -c 'printf "cleanup\n" | "$1" remove --stale' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	run command git worktree list --porcelain
+	[[ "$output" != *"/stale-prune"* ]]
 	[ ! -f "$TEST_DIR/before-prune-hook-ran" ]
 	[ ! -f "$TEST_DIR/after-prune-hook-ran" ]
 }
