@@ -96,17 +96,35 @@ func TestNormalizeTaskLogChunk(t *testing.T) {
 	}
 }
 
+func runTestTaskProgram(t *testing.T, m *taskModel) (*tea.Program, <-chan error) {
+	t.Helper()
+	p := tea.NewProgram(m, tea.WithInput(nil), tea.WithOutput(io.Discard))
+	result := make(chan error, 1)
+	go func() { result <- runTaskProgram(m, p) }()
+	return p, result
+}
+
+func waitTaskProgram(t *testing.T, result <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-result:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("task program hung")
+		return nil
+	}
+}
+
 func TestTaskProgramSuccess(t *testing.T) {
 	m := newTaskModel(TaskConfig{Message: "Loading"}, func(context.Context, io.Writer) error {
 		return nil
 	})
-	result := runModel(t, m, 5*time.Second)
-	r := result.(*taskModel)
-	if r.phase != AsyncReady {
-		t.Fatalf("taskModel phase = %v, want %v", r.phase, AsyncReady)
+	_, result := runTestTaskProgram(t, m)
+	if err := waitTaskProgram(t, result); err != nil {
+		t.Fatalf("err = %v, want nil", err)
 	}
-	if r.err != nil {
-		t.Fatalf("taskModel err = %v, want nil", r.err)
+	if m.phase != AsyncReady {
+		t.Fatalf("taskModel phase = %v, want %v", m.phase, AsyncReady)
 	}
 }
 
@@ -115,13 +133,34 @@ func TestTaskProgramFailure(t *testing.T) {
 	m := newTaskModel(TaskConfig{Message: "Loading"}, func(context.Context, io.Writer) error {
 		return testErr
 	})
-	result := runModel(t, m, 5*time.Second)
-	r := result.(*taskModel)
-	if r.phase != AsyncError {
-		t.Fatalf("taskModel phase = %v, want %v", r.phase, AsyncError)
+	_, result := runTestTaskProgram(t, m)
+	if err := waitTaskProgram(t, result); !errors.Is(err, testErr) {
+		t.Fatalf("err = %v, want %v", err, testErr)
 	}
-	if !errors.Is(r.err, testErr) {
-		t.Fatalf("taskModel err = %v, want %v", r.err, testErr)
+	if m.phase != AsyncError {
+		t.Fatalf("taskModel phase = %v, want %v", m.phase, AsyncError)
+	}
+}
+
+// A signal makes Bubble Tea quit on its own, as p.Quit does here. The caller
+// must get cancellation, and only after the task has stopped.
+func TestTaskProgramQuitWaitsForTask(t *testing.T) {
+	started, stopped := make(chan struct{}), false
+	m := newTaskModel(TaskConfig{Message: "Loading"}, func(ctx context.Context, _ io.Writer) error {
+		close(started)
+		<-ctx.Done()
+		time.Sleep(50 * time.Millisecond)
+		stopped = true
+		return ctx.Err()
+	})
+	p, result := runTestTaskProgram(t, m)
+	<-started
+	p.Quit()
+	if err := waitTaskProgram(t, result); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if !stopped {
+		t.Fatal("returned before the task stopped")
 	}
 }
 

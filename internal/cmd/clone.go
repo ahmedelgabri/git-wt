@@ -31,27 +31,77 @@ func init() {
 	rootCmd.AddCommand(cloneCmd)
 }
 
-func runClone(cmd *cobra.Command, args []string) error {
+// mkdirMissingParents creates dir and its missing ancestors, returning the
+// directories it created, outermost first.
+func mkdirMissingParents(dir string) ([]string, error) {
+	var missing []string
+	for ; ; dir = filepath.Dir(dir) {
+		if _, err := os.Lstat(dir); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+		missing = append([]string{dir}, missing...)
+		if filepath.Dir(dir) == dir {
+			break
+		}
+	}
+	for i, path := range missing {
+		if err := os.Mkdir(path, 0o755); err != nil {
+			return missing[:i], err
+		}
+	}
+	return missing, nil
+}
+
+func runClone(cmd *cobra.Command, args []string) (resultErr error) {
 	repoURL := args[0]
 	folderName := strings.TrimSuffix(filepath.Base(repoURL), ".git")
 	if len(args) > 1 {
 		folderName = args[1]
 	}
 
-	if _, err := os.Stat(folderName); err == nil {
-		ui.Errorf("Directory '%s' already exists", folderName)
+	destination, err := filepath.Abs(folderName)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(destination); err == nil {
 		return fmt.Errorf("directory '%s' already exists", folderName)
 	}
 
-	if err := os.MkdirAll(folderName, 0o755); err != nil {
-		ui.Errorf("Failed to create directory '%s'", folderName)
+	if git.Debug() {
+		return git.Run("clone", "--progress", "--bare", "--", repoURL, filepath.Join(destination, ".bare"))
+	}
+	parents, err := mkdirMissingParents(filepath.Dir(destination))
+	if err != nil {
 		return err
+	}
+	// Remove only parents this clone created; Remove refuses non-empty ones.
+	removeParents := func() {
+		for i := len(parents) - 1; i >= 0; i-- {
+			_ = os.Remove(parents[i])
+		}
+	}
+	if err := os.Mkdir(destination, 0o755); err != nil {
+		removeParents()
+		return fmt.Errorf("create directory '%s': %w", folderName, err)
 	}
 
-	if err := os.Chdir(folderName); err != nil {
-		ui.Errorf("Failed to change to directory '%s'", folderName)
-		return err
-	}
+	cloned := false
+	defer func() {
+		if !cloned {
+			if err := os.RemoveAll(destination); err != nil {
+				ui.Errorf("Could not clean up %s: %v", destination, err)
+			}
+			removeParents()
+		} else if resultErr != nil {
+			ui.Warnf("Repository downloaded and retained at %s, but setup did not finish: %v", destination, resultErr)
+			fmt.Fprintln(os.Stderr, renderCommandHintsSectionFor(os.Stderr, []commandHint{
+				{Action: "Inspect branches", Command: "git --git-dir=" + shellQuote(filepath.Join(destination, ".bare")) + " branch -a"},
+				{Action: "Create a worktree", Command: "git -C " + shellQuote(destination) + " wt add <path> <branch>"},
+			}))
+		}
+	}()
 
 	var defaultBranch string
 	if err := ui.RunSteps([]ui.Step{{
@@ -59,45 +109,50 @@ func runClone(cmd *cobra.Command, args []string) error {
 		ShowOutput: true,
 		RawOutput:  true,
 		Run: func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "clone", "--progress", "--bare", repoURL, ".bare")
+			if err := git.RunToContext(ctx, w, "clone", "--progress", "--bare", "--", repoURL, filepath.Join(destination, ".bare")); err != nil {
+				return err
+			}
+			cloned = true
+			return nil
 		},
 	}, {
 		Message: "Configuring worktree layout",
 		Run: func(context.Context, io.Writer) error {
-			if err := os.WriteFile(".git", []byte("gitdir: ./.bare\n"), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(destination, ".git"), []byte("gitdir: ./.bare\n"), 0o644); err != nil {
 				return err
 			}
-			return configureBareRepo(".")
+			return configureBareRepo(destination)
 		},
 	}, {
 		Message:    "Fetching all branches",
 		ShowOutput: true,
 		RawOutput:  true,
 		Run: func(ctx context.Context, w io.Writer) error {
-			if err := git.RunToContext(ctx, w, "fetch", "--progress", "--all"); err != nil {
-				ui.Warn("Failed to fetch all branches")
-			}
-			return nil
+			return git.RunInToContext(ctx, destination, w, "fetch", "--progress", "--all")
 		},
 	}, {
 		Message: "Discovering default branch",
 		Run: func(context.Context, io.Writer) error {
-			cleanupLocalBranchRefs(".")
-			defaultBranch = worktree.DefaultBranch("origin")
+			cleanupLocalBranchRefs(destination)
+			defaultBranch = worktree.DefaultBranchIn(destination, "origin")
 			return nil
 		},
 	}}); err != nil {
-		ui.Error("Failed to clone repository")
-		os.Chdir("..")
-		os.RemoveAll(folderName)
+		if !cloned {
+			return fmt.Errorf("clone %s: %w", repoURL, err)
+		}
 		return err
 	}
 
 	if defaultBranch == "" {
 		ui.Warn("Could not discover default branch from remote")
 		fmt.Println("Available branches:")
-		git.Run("branch", "-r")
-		defaultBranch = ui.PromptInput("Enter default branch name (or press Enter to skip):")
+		_ = git.RunIn(destination, "branch", "-r")
+		defaultBranch, err = ui.PromptInputResult("Enter default branch name (or press Enter to skip):")
+		// Without input, as in scripts, skip worktree creation like a blank answer.
+		if err != nil && !ui.IsCanceled(err) {
+			return err
+		}
 	}
 
 	if defaultBranch != "" {
@@ -105,10 +160,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 			Message:    fmt.Sprintf("Creating worktree for %s", ui.Accent(defaultBranch)),
 			ShowOutput: true,
 			Run: func(ctx context.Context, w io.Writer) error {
-				if err := git.RunToContext(ctx, w, "worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch); err != nil {
-					ui.Warn("Failed to create worktree for default branch")
-				}
-				return nil
+				return git.RunInToContext(ctx, destination, w, "worktree", "add", "-B", defaultBranch, defaultBranch, "origin/"+defaultBranch)
 			},
 		}}); err != nil {
 			return err

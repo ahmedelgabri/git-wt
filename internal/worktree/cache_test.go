@@ -1,8 +1,15 @@
 package worktree
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-const samplePorcelain = `worktree /home/user/project/.bare
+// porcelainZ turns a readable fixture into git worktree list --porcelain -z
+// output.
+func porcelainZ(s string) string { return strings.ReplaceAll(s, "\n", "\x00") }
+
+var samplePorcelain = porcelainZ(`worktree /home/user/project/.bare
 HEAD abc1234567890abcdef1234567890abcdef123456
 branch refs/heads/main
 bare
@@ -21,7 +28,7 @@ HEAD 999888777666555444333222111000aaabbbccc
 detached
 prunable gitdir file points to non-existent location
 
-`
+`)
 
 func TestParsePorcelain(t *testing.T) {
 	entries := ParsePorcelain(samplePorcelain)
@@ -41,9 +48,9 @@ func TestParsePorcelain(t *testing.T) {
 		prunable       bool
 		prunableReason string
 	}{
-		{0, "/home/user/project/main", "main", "abc1234", false, false, "", false, ""},
-		{1, "/home/user/project/feature-a", "feature-a", "def4567", false, true, "manually locked", false, ""},
-		{2, "/home/user/project/detached-wt", "", "9998887", true, false, "", true, "gitdir file points to non-existent location"},
+		{0, "/home/user/project/main", "main", "abc1234567890abcdef1234567890abcdef123456", false, false, "", false, ""},
+		{1, "/home/user/project/feature-a", "feature-a", "def4567890abcdef1234567890abcdef12345678", false, true, "manually locked", false, ""},
+		{2, "/home/user/project/detached-wt", "", "999888777666555444333222111000aaabbbccc", true, false, "", true, "gitdir file points to non-existent location"},
 	}
 
 	for _, tt := range tests {
@@ -82,10 +89,10 @@ func TestParsePorcelainEmpty(t *testing.T) {
 	}
 }
 
-func TestParsePorcelainNoTrailingNewline(t *testing.T) {
-	input := `worktree /home/user/project/main
+func TestParsePorcelainNoTrailingNUL(t *testing.T) {
+	input := porcelainZ(`worktree /home/user/project/main
 HEAD abc1234567890abcdef1234567890abcdef123456
-branch refs/heads/main`
+branch refs/heads/main`)
 
 	entries := ParsePorcelain(input)
 	if len(entries) != 1 {
@@ -181,10 +188,10 @@ func TestBranchFor(t *testing.T) {
 }
 
 func TestParsePorcelainShortSHA(t *testing.T) {
-	input := `worktree /home/user/project/main
+	input := porcelainZ(`worktree /home/user/project/main
 HEAD abc1234
 branch refs/heads/main
-`
+`)
 	entries := ParsePorcelain(input)
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -195,11 +202,11 @@ branch refs/heads/main
 }
 
 func TestParsePorcelainBareOnly(t *testing.T) {
-	input := `worktree /home/user/project/.bare
+	input := porcelainZ(`worktree /home/user/project/.bare
 HEAD abc1234567890abcdef1234567890abcdef123456
 branch refs/heads/main
 bare
-`
+`)
 	entries := ParsePorcelain(input)
 	if entries != nil {
 		t.Errorf("expected nil for bare-only input, got %v", entries)

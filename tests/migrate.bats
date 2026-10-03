@@ -123,7 +123,7 @@ teardown() {
 @test "migrate: fails outside git repo" {
 	run "$GIT_WT" migrate
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"Not in a git repository"* ]]
+	[[ "$output" == *"Error: not in a git repository"* ]]
 }
 
 @test "migrate: fails in detached HEAD state" {
@@ -352,4 +352,140 @@ teardown() {
 	run "$GIT_WT" migrate --help 2>&1
 	# Either shows help or fails gracefully
 	true
+}
+
+@test "migrate: the next run restores a killed migration" {
+	init_repo repo
+	cd repo
+	create_commit tracked.txt
+	echo modified >tracked.txt
+	echo untracked >untracked.txt
+	before=$(command git status --porcelain)
+	mkdir "$TEST_DIR/bin"
+	# Kill git-wt mid-migration, after the working files and .git have moved.
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add "*) kill -9 \$PPID; exit 1 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[ -d .bare ]
+	[ -f .git-wt-migrate/journal ]
+	run "$GIT_WT" migrate --dry-run
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"interrupted migration"* ]]
+	[ -d .bare ]
+	run "$GIT_WT" migrate
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"original repository restored"* ]]
+	[ -d .git ]
+	[ ! -e .bare ]
+	[ ! -e .git-wt-migrate ]
+	[ "$(cat tracked.txt)" = modified ]
+	[ "$(command git status --porcelain)" = "$before" ]
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[ "$(command git -C main status --porcelain)" = "$before" ]
+}
+
+@test "migrate: rolls back and reports a failed step" {
+	init_repo repo
+	cd repo
+	create_commit tracked.txt
+	mkdir "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add "*) echo "injected failure" >&2; exit 1 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"injected failure"* ]]
+	[[ "$output" == *"original repository restored"* ]]
+	[ -d .git ]
+	[ -f tracked.txt ]
+	[ ! -e .bare ]
+	[ ! -e .git-wt-migrate ]
+}
+
+@test "migrate: warns but succeeds when the default branch worktree cannot be created" {
+	init_repo_with_remote repo
+	cd repo
+	command git checkout --quiet -b feature
+	mkdir "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add -- main "*) echo "injected failure" >&2; exit 1 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Could not create a worktree for default branch main"* ]]
+	[[ "$output" == *"git wt add 'main' 'main'"* ]]
+	[ -d feature ]
+	[ ! -e main ]
+}
+
+@test "migrate: rolls back when its terminal hangs up" {
+	init_repo repo
+	cd repo
+	create_commit tracked.txt
+	mkdir "$TEST_DIR/bin"
+	cat >"$TEST_DIR/bin/git" <<SH
+#!/bin/sh
+case " \$* " in *" worktree add "*) kill -HUP \$PPID; sleep 1 ;; esac
+exec $(command -v git) "\$@"
+SH
+	chmod +x "$TEST_DIR/bin/git"
+	run env PATH="$TEST_DIR/bin:$PATH" bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"original repository restored"* ]]
+	[ -d .git ]
+	[ -f tracked.txt ]
+	[ ! -e .bare ]
+	[ ! -e .git-wt-migrate ]
+}
+
+@test "migrate: ignores a journal that arrives with a cloned repository" {
+	init_repo source
+	mkdir source/.git-wt-migrate
+	printf 'id evil\ncreate-tree "../victim"\n' >source/.git-wt-migrate/journal
+	command git -C source add -f .git-wt-migrate/journal
+	command git -C source -c user.name=Test -c user.email=test@test.com commit --quiet -m journal
+	command git clone --quiet source clone
+	mkdir victim
+	echo keep >victim/file
+	cd clone
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"was not written by git wt migrate"* ]]
+	[ -f "$TEST_DIR/victim/file" ]
+	[ -d .git ]
+	[ ! -e .bare ]
+	[ -z "$(command git status --porcelain)" ]
+}
+
+@test "migrate: ignores a tracked ID marker and symlinked journal paths in a clone" {
+	init_repo source
+	mkdir outside
+	echo keep >outside/keep
+	mkdir source/.git-wt-migrate source/.bare
+	id=abababababababababababababababab
+	printf '%s' "$id" >source/.bare/git-wt-migration
+	printf 'id %s\ncreate "link/keep"\n' "$id" >source/.git-wt-migrate/journal
+	ln -s "$TEST_DIR/outside" source/link
+	command git -C source add -f .bare/git-wt-migration .git-wt-migrate/journal link
+	command git -C source -c user.name=Test -c user.email=test@test.com commit --quiet -m journal
+	command git clone --quiet source clone
+	cd clone
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"was not written by git wt migrate"* ]]
+	[ -f "$TEST_DIR/outside/keep" ]
+	[ -d .git ]
+	[ -z "$(command git status --porcelain)" ]
 }

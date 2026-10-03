@@ -2,11 +2,14 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
+	"time"
 )
 
 // ExecOptions configures git command execution.
@@ -41,9 +44,11 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 
 	cmd := newCommand(opts.Context, args...)
 	cmd.Dir = opts.Dir
-	if len(opts.Env) > 0 {
-		cmd.Env = append(os.Environ(), opts.Env...)
+	cmd.Env = os.Environ()
+	if opts.Dir != "" {
+		cmd.Env = RepositoryEnv()
 	}
+	cmd.Env = append(cmd.Env, opts.Env...)
 	if opts.Stdin != nil {
 		cmd.Stdin = opts.Stdin
 	}
@@ -54,7 +59,7 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 		if cmd.Stdin == nil {
 			cmd.Stdin = os.Stdin
 		}
-		return "", cmd.Run()
+		return "", ignoreHelperWait(cmd, cmd.Run())
 	}
 
 	if opts.Capture {
@@ -64,6 +69,11 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 			out, err = cmd.CombinedOutput()
 		} else {
 			out, err = cmd.Output()
+		}
+		err = ignoreHelperWait(cmd, err)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			err = fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(exitErr.Stderr)), err)
 		}
 		if opts.Raw {
 			return string(out), err
@@ -76,14 +86,67 @@ func execGit(opts ExecOptions, args ...string) (string, error) {
 	if cmd.Stdin == nil {
 		cmd.Stdin = os.Stdin
 	}
-	return "", cmd.Run()
+	return "", ignoreHelperWait(cmd, cmd.Run())
 }
+
+// IsExitCode reports whether err came from a process exiting with code.
+func IsExitCode(err error, code int) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == code
+}
+
+// RepositoryEnv removes inherited repository selectors before changing repos.
+// Explicit ExecOptions.Env overrides are applied afterward.
+func RepositoryEnv() []string {
+	return slices.DeleteFunc(os.Environ(), func(value string) bool {
+		key, _, _ := strings.Cut(value, "=")
+		switch key {
+		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX":
+			return true
+		default:
+			return false
+		}
+	})
+}
+
+// QueryPath removes Git's record terminator without trimming path characters.
+func QueryPath(args ...string) (string, error) {
+	out, err := QueryRaw(args...)
+	return strings.TrimSuffix(out, "\n"), err
+}
+
+func QueryPathInContext(ctx context.Context, dir string, args ...string) (string, error) {
+	out, err := QueryRawInContext(ctx, dir, args...)
+	return strings.TrimSuffix(out, "\n"), err
+}
+
+func QueryRawInContext(ctx context.Context, dir string, args ...string) (string, error) {
+	return execGit(ExecOptions{Dir: dir, Capture: true, Raw: true, Context: ctx}, args...)
+}
+
+// helperWaitDelay bounds how long a finished or cancelled Git command waits
+// for helpers, such as upload-pack or ssh, that inherited its output pipes.
+// Without it, a cancelled ls-remote waits for a slow helper to exit, and a
+// helper that never exits blocks forever.
+const helperWaitDelay = 250 * time.Millisecond
 
 func newCommand(ctx context.Context, args ...string) *exec.Cmd {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.WaitDelay = helperWaitDelay
+	return cmd
+}
+
+// ignoreHelperWait treats a successful Git run as successful even when a
+// helper, such as a persistent ssh master, kept a pipe open past
+// helperWaitDelay. Git's own output is complete once it has exited.
+func ignoreHelperWait(cmd *exec.Cmd, err error) error {
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		return nil
+	}
+	return err
 }
 
 func formatDebugCommand(dir string, args []string) string {
@@ -173,6 +236,12 @@ func Query(args ...string) (string, error) {
 // QueryContext executes a read-only git command with an optional context.
 func QueryContext(ctx context.Context, args ...string) (string, error) {
 	return execGit(ExecOptions{Capture: true, Context: ctx}, args...)
+}
+
+// QueryWithInput executes a read-only command with explicit stdin and captures
+// stdout. Input is separate from argv, so large revision lists remain usable.
+func QueryWithInput(input io.Reader, args ...string) (string, error) {
+	return execGit(ExecOptions{Capture: true, Stdin: input, Context: context.Background()}, args...)
 }
 
 // QueryRaw executes a read-only git command without trimming its output.
