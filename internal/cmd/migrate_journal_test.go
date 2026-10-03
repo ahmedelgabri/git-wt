@@ -38,6 +38,7 @@ func migrationFixture(t *testing.T) string {
 	gitIn(t, root, "update-ref", "--create-reflog", "refs/worktree/packed", head)
 	gitIn(t, root, "update-ref", "--create-reflog", "refs/bisect/shadowed", head)
 	gitIn(t, root, "pack-refs", "--all")
+	packPrivateRefs(t, root, head, "refs/worktree/packed", "refs/bisect/shadowed")
 	gitIn(t, root, "update-ref", "--create-reflog", "refs/worktree/loose", head)
 	gitIn(t, root, "update-ref", "refs/bisect/shadowed", head)
 	gitIn(t, root, "update-ref", "ORIG_HEAD", head)
@@ -52,6 +53,43 @@ func migrationFixture(t *testing.T) string {
 		}
 	}
 	return root
+}
+
+// packPrivateRefs moves refs into packed-refs. Current Git's pack-refs leaves
+// per-worktree refs loose, but repositories packed by older Git have them.
+func packPrivateRefs(t *testing.T, root, head string, refs ...string) {
+	t.Helper()
+	packedRefs := filepath.Join(root, ".git", "packed-refs")
+	data, err := os.ReadFile(packedRefs)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	header, entries := "# pack-refs with: peeled fully-peeled sorted \n", []string{}
+	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
+		switch {
+		case strings.HasPrefix(line, "#"):
+			header = line + "\n"
+		case line != "":
+			entries = append(entries, line)
+		}
+	}
+	for _, ref := range refs {
+		entries = append(entries, head+" "+ref)
+		if err := os.Remove(filepath.Join(root, ".git", filepath.FromSlash(ref))); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	slices.SortFunc(entries, func(a, b string) int {
+		return strings.Compare(a[strings.IndexByte(a, ' ')+1:], b[strings.IndexByte(b, ' ')+1:])
+	})
+	if err := os.WriteFile(packedRefs, []byte(header+strings.Join(entries, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		if out := gitIn(t, root, "for-each-ref", "--format=%(refname)", ref); out != ref {
+			t.Fatalf("%s not readable after packing: %q", ref, out)
+		}
+	}
 }
 
 // snapshotTree records every path with its mode and content, so rollback must

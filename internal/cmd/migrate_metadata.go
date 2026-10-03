@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 )
@@ -86,11 +88,23 @@ func moveMigrationMetadata(ctx context.Context, journal *migrationJournal, plan 
 			return err
 		}
 	}
-	return isolateMigrationPrivateRefs(ctx, plan, private)
+	return isolateMigrationPrivateRefs(ctx, journal, plan, private)
 }
 
 type migrationRef struct {
 	name, object, target string
+}
+
+var migrationPrivateNamespaces = []string{"worktree", "bisect", "rewritten"}
+
+// migrationGitCreatedDirs are the common directories Git may create while
+// deleting packed private refs, once migration has moved the originals away.
+func migrationGitCreatedDirs() []string {
+	var dirs []string
+	for _, namespace := range migrationPrivateNamespaces {
+		dirs = append(dirs, filepath.Join(".bare", "refs", namespace), filepath.Join(".bare", "logs", "refs", namespace))
+	}
+	return dirs
 }
 
 func migrationPrivateRef(name string) bool {
@@ -116,7 +130,9 @@ func migrationPrivateRefs(refs string) []migrationRef {
 // isolateMigrationPrivateRefs finishes moving private refs. Loose refs moved
 // as files with their reflogs; packed refs cannot, so they are written as
 // loose refs in the worktree and deleted from common packed-refs through Git.
-func isolateMigrationPrivateRefs(ctx context.Context, plan migratePlan, private string) error {
+// Everything this creates is journaled: undo removes it before moving the
+// original namespaces back.
+func isolateMigrationPrivateRefs(ctx context.Context, journal *migrationJournal, plan migratePlan, private string) error {
 	for _, ref := range migrationPrivateRefs(plan.refs) {
 		loose := filepath.Join(private, filepath.FromSlash(ref.name))
 		if exists, err := pathExists(loose); err != nil {
@@ -124,16 +140,35 @@ func isolateMigrationPrivateRefs(ctx context.Context, plan migratePlan, private 
 		} else if exists {
 			continue
 		}
+		rel, err := filepath.Rel(journal.root, loose)
+		if err != nil {
+			return err
+		}
+		if err := journal.mkdirAll(filepath.Dir(rel)); err != nil {
+			return err
+		}
+		if err := journal.create(rel); err != nil {
+			return err
+		}
 		// Writing the file directly leaves the moved reflog untouched.
 		content := ref.object + "\n"
 		if ref.target != "" {
 			content = "ref: " + ref.target + "\n"
 		}
-		if err := os.MkdirAll(filepath.Dir(loose), 0o777); err != nil {
-			return err
-		}
 		if err := os.WriteFile(loose, []byte(content), 0o666); err != nil {
 			return err
+		}
+	}
+	// update-ref -d recreates directories for the namespaces moved away.
+	var created []string
+	for _, dir := range migrationGitCreatedDirs() {
+		if exists, err := pathExists(journal.path(dir)); err != nil {
+			return err
+		} else if !exists {
+			if err := journal.createTree(dir); err != nil {
+				return err
+			}
+			created = append(created, dir)
 		}
 	}
 	// Whatever the common directory still resolves is a packed copy, possibly
@@ -147,7 +182,39 @@ func isolateMigrationPrivateRefs(ctx context.Context, plan migratePlan, private 
 			return err
 		}
 	}
+	for _, dir := range created {
+		if err := removeEmptyDirs(journal.path(dir)); err != nil {
+			return err
+		}
+	}
 	return verifyMigrationPrivateRefIsolation(ctx, plan.repoRoot)
+}
+
+// removeEmptyDirs removes dir and its subdirectories if none of them hold a
+// file. Anything else stays for verification to report.
+func removeEmptyDirs(dir string) error {
+	var dirs []string
+	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return filepath.SkipAll
+			}
+			return err
+		}
+		if entry.IsDir() {
+			dirs = append(dirs, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if err := os.Remove(dirs[i]); err != nil && !os.IsNotExist(err) && !errors.Is(err, syscall.ENOTEMPTY) && !errors.Is(err, syscall.EEXIST) {
+			return err
+		}
+	}
+	return nil
 }
 
 func verifyMigrationPrivateRefIsolation(ctx context.Context, root string) error {

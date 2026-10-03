@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -163,6 +164,30 @@ func (j *migrationJournal) move(src, dst string) error {
 // deleted with it.
 func (j *migrationJournal) create(rel string) error {
 	return j.record("create", rel)
+}
+
+// mkdirAll creates rel and its missing parents, recording each one it creates.
+func (j *migrationJournal) mkdirAll(rel string) error {
+	var missing []string
+	for dir := rel; dir != "."; dir = filepath.Dir(dir) {
+		exists, err := pathExists(j.path(dir))
+		if err != nil {
+			return err
+		}
+		if exists {
+			break
+		}
+		missing = append([]string{dir}, missing...)
+	}
+	for _, dir := range missing {
+		if err := j.create(dir); err != nil {
+			return err
+		}
+		if err := os.Mkdir(j.path(dir), 0o777); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // createTree records a Git-generated directory whose contents migration does
@@ -387,7 +412,7 @@ func validMigrationRecord(record migrationRecord) bool {
 	case "create":
 		return len(record.paths) == 1
 	case "create-tree":
-		return len(record.paths) == 1 && record.paths[0] == filepath.Join(".bare", "worktrees")
+		return len(record.paths) == 1 && (record.paths[0] == filepath.Join(".bare", "worktrees") || slices.Contains(migrationGitCreatedDirs(), record.paths[0]))
 	case "restore":
 		return len(record.paths) == 2 && strings.HasPrefix(record.paths[1], filepath.Join(migrationStateDir, "backup")+string(filepath.Separator))
 	}

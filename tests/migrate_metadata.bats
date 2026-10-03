@@ -251,3 +251,24 @@ PY
 	[ -d .git ]
 	[ ! -e .bare ]
 }
+
+@test "migrate: rollback restores mixed packed and loose private refs exactly" {
+	init_repo repo
+	cd repo
+	head=$(command git rev-parse HEAD)
+	command git update-ref refs/worktree/loose "$head"
+	printf '# pack-refs with: sorted\n%s refs/worktree/packed\n' "$head" >.git/packed-refs
+	cp .git/packed-refs "$TEST_DIR/packed-before"
+	# A condition on the old .git path fails verification after the refs move.
+	command git config --file "$TEST_DIR/shared.config" custom.secret hidden
+	command git config "includeIf.gitdir:$(pwd -P)/.git.path" "$TEST_DIR/shared.config"
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"original repository restored"* ]]
+	[ -d .git ]
+	[ ! -e .bare ]
+	[ ! -e .git-wt-migrate ]
+	[ ! -e .git/refs/worktree/packed ]
+	cmp .git/packed-refs "$TEST_DIR/packed-before"
+	[ "$(command git rev-parse refs/worktree/packed refs/worktree/loose)" = "$head"$'\n'"$head" ]
+}
