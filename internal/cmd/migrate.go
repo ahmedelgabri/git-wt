@@ -86,11 +86,17 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 		convertCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		defer context.AfterFunc(taskCtx, cancel)()
-		return convertRepository(convertCtx, journal, plan)
+		if err := convertRepository(convertCtx, journal, plan); err != nil {
+			return err
+		}
+		if err := journal.commit(); err != nil {
+			return fmt.Errorf("commit migration journal: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		if rollbackErr := journal.rollback(); rollbackErr != nil {
-			return fmt.Errorf("%w; rollback incomplete: %v; stop other writers and run git wt migrate again in %s to finish restoring", err, rollbackErr, repoRoot)
+			return fmt.Errorf("%w; rollback incomplete: %v; stop other writers and run git wt migrate again in %s to recover", err, rollbackErr, repoRoot)
 		}
 		return fmt.Errorf("%w; original repository restored at %s", err, repoRoot)
 	}

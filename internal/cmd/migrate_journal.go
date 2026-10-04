@@ -246,15 +246,12 @@ func (j *migrationJournal) commit() error {
 	return j.file.Sync()
 }
 
-// finish commits and removes the journal after a successful migration,
-// holding the lock until the journal is gone. Only migration's own files are
-// removed; a non-empty staging directory is an error.
+// finish removes a committed journal, holding the lock until it is gone.
+// Commit errors must reach rollback, not the caller's cleanup warning.
+// Only migration's own files are removed; a non-empty staging directory is an error.
 func (j *migrationJournal) finish() error {
 	defer j.file.Close()
 	defer j.unlock()
-	if err := j.commit(); err != nil {
-		return err
-	}
 	if err := removeMigrationState(j.root); err != nil {
 		return err
 	}

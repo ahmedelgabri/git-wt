@@ -120,6 +120,41 @@ teardown() {
 	[ -d "$TEST_DIR/myrepo/main" ]
 }
 
+@test "migrate: committed recovery preserves worktrees created after migration" {
+	init_repo_with_remote repo
+	cd repo
+	command git checkout --quiet -b feature
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Migration complete"* ]]
+	[ -d main ]
+	[ ! -e .git-wt-migrate ]
+
+	command git config custom.afterMigration keep
+	command git -C main -c user.name=Test -c user.email=test@test.com commit --quiet --allow-empty -m after-migration
+	printf 'new staged contents\n' >main/staged.txt
+	command git -C main add staged.txt
+	rm main/staged.txt
+	command git pack-refs --all
+	head=$(command git rev-parse refs/heads/main)
+
+	# A cleanup interruption leaves a committed journal, never an undo request.
+	id=abababababababababababababababab
+	mkdir .git-wt-migrate
+	printf 'id %s\ncreate-tree ".bare/worktrees"\ncommit\n' "$id" >.git-wt-migrate/journal
+	mkdir -p "$XDG_STATE_HOME/git-wt/migrations"
+	printf '%s' "$(pwd -P)" >"$XDG_STATE_HOME/git-wt/migrations/$id"
+	run "$GIT_WT" migrate
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Migration was already complete"* ]]
+	[ ! -e .git-wt-migrate ]
+	[ ! -e "$XDG_STATE_HOME/git-wt/migrations/$id" ]
+	[ "$(command git -C main show :staged.txt)" = "new staged contents" ]
+	[ "$(command git rev-parse refs/heads/main)" = "$head" ]
+	[ "$(command git config custom.afterMigration)" = keep ]
+	[ "$(command git -C feature branch --show-current)" = feature ]
+}
+
 @test "migrate: fails outside git repo" {
 	run "$GIT_WT" migrate
 	[ "$status" -ne 0 ]

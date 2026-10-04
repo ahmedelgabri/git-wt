@@ -167,6 +167,9 @@ func TestMigrationConvertsFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := journal.commit(); err != nil {
+		t.Fatal(err)
+	}
 	if err := journal.finish(); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +203,12 @@ func TestMigrationRollsBackAtEveryStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = journal.finish()
+	if err := journal.commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.finish(); err != nil {
+		t.Fatal(err)
+	}
 	// total+1 never fails a step, like a migration that fails verification.
 	for failAt := 1; failAt <= total+1; failAt++ {
 		for _, crash := range []bool{false, true} {
@@ -323,7 +331,12 @@ func TestMigrationVerificationDetectsDamage(t *testing.T) {
 			if err == nil || strings.Contains(err.Error(), "do-not-print-this") {
 				t.Fatalf("expected redacted verification failure, got %v", err)
 			}
-			_ = journal.finish()
+			if err := journal.commit(); err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.finish(); err != nil {
+				t.Fatal(err)
+			}
 		})
 	}
 }
@@ -391,6 +404,74 @@ func TestMigrationRollbackResumesAfterConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireSameTree(t, want, snapshotTree(t, root))
+}
+
+func TestMigrationFinishFailureKeepsCommit(t *testing.T) {
+	root := t.TempDir()
+	journal, err := startMigrationJournal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(root, migrationStateDir, "work")
+	if err := os.Mkdir(work, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	obstruction := filepath.Join(work, "keep")
+	if err := os.WriteFile(obstruction, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.finish(); err == nil {
+		t.Fatal("expected cleanup to refuse a non-empty staging directory")
+	}
+	state, err := readMigrationJournal(root)
+	if err != nil || !state.committed {
+		t.Fatalf("cleanup failure lost the commit marker: %v, %v", state.committed, err)
+	}
+	if err := os.Remove(obstruction); err != nil {
+		t.Fatal(err)
+	}
+	if completed, err := recoverMigration(root); err != nil || !completed {
+		t.Fatalf("expected cleanup of a committed journal, got %v, %v", completed, err)
+	}
+}
+
+func TestMigrationRollbackRefusesUnsyncedCommit(t *testing.T) {
+	root := t.TempDir()
+	journal, err := startMigrationJournal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.create("keep"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "keep"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A failed Sync can leave the complete marker readable. Never erase it
+	// or roll back changes that recovery already considers committed.
+	if _, err := journal.file.WriteString("commit\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.file.Sync(); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("expected a sync failure, got %v", err)
+	}
+	want := snapshotTree(t, root)
+	if err := journal.rollback(); err == nil || !strings.Contains(err.Error(), "already completed") {
+		t.Fatalf("expected refusal to undo a committed journal, got %v", err)
+	}
+	requireSameTree(t, want, snapshotTree(t, root))
+	if completed, err := recoverMigration(root); err != nil || !completed {
+		t.Fatalf("expected cleanup of a committed journal, got %v, %v", completed, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "keep")); err != nil || string(data) != "keep" {
+		t.Fatalf("committed data changed: %q, %v", data, err)
+	}
 }
 
 func TestMigrationRecoveryFinishesACommittedMigration(t *testing.T) {
