@@ -42,12 +42,13 @@ Read [why this layout works](https://gabri.me/blog/git-worktrees-done-right).
 - [Commands](#commands)
 - [Hooks](#hooks)
 - [Coding agents](#coding-agents)
+  - [Claude Code integration](#claude-code-integration)
 - [Development](#development)
 - [License](#license)
 
 ## Installation
 
-Requires Git 2.36 or newer. Relative worktree paths require Git 2.48 or newer.
+Requires Git 2.48.0 or newer.
 
 ### Homebrew
 
@@ -288,9 +289,40 @@ git wt agent-skill
 
 This writes `~/.agents/skills/git-wt/SKILL.md`. Use `--dir ~/.claude/skills` to choose another location, or `--print` to read it first.
 
-Claude Code can also use git-wt to create and remove worktrees. See the [Claude Code setup](docs/index.md#claude-code-integration).
+### Claude Code integration
 
-Do not automatically add `--force` when an agent's removal fails. It can discard the agent's work.
+[Claude Code](https://claude.ai/code) can use git-wt to create and remove worktrees.
+
+Add these entries under `hooks` in your project or user `settings.json`. The commands require `jq`.
+
+```json
+{
+  "WorktreeCreate": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "git wt add \"$(cat /dev/stdin | jq -r '.name')\""
+        }
+      ]
+    }
+  ],
+  "WorktreeRemove": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo y | git wt rm \"$(cat /dev/stdin | jq -r '.worktree_path')\""
+        }
+      ]
+    }
+  ]
+}
+```
+
+`WorktreeCreate` reads the branch name from stdin and creates a worktree. `WorktreeRemove` reads the worktree path and confirms removal with `echo y`.
+
+Removal refuses changed files and commits that no other branch or tag keeps. Do not automatically add `--force` when removal fails. It can discard the agent's work.
 
 ## Development
 

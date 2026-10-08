@@ -5,7 +5,7 @@ description: Use the `git-wt` CLI to manage Git worktrees in the bare repository
 
 # git-wt
 
-Use this skill when the user asks to manage Git worktrees with `git-wt` or when a repository uses the bare worktree layout: Git data lives in `.bare`, `.git` is a file pointing at `./.bare`, and branch worktrees are sibling directories. `git-wt` needs Git 2.36 or newer.
+Use this skill when the user asks to manage Git worktrees with `git-wt` or when a repository uses the bare worktree layout: Git data lives in `.bare`, `.git` is a file pointing at `./.bare`, and branch worktrees are sibling directories. `git-wt` needs Git 2.48.0 or newer.
 
 ## Detecting `git-wt` repositories
 
@@ -143,7 +143,6 @@ printf 'feature\n' | git wt remove feature --delete-remote
 - `--delete-remote` deletes the target branch's configured upstream; branches without one keep their remote branches.
 - If the upstream has a different name than the local branch, for example `feat` created from `origin/release`, the prompt asks for the remote name (`origin/release`) instead. Cleanup filters never delete such upstreams. Never type that name without the user's explicit approval: it is often a shared branch.
 - Unfetched commits on the remote branch, such as a collaborator's pushes, count as work to discard: the target is skipped or prompted like a dirty worktree. Approving it, or `--force`, deletes those commits.
-- Multiple push URLs, or fetch and push URLs that differ, need Git 2.46 or newer.
 
 ## Suggested workflow
 

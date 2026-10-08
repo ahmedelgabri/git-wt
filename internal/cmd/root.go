@@ -35,11 +35,26 @@ directory. Run 'git-wt <command> --help' for details on any command.
 
 List worktrees with 'list' (alias 'ls'), using native Git output or --json.
 Native git worktree commands (lock, unlock, move, prune, repair) are also
-supported as pass-throughs.`,
+supported as pass-throughs.
+
+Requires Git 2.48.0 or newer for relative worktree paths.`,
 	// Don't show usage on errors from subcommands
 	SilenceUsage: true,
 	// We handle error formatting ourselves
 	SilenceErrors: true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Parent() == nil || cmd.Name() == "help" {
+			return nil
+		}
+		// List parses native flags itself, so Cobra cannot handle its help flag.
+		if cmd.Name() == "list" {
+			_, help, _, err := parseListArgs(args)
+			if err == nil && help {
+				return nil
+			}
+		}
+		return requireGitVersion(cmd.Context())
+	},
 	// When called with no subcommand, print help
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
@@ -106,6 +121,10 @@ func Execute() {
 		// Check if the error is an "unknown command" error by seeing if the
 		// first arg matches any registered command.
 		if args := os.Args[1:]; len(args) > 0 && !isKnownCommand(args[0]) {
+			if versionErr := requireGitVersion(rootCmd.Context()); versionErr != nil {
+				ui.Error(versionErr.Error())
+				os.Exit(1)
+			}
 			passErr := git.Run(append([]string{"worktree"}, args...)...)
 			if passErr != nil {
 				os.Exit(1)

@@ -81,9 +81,6 @@ protect the same-name local branch if it exists. Without wt.cleanupBase,
 cleanup discovers the remote default branch. A local remote (.) needs an explicit base.
 Raw URL discovery respects wt.remoteTimeout.
 
-Remote deletion with multiple push URLs or differing fetch/push URLs requires
-Git 2.46 or newer. One matching fetch/push URL needs no destination overrides.
-
 With no arguments and no cleanup filters, an interactive picker is shown.`,
 	Example: `  git wt remove feature-1
   git wt remove feature-1 --delete-remote

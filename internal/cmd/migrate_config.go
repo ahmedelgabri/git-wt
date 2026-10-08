@@ -136,15 +136,11 @@ func migrationConfigToSet(plan migratePlan) [][2]string {
 	return settings
 }
 
-// migrationRequiredConfig lists the settings verification requires. Git 2.48
-// and newer add the last two when creating a relative worktree; older Git
-// ignores worktree.useRelativePaths and writes neither.
 func migrationRequiredConfig(plan migratePlan) [][2]string {
-	required := migrationConfigToSet(plan)
-	if plan.relativeWorktrees {
-		required = append(required, [][2]string{{"core.repositoryformatversion", "1"}, {"extensions.relativeworktrees", "true"}}...)
-	}
-	return required
+	return append(migrationConfigToSet(plan), [][2]string{
+		{"core.repositoryformatversion", "1"},
+		{"extensions.relativeworktrees", "true"},
+	}...)
 }
 
 func verifyMigrationConfig(ctx context.Context, plan migratePlan, root string) error {

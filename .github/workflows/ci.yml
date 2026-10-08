@@ -49,6 +49,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Nix
+        uses: NixOS/nix-installer-action@main
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      - name: Use Git from the project dependencies
+        run: |
+          nix build --inputs-from . "nixpkgs#git" --out-link "$RUNNER_TEMP/git-current"
+          echo "$RUNNER_TEMP/git-current/bin" >> "$GITHUB_PATH"
+
       - name: Read Go minor version from go.mod
         id: go-version
         run: |
@@ -66,10 +80,22 @@ jobs:
       - name: Install bats
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            sudo apt-get update && sudo apt-get install -y bats
+            sudo apt-get update && sudo apt-get install -y bats zlib1g-dev
           else
             brew install bats-core
           fi
+
+      - name: Build older Git for rejection tests
+        run: |
+          cd "$RUNNER_TEMP"
+          curl --fail --location --silent --show-error \
+            https://www.kernel.org/pub/software/scm/git/git-2.38.0.tar.xz \
+            -o git-2.38.0.tar.xz
+          echo "923eade26b1814de78d06bda8e0a9f5da8b7c4b304b3f9050ffb464f0310320a  git-2.38.0.tar.xz" | shasum -a 256 -c -
+          tar xf git-2.38.0.tar.xz
+          make -C git-2.38.0 -j2 NO_CURL=YesPlease NO_EXPAT=YesPlease \
+            NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_OPENSSL=YesPlease git
+          echo "GIT_WT_OLD_GIT=$RUNNER_TEMP/git-2.38.0/git" >> "$GITHUB_ENV"
 
       - name: Run unit tests
         run: just test

@@ -25,19 +25,6 @@ func remoteDeletionDestinations(remote string) ([]remoteDeletion, error) {
 		return nil, err
 	}
 	overrideURL := len(urls) != 1 || urls[0] != strings.TrimSuffix(fetch, "\n")
-	if overrideURL {
-		reason := "has differing fetch and push URLs"
-		if len(urls) > 1 {
-			reason = "has multiple push URLs"
-		}
-		version, err := git.Query("--version")
-		if err != nil {
-			return nil, fmt.Errorf("remote %s %s; cannot check the Git 2.46 minimum for destination selection: %w", remote, reason, err)
-		}
-		if !gitVersionAtLeast(version, 2, 46) {
-			return nil, fmt.Errorf("remote %s %s; destination selection requires Git 2.46 or newer, found %q; refusing before local removal to avoid partial completion. Upgrade Git on PATH, remove without --delete-remote, or review and delete the remote branch with native Git", remote, reason, version)
-		}
-	}
 	var deletions []remoteDeletion
 	seen := make(map[string]bool)
 	for _, url := range urls {
