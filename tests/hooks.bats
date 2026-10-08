@@ -160,13 +160,10 @@ teardown() {
 	init_bare_repo_with_remote myrepo
 	cd myrepo
 	command git config --add wt.afteradd 'touch .hook-ran'
-	command git checkout -b interactive-hook --quiet
-	create_commit "interactive-hook.txt"
-	command git push --quiet -u origin interactive-hook
-	command git checkout main --quiet 2>/dev/null || command git checkout master --quiet
+	create_remote_branch interactive-hook
 	command git branch -D interactive-hook --quiet
 
-	run env GIT_WT_SELECT="origin/interactive-hook" "$GIT_WT" add
+	run select_remote_branch origin/interactive-hook
 	[ "$status" -eq 0 ]
 	[ -f "$TEST_DIR/myrepo/interactive-hook/.hook-ran" ]
 }
@@ -280,7 +277,11 @@ teardown() {
 	# Manually remove the worktree directory to make it stale
 	rm -rf "$TEST_DIR/myrepo/stale-prune"
 
-	run "$GIT_WT" remove --stale
+	# Confirm the cleanup so the prune runs; without input the prompt waits.
+	run bash -c 'printf "cleanup\n" | "$1" remove --stale' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	run command git worktree list --porcelain
+	[[ "$output" != *"/stale-prune"* ]]
 	[ ! -f "$TEST_DIR/before-prune-hook-ran" ]
 	[ ! -f "$TEST_DIR/after-prune-hook-ran" ]
 }

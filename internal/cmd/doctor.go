@@ -62,7 +62,7 @@ func init() {
 }
 
 func doctorRepoRoot() (string, error) {
-	commonDir, err := git.Query("rev-parse", "--git-common-dir")
+	commonDir, err := git.QueryPath("rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", err
 	}
@@ -76,7 +76,7 @@ func doctorRepoRoot() (string, error) {
 	case ".bare", ".git":
 		return filepath.Dir(commonDir), nil
 	default:
-		repoRoot, err := git.Query("rev-parse", "--show-toplevel")
+		repoRoot, err := git.QueryPath("rev-parse", "--show-toplevel")
 		if err == nil {
 			return normalizeDoctorPath(repoRoot)
 		}
@@ -174,12 +174,8 @@ func walkDoctorChecks(ctx context.Context, repoRoot string, emit func(doctorChec
 	isBareLayout := false
 	if gitInfo.IsDir() {
 		emitCheck(doctorCheck{Level: doctorWarn, Name: "Repository layout", Detail: "standard git layout (.git directory)"})
-		if warnings, err := preflightMigrateRepo(repoRoot); err != nil {
+		if err := preflightMigrateRepo(repoRoot); err != nil {
 			emitCheck(doctorCheck{Level: doctorError, Name: "Migration readiness", Detail: err.Error()})
-		} else if len(warnings) > 0 {
-			for _, warning := range warnings {
-				emitCheck(doctorCheck{Level: doctorWarn, Name: "Migration readiness", Detail: warning})
-			}
 		} else {
 			emitCheck(doctorCheck{Level: doctorOK, Name: "Migration readiness", Detail: "ready for migrate"})
 		}
@@ -212,7 +208,7 @@ func walkDoctorChecks(ctx context.Context, repoRoot string, emit func(doctorChec
 		return hasErrors
 	}
 
-	entries, err := worktree.List()
+	entries, err := worktree.ListContext(ctx)
 	if err != nil {
 		emitCheck(doctorCheck{Level: doctorError, Name: "Worktree list", Detail: err.Error()})
 	} else {
@@ -227,12 +223,12 @@ func walkDoctorChecks(ctx context.Context, repoRoot string, emit func(doctorChec
 		return hasErrors
 	}
 
-	remote := worktree.DefaultRemote()
+	remote := worktree.DefaultRemoteInContext(ctx, repoRoot)
 	if remote == "" {
 		emitCheck(doctorCheck{Level: doctorWarn, Name: "Default remote", Detail: "no remote configured"})
 	} else {
 		emitCheck(doctorCheck{Level: doctorOK, Name: "Default remote", Detail: remote})
-		defaultBranch := worktree.DefaultBranch(remote)
+		defaultBranch := worktree.DefaultBranchInContext(ctx, repoRoot, remote)
 		if defaultBranch == "" {
 			emitCheck(doctorCheck{Level: doctorWarn, Name: "Default branch", Detail: fmt.Sprintf("could not determine default branch for %s", remote)})
 		} else {

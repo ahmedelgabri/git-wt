@@ -3,15 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
-	"sync"
 	"syscall"
 
-	"github.com/ahmedelgabri/git-wt/internal/fsutil"
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
@@ -19,11 +17,8 @@ import (
 )
 
 var migrateCmd = &cobra.Command{
-	Use:           "migrate",
-	Short:         "Migrate an existing repository to use worktrees [EXPERIMENTAL]",
-	SilenceUsage:  true,
-	SilenceErrors: true,
-	RunE:          runMigrate,
+	Use: "migrate", Short: "Migrate an existing repository to use worktrees [EXPERIMENTAL]",
+	SilenceUsage: true, SilenceErrors: true, Args: cobra.NoArgs, RunE: runMigrate,
 }
 
 func init() {
@@ -31,734 +26,482 @@ func init() {
 	rootCmd.AddCommand(migrateCmd)
 }
 
+type migrationGitState struct {
+	refs, index, stashes, status string
+}
+
 type migratePlan struct {
-	repoRoot       string
-	repoName       string
-	parentDir      string
-	currentBranch  string
-	defaultBranch  string
-	defaultRemote  string
-	defaultURL     string
-	hasChanges     bool
-	untrackedFiles []string
-	stashCount     int
-	remotes        []preservedRemote
-	configs        []preservedConfig
-	warnings       []string
-}
-
-type preservedRemote struct {
-	Name       string
-	URL        string
-	FetchSpecs []string
-}
-
-type preservedConfig struct {
-	Key    string
-	Values []string
-}
-
-var preservedConfigPrefixes = []string{
-	"alias.",
-	"branch.",
-	"diff.",
-	"merge.",
-	"pull.",
-	"rebase.",
-	"rerere.",
-}
-
-var preservedConfigKeys = map[string]bool{
-	"core.hookspath": true,
-	"user.email":     true,
-	"user.name":      true,
+	migrationGitState
+	repoRoot      string
+	currentBranch string
+	defaultBranch string
+	defaultRemote string
+	config        migrationConfigState
+	// relativeWorktrees is set when Git records relative worktree paths in
+	// the repository format, which Git 2.48 introduced.
+	relativeWorktrees bool
 }
 
 func runMigrate(cmd *cobra.Command, args []string) error {
-	if _, err := git.Query("rev-parse", "--git-dir"); err != nil {
-		ui.Error("Not in a git repository")
-		return fmt.Errorf("not in a git repository")
+	dryRun := boolFlag(cmd, "dry-run") || git.Debug()
+	if root, found := findInterruptedMigration(); found {
+		return recoverInterruptedMigration(root, dryRun)
 	}
-
-	repoRoot, err := git.Query("rev-parse", "--show-toplevel")
+	repoRoot, err := git.QueryPath("rev-parse", "--show-toplevel")
 	if err != nil {
-		return err
+		return fmt.Errorf("not in a git repository: %w", err)
 	}
-	// Resolve symlinks (macOS /tmp -> /private/tmp).
 	repoRoot, err = filepath.EvalSymlinks(repoRoot)
 	if err != nil {
 		return err
 	}
-
-	plan, err := buildMigratePlan(repoRoot)
+	// A closed terminal sends SIGHUP; it must roll back like an interrupt.
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	plan, err := buildMigratePlan(ctx, repoRoot)
 	if err != nil {
 		return err
 	}
-
-	fmt.Println(renderMigratePlan(plan))
-
-	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	fmt.Println(renderMigrationPlan(plan, dryRun))
+	fmt.Println()
 	if dryRun {
 		fmt.Printf("%s No changes made\n", ui.Yellow("[DRY RUN]"))
 		return nil
 	}
-
-	// Confirm.
 	if !ui.Confirm("This will restructure the repository. Continue? [y/N]:") {
-		fmt.Println("Cancelled")
+		ui.Cancelled()
 		return nil
 	}
-
-	newStructure := filepath.Join(plan.parentDir, fmt.Sprintf("%s-new-%d", plan.repoName, os.Getpid()))
-	tempBackup := filepath.Join(plan.parentDir, fmt.Sprintf("%s-backup-%d", plan.repoName, os.Getpid()))
-
-	// Setup cleanup on signal.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	var cleanupOnce sync.Once
-	cleanup := func() {
-		cleanupOnce.Do(func() {
-			if _, err := os.Stat(newStructure); err == nil {
-				_ = os.RemoveAll(newStructure)
-			}
-			if _, err := os.Stat(tempBackup); err == nil {
-				restoreBackup(tempBackup, plan.repoRoot)
-			}
-		})
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-
-	go func() {
-		<-sigCh
-		cleanup()
-		os.Exit(1)
-	}()
-
-	// Ensure cleanup on any error.
-	success := false
-	defer func() {
-		signal.Stop(sigCh)
-		if !success {
-			cleanup()
+	journal, err := startMigrationJournal(repoRoot)
+	if err != nil {
+		return err
+	}
+	// Conversion checks for cancellation between steps and returns before
+	// rollback starts, so rollback never races it. Ctrl-C in the task UI and
+	// signals both cancel it.
+	err = ui.SpinContext("Migrating repository in place", func(taskCtx context.Context) error {
+		convertCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(taskCtx, cancel)()
+		if err := convertRepository(convertCtx, journal, plan); err != nil {
+			return err
 		}
-	}()
-
-	if err := buildMigratedStructure(plan, newStructure); err != nil {
-		return err
+		if err := journal.commit(); err != nil {
+			return fmt.Errorf("commit migration journal: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		if rollbackErr := journal.rollback(); rollbackErr != nil {
+			return fmt.Errorf("%w; rollback incomplete: %v; stop other writers and run git wt migrate again in %s to recover", err, rollbackErr, repoRoot)
+		}
+		return fmt.Errorf("%w; original repository restored at %s", err, repoRoot)
 	}
-
-	requiredEntries := []string{".git", ".bare", plan.currentBranch}
-	if plan.defaultBranch != "" && plan.defaultBranch != plan.currentBranch {
-		requiredEntries = append(requiredEntries, plan.defaultBranch)
-	}
-
-	fmt.Println()
-	if err := ui.RunSteps([]ui.Step{{
-		Message: "Finalizing migration",
-		Run: func(context.Context, io.Writer) error {
-			return finalizeMigration(plan.repoRoot, newStructure, tempBackup, requiredEntries)
-		},
-	}}); err != nil {
-		return err
-	}
-
-	fmt.Println()
-	ui.Success("Migration complete")
-
-	var branches []treeBranch
-	if plan.defaultBranch != "" && plan.defaultBranch == plan.currentBranch {
-		branches = append(branches, treeBranch{plan.currentBranch, "active worktree"})
+	if err := journal.finish(); err != nil {
+		ui.Warnf("Migration complete, but could not remove %s: %v", filepath.Join(repoRoot, migrationStateDir), err)
 	} else {
-		if plan.defaultBranch != "" {
+		ui.Success("Migration complete")
+	}
+	branches := []treeBranch{{plan.currentBranch, "current branch"}}
+	hints := []commandHint{
+		{Action: "Open your worktree", Command: "cd " + shellQuote(filepath.Join(repoRoot, plan.currentBranch))},
+		{Action: "Create another worktree", Command: fmt.Sprintf("cd %s && git wt add <branch-name> <branch-name>", shellQuote(repoRoot))},
+	}
+	if plan.defaultBranch != "" && plan.defaultBranch != plan.currentBranch {
+		err := ui.SpinContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(plan.defaultBranch)), func(ctx context.Context) error {
+			return createMigrationWorktree(ctx, repoRoot, plan.defaultBranch, plan.defaultRemote)
+		})
+		if err != nil {
+			ui.Warnf("Could not create a worktree for default branch %s: %v", plan.defaultBranch, err)
+			hints = append(hints, commandHint{Action: "Create the default branch worktree", Command: fmt.Sprintf("cd %s && git wt add %s %s", shellQuote(repoRoot), shellQuote(plan.defaultBranch), shellQuote(plan.defaultBranch))})
+		} else {
 			branches = append(branches, treeBranch{plan.defaultBranch, "default branch"})
 		}
-		branches = append(branches, treeBranch{plan.currentBranch, "current branch"})
 	}
-
-	fmt.Println()
 	fmt.Println(renderRepoLayoutSection(".", branches))
-
-	if outcome := renderMigrateOutcome(plan); outcome != "" {
-		fmt.Println()
-		fmt.Println(outcome)
-	}
-
-	hints := []commandHint{{
-		Action:  "Create another worktree",
-		Command: fmt.Sprintf("cd %s && git wt add <branch-name> <branch-name>", plan.repoRoot),
-	}, {
-		Action:  "Open your worktree",
-		Command: fmt.Sprintf("cd %s/%s", plan.repoRoot, plan.currentBranch),
-	}}
-	if plan.stashCount > 0 {
-		hints = append(hints, commandHint{
-			Action:  "Review migrated stashes",
-			Command: fmt.Sprintf("cd %s/%s && git stash list", plan.repoRoot, plan.currentBranch),
-		})
-	}
-
-	fmt.Println()
 	fmt.Println(renderCommandHintsSection(hints))
-
-	success = true
 	return nil
 }
 
-func buildMigratePlan(repoRoot string) (migratePlan, error) {
-	plan := migratePlan{
-		repoRoot:  repoRoot,
-		repoName:  filepath.Base(repoRoot),
-		parentDir: filepath.Dir(repoRoot),
-	}
-
-	currentBranch, err := git.QueryIn(repoRoot, "branch", "--show-current")
-	if err != nil || currentBranch == "" {
-		ui.Error("Not on a branch (detached HEAD state). Please check out a branch first.")
-		return migratePlan{}, fmt.Errorf("detached HEAD state")
-	}
-	plan.currentBranch = currentBranch
-
-	warnings, err := preflightMigrateRepo(repoRoot)
-	if err != nil {
-		return migratePlan{}, err
-	}
-	plan.warnings = warnings
-
-	plan.remotes, err = captureRemotes(repoRoot)
-	if err != nil {
-		return migratePlan{}, err
-	}
-	plan.configs, err = capturePreservedConfig(repoRoot)
-	if err != nil {
-		return migratePlan{}, err
-	}
-
-	plan.defaultRemote = worktree.DefaultRemote()
-	if plan.defaultRemote != "" {
-		plan.defaultURL, _ = git.QueryIn(repoRoot, "remote", "get-url", plan.defaultRemote)
-	}
-	plan.defaultBranch = worktree.DefaultBranch(plan.defaultRemote)
-
-	if err := checkGitDiff(repoRoot); err != nil {
-		plan.hasChanges = true
-	}
-	plan.untrackedFiles, _ = git.QueryLines("-C", repoRoot, "ls-files", "--others", "--exclude-standard")
-	stashList, _ := git.QueryLines("-C", repoRoot, "stash", "list")
-	plan.stashCount = len(stashList)
-
-	return plan, nil
-}
-
-func renderMigratePlan(plan migratePlan) string {
+func renderMigrationPlan(plan migratePlan, dryRun bool) string {
 	rows := [][]string{
-		{"Repository", ui.Bold(plan.repoName)},
-		{"Path", ui.Path(plan.repoRoot)},
-		{"Current branch", ui.Accent(plan.currentBranch)},
+		{ui.Path("./.git"), ui.Path("./.bare"), ui.Subtle("git database")},
+		{ui.Subtle("working files"), ui.Path("./" + plan.currentBranch), ui.Subtle("current branch worktree")},
 	}
+	if plan.defaultBranch != "" && plan.defaultBranch != plan.currentBranch {
+		rows = append(rows, []string{"", ui.Path("./" + plan.defaultBranch), ui.Subtle("default branch worktree, created after")})
+	}
+	notes := []string{
+		ui.Subtle("Files are moved in place, not copied; no extra disk space is needed."),
+		ui.Yellow("Stop editors, builds, and other Git commands before continuing."),
+		ui.Subtle("If migration is interrupted, run git wt migrate again to restore the original layout."),
+	}
+	if dryRun {
+		notes = append([]string{ui.Yellow("[DRY RUN] Preview only")}, notes...)
+	}
+	return renderTableSection([]ui.TableColumn{
+		{Title: "FROM", MinWidth: 14, MaxWidth: 24},
+		{Title: "TO", MinWidth: 14, MaxWidth: 40},
+		{Title: "ROLE", MinWidth: 18, MaxWidth: 40},
+	}, rows, notes, ui.Subtle(plan.repoRoot))
+}
+
+func recoverInterruptedMigration(root string, dryRun bool) error {
+	if dryRun {
+		return fmt.Errorf("found an interrupted migration in %s; run git wt migrate without --dry-run to restore the original layout", root)
+	}
+	ui.Warnf("Found the journal of an unfinished migration in %s", root)
+	completed, err := recoverMigration(root)
+	if err != nil {
+		return fmt.Errorf("restore interrupted migration in %s: %w", root, err)
+	}
+	if completed {
+		ui.Success("Migration was already complete; removed its leftover journal")
+		return nil
+	}
+	return fmt.Errorf("interrupted migration rolled back; original repository restored at %s; run git wt migrate again to migrate", root)
+}
+
+func buildMigratePlan(ctx context.Context, root string) (migratePlan, error) {
+	plan := migratePlan{repoRoot: root}
+	if err := preflightMigrateRepo(root); err != nil {
+		return plan, err
+	}
+	config, err := readMigrationConfig(ctx, root)
+	if err != nil {
+		return plan, err
+	}
+	plan.config = config
+	version, err := git.QueryContext(ctx, "--version")
+	if err != nil {
+		return plan, err
+	}
+	plan.relativeWorktrees = gitVersionAtLeast(version, 2, 48)
+	branch, err := git.QueryInContext(ctx, root, "branch", "--show-current")
+	if err != nil || branch == "" {
+		return plan, fmt.Errorf("detached HEAD state: check out a branch before migrating")
+	}
+	plan.currentBranch = branch
+	plan.defaultRemote = worktree.DefaultRemoteInContext(ctx, root)
+	plan.defaultBranch = worktree.DefaultBranchInContext(ctx, root, plan.defaultRemote)
+	// An offline migration must not depend on a remote default branch whose
+	// objects are unavailable locally.
 	if plan.defaultBranch != "" {
-		rows = append(rows, []string{"Default branch", ui.Accent(plan.defaultBranch)})
+		if _, err := git.QueryInContext(ctx, root, "rev-parse", "--verify", "refs/heads/"+plan.defaultBranch); err != nil {
+			if _, err := git.QueryInContext(ctx, root, "rev-parse", "--verify", "refs/remotes/"+plan.defaultRemote+"/"+plan.defaultBranch); err != nil {
+				plan.defaultBranch = ""
+			}
+		}
 	}
-	if plan.defaultRemote != "" {
-		rows = append(rows, []string{"Default remote", plan.defaultRemote})
-	}
-	if plan.defaultURL != "" {
-		rows = append(rows, []string{"Remote URL", plan.defaultURL})
-	}
-
-	notes := make([]string, 0, len(plan.warnings)+4)
-	if plan.defaultRemote == "" {
-		notes = append(notes, ui.Yellow("! no remote found"))
-	}
-	if plan.hasChanges {
-		notes = append(notes, ui.Yellow("! uncommitted changes will be preserved"))
-	}
-	if len(plan.untrackedFiles) > 0 {
-		notes = append(notes, ui.Yellow(fmt.Sprintf("! %d untracked file(s) will be preserved", len(plan.untrackedFiles))))
-	}
-	if plan.stashCount > 0 {
-		notes = append(notes, ui.Yellow(fmt.Sprintf("! %d stash(es) will be migrated", plan.stashCount)))
-	}
-	for _, warning := range plan.warnings {
-		notes = append(notes, ui.Yellow("! "+warning))
-	}
-
-	summaryParts := []string{}
-	if len(plan.remotes) > 0 {
-		summaryParts = append(summaryParts, ui.Subtle(fmt.Sprintf("%d remote(s)", len(plan.remotes))))
-	}
-	if len(plan.configs) > 0 {
-		summaryParts = append(summaryParts, ui.Subtle(fmt.Sprintf("%d config entries preserved", len(plan.configs))))
-	}
-	summary := strings.Join(summaryParts, " • ")
-
-	return renderTableSection([]ui.TableColumn{
-		{Title: "ITEM", MinWidth: 16, MaxWidth: 20},
-		{Title: "DETAIL", MinWidth: 28, MaxWidth: 64},
-	}, rows, notes, summary)
+	plan.migrationGitState, err = readMigrationGitState(ctx, root)
+	return plan, err
 }
 
-func renderMigrateOutcome(plan migratePlan) string {
-	rows := make([][]string, 0, 5)
-	if plan.defaultURL != "" {
-		rows = append(rows, []string{"Remote URL", plan.defaultURL})
-	}
-	if len(plan.remotes) > 1 {
-		rows = append(rows, []string{"Remotes", fmt.Sprintf("Preserved %d remotes", len(plan.remotes))})
-	}
-	if len(plan.configs) > 0 {
-		rows = append(rows, []string{"Config", fmt.Sprintf("Preserved %d repo-local entries", len(plan.configs))})
-	}
-	if plan.stashCount > 0 {
-		rows = append(rows, []string{"Stashes", fmt.Sprintf("Migrated %d stash(es)", plan.stashCount)})
-	}
-	if plan.hasChanges {
-		rows = append(rows, []string{"Working tree", fmt.Sprintf("Preserved uncommitted changes in %s", plan.currentBranch)})
-	}
-	if len(plan.untrackedFiles) > 0 {
-		rows = append(rows, []string{"Untracked files", fmt.Sprintf("Preserved %d file(s) in %s", len(plan.untrackedFiles), plan.currentBranch)})
-	}
-	if len(rows) == 0 {
-		return ""
-	}
-
-	summary := ui.Green("Migration artifacts preserved")
-	return renderTableSection([]ui.TableColumn{
-		{Title: "OUTCOME", MinWidth: 16, MaxWidth: 20},
-		{Title: "DETAIL", MinWidth: 28, MaxWidth: 64},
-	}, rows, nil, summary)
-}
-
-func preflightMigrateRepo(repoRoot string) ([]string, error) {
-	gitPath := filepath.Join(repoRoot, ".git")
-	gitInfo, err := os.Stat(gitPath)
+func preflightMigrateRepo(root string) error {
+	gitPath := filepath.Join(root, ".git")
+	info, err := os.Lstat(gitPath)
 	if err != nil {
-		return nil, fmt.Errorf("stat %s: %w", gitPath, err)
-	}
-	if !gitInfo.IsDir() {
-		return nil, fmt.Errorf("unsupported repository layout: %s must be a directory", gitPath)
-	}
-
-	if _, err := os.Stat(filepath.Join(repoRoot, ".gitmodules")); err == nil {
-		return nil, fmt.Errorf("repositories with submodules are not supported by migrate")
-	}
-
-	worktreeOut, err := git.QueryIn(repoRoot, "worktree", "list", "--porcelain")
-	if err != nil {
-		return nil, err
-	}
-	if strings.Count(worktreeOut, "worktree ") > 1 {
-		return nil, fmt.Errorf("repositories with linked worktrees are not supported by migrate")
-	}
-
-	if sparseEnabled, _ := git.QueryIn(repoRoot, "config", "--bool", "core.sparseCheckout"); sparseEnabled == "true" {
-		return nil, fmt.Errorf("repositories using sparse checkout are not supported by migrate")
-	}
-	if _, err := os.Stat(filepath.Join(gitPath, "info", "sparse-checkout")); err == nil {
-		return nil, fmt.Errorf("repositories using sparse checkout are not supported by migrate")
-	}
-
-	if _, err := os.Stat(filepath.Join(gitPath, "objects", "info", "alternates")); err == nil {
-		return nil, fmt.Errorf("repositories using alternate object directories are not supported by migrate")
-	}
-
-	var warnings []string
-	if remotes, _ := captureRemotes(repoRoot); len(remotes) > 1 {
-		warnings = append(warnings, fmt.Sprintf("Detected %d remotes; all remotes and fetch specs will be preserved", len(remotes)))
-	}
-	if len(warnings) == 0 {
-		return nil, nil
-	}
-	return warnings, nil
-}
-
-func buildMigratedStructure(plan migratePlan, newStructure string) error {
-	if err := os.MkdirAll(newStructure, 0o755); err != nil {
 		return err
 	}
-
-	if err := ui.RunSteps([]ui.Step{{
-		Message:    "Converting to bare repository",
-		ShowOutput: true,
-		RawOutput:  true,
-		Run: func(ctx context.Context, w io.Writer) error {
-			return git.RunToContext(ctx, w, "clone", "--bare", plan.repoRoot, filepath.Join(newStructure, ".bare"))
-		},
-	}, {
-		Message: "Configuring migrated worktree layout",
-		Run: func(context.Context, io.Writer) error {
-			if err := os.WriteFile(filepath.Join(newStructure, ".git"), []byte("gitdir: ./.bare\n"), 0o644); err != nil {
-				return err
-			}
-			if err := configureBareRepo(newStructure); err != nil {
-				return err
-			}
-			if err := applyRemotes(newStructure, plan.remotes); err != nil {
-				return err
-			}
-			return applyPreservedConfig(newStructure, plan.configs)
-		},
-	}, {
-		Message:    "Fetching all branches from preserved remotes",
-		ShowOutput: true,
-		RawOutput:  true,
-		Run: func(ctx context.Context, w io.Writer) error {
-			if len(plan.remotes) == 0 {
-				return nil
-			}
-			if err := git.RunInToContext(ctx, newStructure, w, "fetch", "--all"); err != nil {
-				ui.Warn("Could not fetch from remote (remote may be unreachable) - continuing with local data")
-			}
-			return nil
-		},
-	}}); err != nil {
-		return err
+	if !info.IsDir() {
+		return fmt.Errorf("unsupported repository layout: %s must be a directory", gitPath)
 	}
-
-	cleanupLocalBranchRefs(newStructure)
-
-	// Migrate stashes.
-	if plan.stashCount > 0 {
-		if err := ui.Spin(fmt.Sprintf("Migrating %d stash(es)", plan.stashCount), func() error {
-			oldGitDir := filepath.Join(plan.repoRoot, ".git")
-			newBareDir := filepath.Join(newStructure, ".bare")
-
-			stashRef := filepath.Join(oldGitDir, "refs", "stash")
-			if _, err := os.Stat(stashRef); err == nil {
-				if err := copyFileSimple(stashRef, filepath.Join(newBareDir, "refs", "stash")); err != nil {
-					return fmt.Errorf("failed to copy stash ref: %w", err)
-				}
-			}
-
-			stashLog := filepath.Join(oldGitDir, "logs", "refs", "stash")
-			if _, err := os.Stat(stashLog); err == nil {
-				if err := os.MkdirAll(filepath.Join(newBareDir, "logs", "refs"), 0o755); err != nil {
-					return err
-				}
-				if err := copyFileSimple(stashLog, filepath.Join(newBareDir, "logs", "refs", "stash")); err != nil {
-					return fmt.Errorf("failed to copy stash log: %w", err)
-				}
-			}
-			return nil
-		}); err != nil {
-			ui.Warnf("Stash migration failed: %s", err)
-		}
-	}
-
-	// Create worktrees.
-	if plan.defaultBranch != "" && plan.defaultBranch == plan.currentBranch {
-		if err := createMigrationWorktree(newStructure, plan.currentBranch, plan.defaultRemote); err != nil {
-			return err
-		}
-	} else {
-		if plan.defaultBranch != "" {
-			if err := createMigrationWorktree(newStructure, plan.defaultBranch, plan.defaultRemote); err != nil {
-				return err
-			}
-		}
-		if err := createMigrationWorktree(newStructure, plan.currentBranch, plan.defaultRemote); err != nil {
+	for _, control := range []string{"commondir", "gitdir"} {
+		if _, err := os.Lstat(filepath.Join(gitPath, control)); err == nil {
+			return fmt.Errorf("unsupported Git layout: %s contains linked-worktree control file %s", gitPath, control)
+		} else if !os.IsNotExist(err) {
 			return err
 		}
 	}
-
-	// Restore working directory state.
-	destDir := filepath.Join(newStructure, plan.currentBranch)
-	if err := ui.RunSteps([]ui.Step{{
-		Message: "Restoring working directory state",
-		Run: func(context.Context, io.Writer) error {
-			if err := fsutil.CopyDir(plan.repoRoot, destDir, []string{".git"}); err != nil {
-				return fmt.Errorf("failed to copy working directory: %w", err)
-			}
-			// Restore git index (staged changes).
-			oldIndex := filepath.Join(plan.repoRoot, ".git", "index")
-			if _, err := os.Stat(oldIndex); err == nil {
-				// Resolve the worktree's own index rather than honoring an inherited
-				// GIT_INDEX_FILE, which may point outside the migrated repository.
-				newGitDir, err := git.QueryIn(destDir, "rev-parse", "--absolute-git-dir")
-				if err != nil {
-					return fmt.Errorf("failed to resolve migrated git index: %w", err)
-				}
-				newIndex := filepath.Join(newGitDir, "index")
-				if err := copyFileSimple(oldIndex, newIndex); err != nil {
-					return fmt.Errorf("failed to restore git index: %w", err)
-				}
-			}
-			return nil
-		},
-	}}); err != nil {
+	if exists, err := pathExists(filepath.Join(root, migrationStateDir)); err != nil || exists {
+		return fmt.Errorf("%s already exists; remove it before migrating", filepath.Join(root, migrationStateDir))
+	}
+	if _, err := os.Stat(filepath.Join(root, ".gitmodules")); err == nil {
+		return fmt.Errorf("repositories with submodules are not supported by migrate")
+	}
+	out, err := git.QueryIn(root, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
 		return err
 	}
-
-	return nil
-}
-
-func createMigrationWorktree(repoDir, branch, preferredRemote string) error {
-	sourceRef := migrationBranchSourceRef(repoDir, branch, preferredRemote)
-	return ui.SpinWithOutputContext(fmt.Sprintf("Creating worktree for %s", ui.Accent(branch)), func(ctx context.Context, w io.Writer) error {
-		if sourceRef == branch {
-			return git.RunInToContext(ctx, repoDir, w, "worktree", "add", branch, branch)
+	if len(worktree.ParsePorcelain(out)) > 1 {
+		return fmt.Errorf("repositories with linked worktrees are not supported by migrate")
+	}
+	// Rollback removes .bare/worktrees, so it must not hold anything else.
+	if exists, err := pathExists(filepath.Join(gitPath, "worktrees")); err != nil || exists {
+		return fmt.Errorf("stale worktree metadata in %s; run git worktree prune before migrating", filepath.Join(gitPath, "worktrees"))
+	}
+	if enabled, _ := git.QueryIn(root, "config", "--bool", "core.sparseCheckout"); enabled == "true" {
+		return fmt.Errorf("repositories using sparse checkout are not supported by migrate")
+	}
+	for _, item := range []struct{ path, reason string }{
+		{"info/sparse-checkout", "sparse checkout"},
+		{"objects/info/alternates", "alternate object directories"},
+		{"rebase-merge", "an in-progress rebase"},
+		{"rebase-apply", "an in-progress rebase or am"},
+		{"MERGE_HEAD", "an in-progress merge"},
+		{"CHERRY_PICK_HEAD", "an in-progress cherry-pick"},
+		{"REVERT_HEAD", "an in-progress revert"},
+		{"sequencer", "an in-progress sequencer operation"},
+	} {
+		if _, err := os.Stat(filepath.Join(gitPath, item.path)); err == nil {
+			return fmt.Errorf("repositories using %s are not supported by migrate", item.reason)
 		}
-		return git.RunInToContext(ctx, repoDir, w, "worktree", "add", "-b", branch, branch, sourceRef)
+	}
+	if format, _ := git.QueryIn(root, "config", "--get", "extensions.refStorage"); format != "" && format != "files" {
+		return fmt.Errorf("migration does not support the %s ref storage format", format)
+	}
+	if enabled, _ := git.QueryIn(root, "config", "--bool", "extensions.worktreeConfig"); enabled == "true" {
+		return fmt.Errorf("repositories using per-worktree config are not supported by migrate")
+	}
+	if _, err := git.QueryIn(root, "rev-parse", "--verify", "HEAD"); err != nil {
+		return fmt.Errorf("repository needs an initial commit before migration: %w", err)
+	}
+	if err := checkMigrationIncludes(context.Background(), root); err != nil {
+		return err
+	}
+	if err := checkMigrationHooksPath(root); err != nil {
+		return err
+	}
+	// Refuse active Git writes rather than moving their intermediate state.
+	return filepath.WalkDir(gitPath, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlinked Git metadata is not supported by migrate: %s", path)
+		}
+		if strings.HasSuffix(entry.Name(), ".lock") {
+			return fmt.Errorf("git lock present at %s; stop other Git operations before migrating", path)
+		}
+		return nil
 	})
 }
 
-func migrationBranchSourceRef(repoDir, branch, preferredRemote string) string {
-	if _, err := git.QueryIn(repoDir, "show-ref", "--verify", "refs/heads/"+branch); err == nil {
-		return branch
+// A hooks path inside .git, often .git/hooks to opt out of a global hooksPath,
+// stops resolving once .git becomes a file.
+func checkMigrationHooksPath(root string) error {
+	hooksPath, err := git.QueryIn(root, "config", "--type=path", "--get", "core.hooksPath")
+	if err != nil || hooksPath == "" {
+		return nil
 	}
-	if preferredRemote != "" {
-		ref := "refs/remotes/" + preferredRemote + "/" + branch
-		if _, err := git.QueryIn(repoDir, "show-ref", "--verify", ref); err == nil {
-			return preferredRemote + "/" + branch
-		}
+	resolved := hooksPath
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(root, resolved)
 	}
-
-	remoteRefs, _ := git.QueryIn(repoDir, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
-	for remoteRef := range strings.SplitSeq(remoteRefs, "\n") {
-		remoteRef = strings.TrimSpace(remoteRef)
-		if remoteRef == "" || strings.HasSuffix(remoteRef, "/HEAD") {
-			continue
-		}
-		if _, remoteBranch, ok := strings.Cut(remoteRef, "/"); ok && remoteBranch == branch {
-			return remoteRef
-		}
+	if !pathWithin(filepath.Join(root, ".git"), resolved) {
+		return nil
 	}
-	return branch
+	return fmt.Errorf("core.hooksPath %q points inside .git, which becomes a file after migration; unset it or point it outside .git, then after migrating set it to %s", hooksPath, filepath.Join(root, ".bare", "hooks"))
 }
 
-func captureRemotes(repoRoot string) ([]preservedRemote, error) {
-	out, err := git.QueryIn(repoRoot, "remote")
-	if err != nil || out == "" {
-		return nil, nil
-	}
-
-	var remotes []preservedRemote
-	for name := range strings.SplitSeq(out, "\n") {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		url, err := git.QueryIn(repoRoot, "remote", "get-url", name)
-		if err != nil {
-			return nil, err
-		}
-		fetchOut, err := git.QueryIn(repoRoot, "config", "--get-all", "remote."+name+".fetch")
-		fetchSpecs := []string(nil)
-		if err == nil && fetchOut != "" {
-			fetchSpecs = strings.Split(fetchOut, "\n")
-		}
-		remotes = append(remotes, preservedRemote{Name: name, URL: url, FetchSpecs: fetchSpecs})
-	}
-	return remotes, nil
-}
-
-func applyRemotes(dir string, remotes []preservedRemote) error {
-	out, err := git.QueryIn(dir, "remote")
-	if err == nil && out != "" {
-		for name := range strings.SplitSeq(out, "\n") {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			if _, err := git.RunInWithOutput(dir, "remote", "remove", name); err != nil {
-				return err
-			}
-		}
-	}
-
-	for _, remote := range remotes {
-		if _, err := git.RunInWithOutput(dir, "remote", "add", remote.Name, remote.URL); err != nil {
-			return err
-		}
-		if len(remote.FetchSpecs) == 0 {
-			continue
-		}
-		key := "remote." + remote.Name + ".fetch"
-		_, _ = git.RunInWithOutput(dir, "config", "--unset-all", key)
-		for _, spec := range remote.FetchSpecs {
-			if _, err := git.RunInWithOutput(dir, "config", "--add", key, spec); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func capturePreservedConfig(repoRoot string) ([]preservedConfig, error) {
-	out, err := git.QueryIn(repoRoot, "config", "--local", "--list")
-	if err != nil || out == "" {
-		return nil, nil
-	}
-
-	order := []string{}
-	values := map[string][]string{}
-	for line := range strings.SplitSeq(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok || !shouldPreserveConfig(key) {
-			continue
-		}
-		if _, exists := values[key]; !exists {
-			order = append(order, key)
-		}
-		values[key] = append(values[key], value)
-	}
-
-	preserved := make([]preservedConfig, 0, len(order))
-	for _, key := range order {
-		preserved = append(preserved, preservedConfig{Key: key, Values: values[key]})
-	}
-	return preserved, nil
-}
-
-func shouldPreserveConfig(key string) bool {
-	key = strings.ToLower(key)
-	if preservedConfigKeys[key] {
-		return true
-	}
-	for _, prefix := range preservedConfigPrefixes {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func applyPreservedConfig(dir string, configs []preservedConfig) error {
-	for _, cfg := range configs {
-		_, _ = git.RunInWithOutput(dir, "config", "--unset-all", cfg.Key)
-		for i, value := range cfg.Values {
-			var err error
-			if i == 0 {
-				_, err = git.RunInWithOutput(dir, "config", cfg.Key, value)
-			} else {
-				_, err = git.RunInWithOutput(dir, "config", "--add", cfg.Key, value)
-			}
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func finalizeMigration(repoRoot, newStructure, tempBackup string, requiredEntries []string) error {
-	if err := os.MkdirAll(tempBackup, 0o755); err != nil {
-		return err
-	}
-
-	backupNames, err := moveContentsTracked(repoRoot, tempBackup)
-	if err != nil {
-		return fmt.Errorf("failed to backup original repo: %w", err)
-	}
-
-	promotedNames, err := moveContentsTracked(newStructure, repoRoot)
-	if err != nil {
-		_ = restoreNamedEntries(tempBackup, repoRoot, backupNames)
-		return fmt.Errorf("failed to move new structure: %w", err)
-	}
-
-	if err := validateMigratedLayout(repoRoot, requiredEntries); err != nil {
-		_ = rollbackFinalization(repoRoot, newStructure, tempBackup, promotedNames, backupNames)
-		return err
-	}
-
-	if err := os.Remove(newStructure); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return os.RemoveAll(tempBackup)
-}
-
-func validateMigratedLayout(repoRoot string, requiredEntries []string) error {
-	gitInfo, err := os.Stat(filepath.Join(repoRoot, ".git"))
-	if err != nil {
-		return err
-	}
-	if gitInfo.IsDir() {
-		return fmt.Errorf("migration validation failed: .git should be a file after migration")
-	}
-	for _, rel := range requiredEntries {
-		if _, err := os.Stat(filepath.Join(repoRoot, rel)); err != nil {
-			return fmt.Errorf("migration validation failed: missing %s", rel)
-		}
-	}
-	return nil
-}
-
-func rollbackFinalization(repoRoot, newStructure, tempBackup string, promotedNames, backupNames []string) error {
-	if err := restoreNamedEntries(repoRoot, newStructure, promotedNames); err != nil {
-		_ = removeNamedEntries(repoRoot, promotedNames)
-	}
-	return restoreNamedEntries(tempBackup, repoRoot, backupNames)
-}
-
-func checkGitDiff(repoRoot string) error {
-	_, err := git.QueryIn(repoRoot, "diff-index", "--quiet", "HEAD", "--")
-	return err
-}
-
-func copyFileSimple(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, info.Mode().Perm())
-}
-
-func moveContents(src, dst string) error {
-	_, err := moveContentsTracked(src, dst)
-	return err
-}
-
-func moveContentsTracked(src, dst string) ([]string, error) {
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return nil, err
-	}
-	moved := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		oldPath := filepath.Join(src, entry.Name())
-		newPath := filepath.Join(dst, entry.Name())
-		if err := os.Rename(oldPath, newPath); err != nil {
-			_ = restoreNamedEntries(dst, src, moved)
-			return nil, err
-		}
-		moved = append(moved, entry.Name())
-	}
-	return moved, nil
-}
-
-func restoreNamedEntries(src, dst string, names []string) error {
-	for i := len(names) - 1; i >= 0; i-- {
-		if err := os.Rename(filepath.Join(src, names[i]), filepath.Join(dst, names[i])); err != nil {
+// convertRepository restructures the repository with renames only, so file
+// contents, modes, extended attributes, and ACLs move unchanged. The caller
+// rolls back from the journal if any step fails.
+func convertRepository(ctx context.Context, journal *migrationJournal, plan migratePlan) error {
+	// Git rewrites these in place; everything else is moved or created.
+	for _, name := range []string{"config", "packed-refs"} {
+		if err := journal.backup(filepath.Join(".git", name)); err != nil {
 			return err
 		}
 	}
-	return nil
-}
-
-func removeNamedEntries(root string, names []string) error {
-	for _, name := range names {
-		if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
-			return err
-		}
+	work := filepath.Join(migrationStateDir, "work")
+	if err := os.Mkdir(journal.path(work), 0o700); err != nil {
+		return err
 	}
-	return nil
+	// Stage the working entries first: the branch directory may share a name
+	// with one of them.
+	if err := moveMigrationEntries(ctx, journal, ".", work, ".git", migrationStateDir); err != nil {
+		return err
+	}
+	if err := journal.move(".git", ".bare"); err != nil {
+		return err
+	}
+	if err := journal.create(".git"); err != nil {
+		return err
+	}
+	if err := os.WriteFile(journal.path(".git"), []byte("gitdir: ./.bare\n"), 0o644); err != nil {
+		return err
+	}
+	if err := configureMigratedRepository(ctx, plan); err != nil {
+		return err
+	}
+	private, err := addMigrationWorktree(ctx, journal, plan.currentBranch)
+	if err != nil {
+		return err
+	}
+	if err := moveMigrationEntries(ctx, journal, work, filepath.FromSlash(plan.currentBranch)); err != nil {
+		return err
+	}
+	if err := moveMigrationMetadata(ctx, journal, plan, private); err != nil {
+		return err
+	}
+	return verifyMigrationState(ctx, plan)
 }
 
-func restoreBackup(backup, repoRoot string) {
-	entries, err := os.ReadDir(backup)
+func moveMigrationEntries(ctx context.Context, journal *migrationJournal, src, dst string, skip ...string) error {
+	entries, err := os.ReadDir(journal.path(src))
 	if err != nil {
-		return
+		return err
 	}
 	for _, entry := range entries {
-		_ = os.Rename(filepath.Join(backup, entry.Name()), filepath.Join(repoRoot, entry.Name()))
+		if slices.Contains(skip, entry.Name()) {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := journal.move(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
+			return err
+		}
 	}
-	_ = os.RemoveAll(backup)
+	return nil
+}
+
+func configureMigratedRepository(ctx context.Context, plan migratePlan) error {
+	root := plan.repoRoot
+	for _, kv := range migrationConfigToSet(plan) {
+		if _, err := git.RunInWithOutputContext(ctx, root, "config", kv[0], kv[1]); err != nil {
+			return err
+		}
+	}
+	if _, err := git.QueryInContext(ctx, root, "config", "--get", "core.worktree"); err == nil {
+		if _, err := git.RunInWithOutputContext(ctx, root, "config", "--unset-all", "core.worktree"); err != nil {
+			return err
+		}
+	}
+	return normalizeMigrationRemoteURLs(ctx, plan)
+}
+
+// addMigrationWorktree registers an empty worktree for the current branch and
+// returns its private Git directory.
+func addMigrationWorktree(ctx context.Context, journal *migrationJournal, branch string) (string, error) {
+	// Record every directory Git will create, outermost first, so undo removes
+	// them innermost first once the moved entries are back in place.
+	var dirs []string
+	for dir := filepath.FromSlash(branch); dir != "."; dir = filepath.Dir(dir) {
+		dirs = append([]string{dir}, dirs...)
+	}
+	for _, dir := range dirs {
+		if exists, err := pathExists(journal.path(dir)); err != nil {
+			return "", err
+		} else if !exists {
+			if err := journal.create(dir); err != nil {
+				return "", err
+			}
+		}
+	}
+	wt := filepath.FromSlash(branch)
+	if err := journal.create(filepath.Join(wt, ".git")); err != nil {
+		return "", err
+	}
+	if err := journal.createTree(filepath.Join(".bare", "worktrees")); err != nil {
+		return "", err
+	}
+	args := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "worktree", "add", "--no-checkout", "--", branch, branch}
+	if out, err := git.RunInWithOutputContext(ctx, journal.root, args...); err != nil {
+		return "", fmt.Errorf("create migration worktree: %s: %w", out, err)
+	}
+	return git.QueryPathInContext(ctx, journal.path(wt), "rev-parse", "--absolute-git-dir")
+}
+
+// createMigrationWorktree adds the default branch's worktree once the
+// conversion is complete.
+func createMigrationWorktree(ctx context.Context, root, branch, remote string) error {
+	args := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "worktree", "add"}
+	source := branch
+	if _, err := git.QueryInContext(ctx, root, "show-ref", "--verify", "refs/heads/"+branch); err != nil {
+		source = "refs/remotes/" + remote + "/" + branch
+		args = append(args, "-b", branch)
+	}
+	args = append(args, "--", branch, source)
+	out, err := git.RunInWithOutputContext(ctx, root, args...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", out, err)
+	}
+	return nil
+}
+
+func normalizeMigrationRemoteURLs(ctx context.Context, plan migratePlan) error {
+	prefixes := migrationURLPrefixes(plan.config.values)
+	for key, values := range plan.config.values {
+		if !migrationRemoteURLKey(key) {
+			continue
+		}
+		urls := make([]string, len(values))
+		changed := false
+		for i, value := range values {
+			url := strings.TrimPrefix(value, "\n")
+			urls[i] = migrationURL(plan.repoRoot, url, prefixes)
+			changed = changed || urls[i] != url
+		}
+		if !changed {
+			continue
+		}
+		if _, err := git.RunInWithOutputContext(ctx, plan.repoRoot, "config", "--unset-all", key); err != nil {
+			return err
+		}
+		for _, url := range urls {
+			if _, err := git.RunInWithOutputContext(ctx, plan.repoRoot, "config", "--add", key, url); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func readMigrationGitState(ctx context.Context, root string) (state migrationGitState, err error) {
+	state.refs, err = git.QueryInContext(ctx, root, "for-each-ref", "--format=%(refname) %(objectname) %(symref)")
+	if err != nil {
+		return state, err
+	}
+	// Disable fsmonitor callbacks and optional index writes: these checks must
+	// not change the repository they verify.
+	readOnly := []string{"-c", "core.fsmonitor=false", "--no-optional-locks"}
+	state.index, err = git.QueryRawInContext(ctx, root, append(readOnly, "ls-files", "--stage", "-z")...)
+	if err != nil {
+		return state, err
+	}
+	state.status, err = git.QueryRawInContext(ctx, root, append(readOnly, "status", "--porcelain=v2", "-z", "--ignored", "--untracked-files=normal")...)
+	if err != nil {
+		return state, err
+	}
+	state.stashes, err = git.QueryInContext(ctx, root, "stash", "list", "--format=%H %gs")
+	return state, err
+}
+
+func verifyMigrationState(ctx context.Context, plan migratePlan) error {
+	wt := filepath.Join(plan.repoRoot, plan.currentBranch)
+	for _, root := range []string{plan.repoRoot, wt} {
+		if err := verifyMigrationConfig(ctx, plan, root); err != nil {
+			return err
+		}
+	}
+	if err := verifyMigrationPrivateRefIsolation(ctx, plan.repoRoot); err != nil {
+		return err
+	}
+	branch, err := git.QueryInContext(ctx, wt, "branch", "--show-current")
+	if err != nil {
+		return err
+	}
+	if branch != plan.currentBranch {
+		return fmt.Errorf("migration validation failed: expected branch %s, got %s", plan.currentBranch, branch)
+	}
+	state, err := readMigrationGitState(ctx, wt)
+	if err != nil {
+		return err
+	}
+	for _, check := range []struct{ name, before, after string }{
+		{"refs", plan.refs, state.refs},
+		{"index entries", plan.index, state.index},
+		{"working tree status", plan.status, state.status},
+		{"stash entries", plan.stashes, state.stashes},
+	} {
+		if check.before != check.after {
+			return fmt.Errorf("migration validation failed: %s changed", check.name)
+		}
+	}
+	return nil
 }

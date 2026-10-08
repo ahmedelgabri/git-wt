@@ -1,7 +1,7 @@
 package worktree
 
 import (
-	"path/filepath"
+	"context"
 	"strings"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
@@ -11,7 +11,7 @@ import (
 type Entry struct {
 	Path           string
 	Branch         string
-	Head           string // short SHA (7 chars)
+	Head           string // full object ID as reported by Git
 	Detached       bool
 	Locked         bool
 	LockedReason   string
@@ -21,15 +21,17 @@ type Entry struct {
 
 // List returns all worktrees (excluding the .bare entry) by parsing
 // git worktree list --porcelain.
-func List() ([]Entry, error) {
-	out, err := git.Query("worktree", "list", "--porcelain")
+func List() ([]Entry, error) { return ListContext(context.Background()) }
+
+func ListContext(ctx context.Context) ([]Entry, error) {
+	out, err := git.QueryRawContext(ctx, "worktree", "list", "--porcelain", "-z")
 	if err != nil {
 		return nil, err
 	}
 	return ParsePorcelain(out), nil
 }
 
-// ParsePorcelain parses the output of git worktree list --porcelain into
+// ParsePorcelain parses the output of git worktree list --porcelain -z into
 // a slice of Entry, excluding the .bare entry.
 func ParsePorcelain(output string) []Entry {
 	if output == "" {
@@ -38,39 +40,39 @@ func ParsePorcelain(output string) []Entry {
 
 	var entries []Entry
 	var current Entry
-
-	for line := range strings.SplitSeq(output, "\n") {
-		switch {
-		case strings.HasPrefix(line, "worktree "):
-			current.Path = strings.TrimPrefix(line, "worktree ")
-		case strings.HasPrefix(line, "HEAD "):
-			sha := strings.TrimPrefix(line, "HEAD ")
-			if len(sha) > 7 {
-				sha = sha[:7]
-			}
-			current.Head = sha
-		case strings.HasPrefix(line, "branch "):
-			current.Branch = strings.TrimPrefix(line, "branch refs/heads/")
+	bare := false
+	for line := range strings.SplitSeq(output, "\x00") {
+		key, value, _ := strings.Cut(line, " ")
+		switch key {
+		case "worktree":
+			current.Path = value
+		case "HEAD":
+			current.Head = value
+		case "branch":
+			current.Branch = strings.TrimPrefix(value, "refs/heads/")
 			current.Detached = false
-		case line == "detached":
+		case "bare":
+			bare = true
+		case "detached":
 			current.Branch = ""
 			current.Detached = true
-		case strings.HasPrefix(line, "locked"):
+		case "locked":
 			current.Locked = true
-			current.LockedReason = strings.TrimSpace(strings.TrimPrefix(line, "locked"))
-		case strings.HasPrefix(line, "prunable"):
+			current.LockedReason = value
+		case "prunable":
 			current.Prunable = true
-			current.PrunableReason = strings.TrimSpace(strings.TrimPrefix(line, "prunable"))
-		case line == "":
-			if current.Path != "" && filepath.Base(current.Path) != ".bare" {
+			current.PrunableReason = value
+		case "":
+			if !bare && current.Path != "" {
 				entries = append(entries, current)
 			}
 			current = Entry{}
+			bare = false
 		}
 	}
 
 	// Handle last entry (no trailing blank line)
-	if current.Path != "" && filepath.Base(current.Path) != ".bare" {
+	if !bare && current.Path != "" {
 		entries = append(entries, current)
 	}
 

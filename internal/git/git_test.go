@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestQueryVersion(t *testing.T) {
@@ -15,6 +16,14 @@ func TestQueryVersion(t *testing.T) {
 	}
 	if out == "" {
 		t.Error("Query(--version) returned empty output")
+	}
+}
+
+func TestQueryWithInputRunsInDebugMode(t *testing.T) {
+	t.Setenv("DEBUG", "1")
+	out, err := QueryWithInput(strings.NewReader("hello"), "hash-object", "--stdin")
+	if err != nil || out != "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0" {
+		t.Fatalf("hash from stdin = %q, error = %v", out, err)
 	}
 }
 
@@ -311,5 +320,18 @@ func TestQueryInContextCanceled(t *testing.T) {
 	repo := initGitRepo(t)
 	if _, err := QueryInContext(ctx, repo, "status", "--short"); err == nil {
 		t.Fatal("QueryInContext() with canceled context should return error")
+	}
+}
+
+// A helper that outlives git and keeps its output pipe open must not block a
+// successful command, as a persistent ssh master can.
+func TestQueryReturnsWhenAHelperKeepsThePipeOpen(t *testing.T) {
+	start := time.Now()
+	out, err := Query("-c", "alias.bg=!echo done; sleep 5 &", "bg")
+	if err != nil || out != "done" {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("waited %s for the helper", elapsed)
 	}
 }

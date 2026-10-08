@@ -30,11 +30,11 @@
           default = self'.packages.git-wt;
           git-wt = pkgs.buildGoModule {
             pname = "git-wt";
-            version = "2.1.0";
+            version = "3.0.0";
 
             src = lib.cleanSource ./.;
 
-            vendorHash = "sha256-0nGYE3qHmkMQJMyEfeU8lMORFNGdKHA78qxV49Goxks=";
+            vendorHash = "sha256-4oGxkBdKUARLPbsl0lUdTZ3x4tyYD014dBaB6tyxI1w=";
 
             ldflags = [
               "-s"
@@ -48,6 +48,12 @@
             ];
 
             subPackages = ["cmd/git-wt"];
+            nativeCheckInputs = [pkgs.git];
+            checkPhase = ''
+              runHook preCheck
+              go test ./...
+              runHook postCheck
+            '';
 
             postInstall = ''
               # Generate shell completions before wrapping
@@ -105,6 +111,8 @@
             lefthook
             prettier
             bats
+            python3 # pseudo-terminal integration tests
+            actionlint
             go
             gopls
             gofumpt

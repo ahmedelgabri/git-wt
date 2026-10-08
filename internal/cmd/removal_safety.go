@@ -1,0 +1,115 @@
+package cmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/ahmedelgabri/git-wt/internal/git"
+)
+
+func removalUpstream(branch string) (remote, branchName, trackingRef string) {
+	if branch == "" {
+		return
+	}
+	out, err := git.Query("for-each-ref", "--format=%(upstream:remotename)\t%(upstream:remoteref)\t%(upstream)", "refs/heads/"+branch)
+	if err != nil {
+		return
+	}
+	fields := strings.Split(out, "\t")
+	if len(fields) != 3 || fields[0] == "." || !strings.HasPrefix(fields[1], "refs/heads/") {
+		return
+	}
+	return fields[0], strings.TrimPrefix(fields[1], "refs/heads/"), fields[2]
+}
+
+// unsafeRemovalError lists work a removal would discard. --force, or typing the
+// worktree name at the per-target prompt, overrides it.
+type unsafeRemovalError struct {
+	problems []string
+}
+
+func (e *unsafeRemovalError) Error() string {
+	return strings.Join(e.problems, "; ") + "; use --force with an explicit target to discard them"
+}
+
+// addUnsafeRemoval collects err's problems into problems, and returns any
+// other error unchanged.
+func addUnsafeRemoval(problems *[]string, err error) error {
+	var unsafe *unsafeRemovalError
+	if errors.As(err, &unsafe) {
+		*problems = append(*problems, unsafe.problems...)
+		return nil
+	}
+	return err
+}
+
+func validateRemovalSafety(target removalTarget, deleteRemote, cleanup bool) error {
+	var problems []string
+	if _, err := os.Stat(target.path); err == nil {
+		if target.prunable {
+			return fmt.Errorf("worktree %s is marked prunable but its path still exists; inspect its files and run git wt repair %s before removal", target.path, shellQuote(target.path))
+		}
+		dirty, err := worktreeDirty(target.path)
+		if err != nil {
+			return err
+		}
+		if dirty {
+			problems = append(problems, fmt.Sprintf("worktree %s contains local files or changes", target.path))
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if cleanup {
+		base, err := resolveCleanupBase(context.Background())
+		if err != nil {
+			return err
+		}
+		// Cleanup deletes only same-name upstreams, so protecting the base
+		// branch here also protects its remote counterpart.
+		if base.protectedBranch == target.branch {
+			return fmt.Errorf("cannot remove cleanup base %s", base.ref)
+		}
+		if !branchMergedIntoDefault(target.branch, base.ref) {
+			return fmt.Errorf("branch %s is no longer merged into cleanup base %s", target.branch, base.ref)
+		}
+	}
+	ref := "refs/heads/" + target.branch
+	if target.detached {
+		// Git's listing has the HEAD even when the worktree path is missing.
+		ref = target.head
+	}
+	refs, err := git.Query("for-each-ref", "--format=%(refname)\t%(symref)", "refs/heads", "refs/remotes", "refs/tags")
+	if err != nil {
+		return err
+	}
+	var exclusions strings.Builder
+	for _, line := range strings.Split(refs, "\n") {
+		retained, symbolic, _ := strings.Cut(line, "\t")
+		if symbolic != "" {
+			continue
+		}
+		if retained == "" || retained == ref {
+			continue
+		}
+		if deleteRemote && retained == target.upstreamRef {
+			continue
+		}
+		fmt.Fprintf(&exclusions, "^%s\n", retained)
+	}
+	// Keep the symbolic-ref exclusions above without putting every retained
+	// ref in argv. Large repositories can exceed the process argument limit.
+	unique, err := git.QueryWithInput(strings.NewReader(exclusions.String()), "rev-list", "--max-count=1", ref, "--stdin")
+	if err != nil {
+		return err
+	}
+	if unique != "" {
+		problems = append(problems, fmt.Sprintf("%s has commits without another retained branch or tag, including %s", target.path, unique))
+	}
+	if len(problems) > 0 {
+		return &unsafeRemovalError{problems: problems}
+	}
+	return nil
+}

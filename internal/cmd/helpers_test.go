@@ -10,141 +10,6 @@ import (
 	"github.com/ahmedelgabri/git-wt/internal/worktree"
 )
 
-func TestMoveContents(t *testing.T) {
-	src := t.TempDir()
-	dst := t.TempDir()
-
-	os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0o644)
-	os.MkdirAll(filepath.Join(src, "subdir"), 0o755)
-	os.WriteFile(filepath.Join(src, "subdir", "nested.txt"), []byte("world"), 0o644)
-
-	if err := moveContents(src, dst); err != nil {
-		t.Fatalf("moveContents error: %v", err)
-	}
-
-	// Entries should exist in dst
-	if _, err := os.Stat(filepath.Join(dst, "file.txt")); err != nil {
-		t.Error("file.txt should exist in dst")
-	}
-	if _, err := os.Stat(filepath.Join(dst, "subdir", "nested.txt")); err != nil {
-		t.Error("subdir/nested.txt should exist in dst")
-	}
-
-	// Entries should be absent from src
-	entries, _ := os.ReadDir(src)
-	if len(entries) != 0 {
-		t.Errorf("src should be empty, got %d entries", len(entries))
-	}
-}
-
-func TestMoveContentsEmptySrc(t *testing.T) {
-	src := t.TempDir()
-	dst := t.TempDir()
-
-	if err := moveContents(src, dst); err != nil {
-		t.Fatalf("moveContents empty src error: %v", err)
-	}
-
-	entries, _ := os.ReadDir(dst)
-	if len(entries) != 0 {
-		t.Errorf("dst should be empty, got %d entries", len(entries))
-	}
-}
-
-func TestMoveContentsNonExistentSrc(t *testing.T) {
-	err := moveContents(filepath.Join(t.TempDir(), "nonexistent"), t.TempDir())
-	if err == nil {
-		t.Error("moveContents with nonexistent src should return error")
-	}
-}
-
-func TestFinalizeMigrationRollbackOnValidationFailure(t *testing.T) {
-	repoRoot := t.TempDir()
-	newStructure := t.TempDir()
-	tempBackup := filepath.Join(t.TempDir(), "backup")
-
-	os.WriteFile(filepath.Join(repoRoot, "original.txt"), []byte("original"), 0o644)
-	os.MkdirAll(filepath.Join(newStructure, ".bare"), 0o755)
-	os.WriteFile(filepath.Join(newStructure, ".git"), []byte("gitdir: ./.bare\n"), 0o644)
-
-	err := finalizeMigration(repoRoot, newStructure, tempBackup, []string{".git", ".bare", "main"})
-	if err == nil {
-		t.Fatal("finalizeMigration should fail validation when required entries are missing")
-	}
-
-	data, readErr := os.ReadFile(filepath.Join(repoRoot, "original.txt"))
-	if readErr != nil {
-		t.Fatalf("original repo contents should be restored: %v", readErr)
-	}
-	if string(data) != "original" {
-		t.Fatalf("original repo contents = %q, want %q", data, "original")
-	}
-	if _, statErr := os.Stat(filepath.Join(repoRoot, ".git")); !os.IsNotExist(statErr) {
-		t.Fatalf("repoRoot should not retain promoted .git after rollback")
-	}
-}
-
-func TestCopyFileSimple(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "src.txt")
-	dst := filepath.Join(t.TempDir(), "dst.txt")
-
-	os.WriteFile(src, []byte("content"), 0o644)
-
-	if err := copyFileSimple(src, dst); err != nil {
-		t.Fatalf("copyFileSimple error: %v", err)
-	}
-
-	data, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("read dst: %v", err)
-	}
-	if string(data) != "content" {
-		t.Errorf("dst content = %q, want %q", data, "content")
-	}
-
-	info, err := os.Stat(dst)
-	if err != nil {
-		t.Fatalf("stat dst: %v", err)
-	}
-	if info.Mode().Perm() != 0o644 {
-		t.Errorf("permissions = %o, want 644", info.Mode().Perm())
-	}
-}
-
-func TestCopyFileSimpleNonExistent(t *testing.T) {
-	err := copyFileSimple(filepath.Join(t.TempDir(), "nonexistent"), filepath.Join(t.TempDir(), "dst"))
-	if err == nil {
-		t.Error("copyFileSimple with nonexistent src should return error")
-	}
-}
-
-func TestRestoreBackup(t *testing.T) {
-	backup := t.TempDir()
-	repoRoot := t.TempDir()
-
-	os.WriteFile(filepath.Join(backup, "file.txt"), []byte("backup"), 0o644)
-	os.MkdirAll(filepath.Join(backup, "subdir"), 0o755)
-
-	restoreBackup(backup, repoRoot)
-
-	if _, err := os.Stat(filepath.Join(repoRoot, "file.txt")); err != nil {
-		t.Error("file.txt should exist in repoRoot after restore")
-	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "subdir")); err != nil {
-		t.Error("subdir should exist in repoRoot after restore")
-	}
-
-	// Backup dir should be removed
-	if _, err := os.Stat(backup); !os.IsNotExist(err) {
-		t.Error("backup dir should be removed after restore")
-	}
-}
-
-func TestRestoreBackupNonExistent(t *testing.T) {
-	// Should return silently without error
-	restoreBackup(filepath.Join(t.TempDir(), "nonexistent"), t.TempDir())
-}
-
 func TestIsKnownCommand(t *testing.T) {
 	known := []string{"add", "clone", "help", "--help", "-h"}
 	for _, name := range known {
@@ -271,36 +136,6 @@ func initGitRepo(t *testing.T) string {
 	return dir
 }
 
-func TestCheckGitDiffClean(t *testing.T) {
-	repo := initGitRepo(t)
-	if err := checkGitDiff(repo); err != nil {
-		t.Errorf("checkGitDiff on clean repo = %v, want nil", err)
-	}
-}
-
-func TestCheckGitDiffDirty(t *testing.T) {
-	repo := initGitRepo(t)
-	// Modify a tracked file to create a diff
-	os.WriteFile(filepath.Join(repo, "README.md"), []byte("modified"), 0o644)
-	if err := checkGitDiff(repo); err == nil {
-		t.Error("checkGitDiff on dirty repo should return error")
-	}
-}
-
-func TestMoveContentsRenameFail(t *testing.T) {
-	src := t.TempDir()
-	os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0o644)
-
-	// dst is a file, not a directory - rename into it will fail
-	dstFile := filepath.Join(t.TempDir(), "not-a-dir")
-	os.WriteFile(dstFile, []byte("x"), 0o644)
-
-	err := moveContents(src, dstFile)
-	if err == nil {
-		t.Error("moveContents to a file dst should return error")
-	}
-}
-
 func TestEntriesToPickerItemsWithBareRoot(t *testing.T) {
 	// Set up a bare repo structure so entriesToPickerItems uses relative paths
 	dir := t.TempDir()
@@ -420,12 +255,17 @@ func TestGenerateWorktreePreviewDeleteRemoteMode(t *testing.T) {
 	c.Dir = dir
 	c.CombinedOutput()
 
+	// A configured remote is not an upstream for this branch.
+	if out, err := exec.Command("git", "--git-dir", bareDir, "remote", "add", "origin", "https://example.invalid/repo.git").CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %v\n%s", err, out)
+	}
+
 	out := generateWorktreePreview(wtPath, previewModeDeleteRemote)
 	if !strings.Contains(out, "Actions") {
 		t.Errorf("remove-remote mode should contain 'Actions', got %q", out)
 	}
-	if !strings.Contains(out, "Delete remote branch") && !strings.Contains(out, "No remote configured") {
-		t.Errorf("remove-remote mode should describe remote branch handling, got %q", out)
+	if !strings.Contains(out, "No remote upstream; remote branch deletion skipped") {
+		t.Errorf("remove-remote mode should say the branch has no upstream, got %q", out)
 	}
 }
 

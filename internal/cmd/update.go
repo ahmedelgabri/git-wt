@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/ahmedelgabri/git-wt/internal/git"
 	"github.com/ahmedelgabri/git-wt/internal/ui"
@@ -16,8 +15,9 @@ var updateCmd = &cobra.Command{
 	Use:     "update",
 	Aliases: []string{"u"},
 	Short:   "Fetch and update the default branch worktree",
-	Long: `Fetch all remotes (with prune) and pull the default branch (main/master)
-in its worktree.`,
+	Long: `Fetch all remotes with prune and pull the default branch in its worktree.
+Tag pruning and the pull strategy follow Git configuration, including
+fetch.pruneTags, remote.<name>.pruneTags, pull.rebase, and pull.ff.`,
 	Example: `  git wt update
   git wt u`,
 	SilenceUsage:  true,
@@ -31,7 +31,7 @@ in its worktree.`,
 			ShowOutput: true,
 			RawOutput:  true,
 			Run: func(ctx context.Context, w io.Writer) error {
-				return git.RunToContext(ctx, w, "fetch", "--all", "--prune", "--prune-tags")
+				return git.RunToContext(ctx, w, "fetch", "--all", "--prune")
 			},
 		}, {
 			Message: "Resolving default branch worktree",
@@ -39,8 +39,7 @@ in its worktree.`,
 				remote := worktree.DefaultRemote()
 				defaultBranch = worktree.DefaultBranch(remote)
 				if defaultBranch == "" {
-					ui.Error("Could not determine default branch from remote")
-					return fmt.Errorf("could not determine default branch")
+					return fmt.Errorf("could not determine the default branch from remote %q", remote)
 				}
 
 				entries, err := worktree.List()
@@ -50,10 +49,8 @@ in its worktree.`,
 
 				entry := worktree.FindByBranch(entries, defaultBranch)
 				if entry == nil {
-					ui.Errorf("No worktree found for default branch '%s'", defaultBranch)
-					fmt.Fprintln(os.Stderr, "Available worktrees:")
-					git.Run("worktree", "list")
-					return fmt.Errorf("no worktree for default branch '%s'", defaultBranch)
+					// Printing here would corrupt the running task UI; say it all in the error.
+					return fmt.Errorf("no worktree for default branch %q; create it with: git wt add %s %s", defaultBranch, shellQuote(defaultBranch), shellQuote(defaultBranch))
 				}
 				entryPath = entry.Path
 				return nil

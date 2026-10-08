@@ -90,7 +90,10 @@ func generateWorktreePreview(wtPath string, mode string) string {
 		}
 	}
 
-	remote := worktree.DefaultRemote()
+	remote, remoteBranch := "", ""
+	if entry != nil {
+		remote, remoteBranch, _ = removalUpstream(entry.Branch)
+	}
 
 	if mode == previewModeDeleteRemote {
 		b.WriteString("\n" + ui.Bold(ui.Accent("Actions")) + "\n")
@@ -100,9 +103,9 @@ func generateWorktreePreview(wtPath string, mode string) string {
 		} else {
 			b.WriteString(ui.Yellow("  - Delete local branch") + "\n")
 			if remote != "" {
-				b.WriteString(ui.Yellow(fmt.Sprintf("  - Delete remote branch (%s/%s)", remote, entry.Branch)) + "\n")
+				b.WriteString(ui.Yellow(fmt.Sprintf("  - Delete remote branch (%s/%s)", remote, remoteBranch)) + "\n")
 			} else {
-				b.WriteString(ui.Yellow("  - No remote configured; remote branch deletion skipped") + "\n")
+				b.WriteString(ui.Yellow("  - No remote upstream; remote branch deletion skipped") + "\n")
 			}
 		}
 	}

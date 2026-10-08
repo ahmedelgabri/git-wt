@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -103,8 +104,9 @@ func Error(msg string) {
 	fmt.Fprintf(os.Stderr, "%s %s\n", Red("Error:"), msg)
 }
 
+// Warn writes to stderr like Error, so warnings never mix with data on stdout.
 func Warn(msg string) {
-	fmt.Printf("%s %s\n", Yellow("Warning:"), msg)
+	fmt.Fprintf(os.Stderr, "%s %s\n", Yellow("Warning:"), msg)
 }
 
 func Info(msg string) {
@@ -170,23 +172,43 @@ func Confirm(msg string) bool {
 	return result.(confirmModel).confirmed
 }
 
-// PromptInput prints a styled prompt and returns the trimmed user input.
-// Uses bubbletea on TTYs; falls back to simple stdin reading otherwise.
-func PromptInput(msg string) string {
+// Cancelled reports a cancelled picker, prompt, or confirmation. It writes to
+// stderr so commands whose stdout is data, such as add and switch, stay clean.
+func Cancelled() {
+	fmt.Fprintln(os.Stderr, Subtle("Cancelled"))
+}
+
+// IsCanceled reports whether a prompt or picker was canceled with Escape,
+// Ctrl-C, or end of input.
+func IsCanceled(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)
+}
+
+// PromptInputResult prints a styled prompt and returns the trimmed user input.
+// It distinguishes accepting a blank default from cancellation. Uses bubbletea
+// on TTYs; falls back to simple stdin reading otherwise.
+func PromptInputResult(msg string) (string, error) {
 	if useSimpleIO() {
 		fmt.Fprintf(os.Stderr, "%s %s ", Accent("?"), msg)
 		reader := getReader()
-		input, _ := reader.ReadString('\n')
-		return normalizeInputValue(input)
+		input, err := reader.ReadString('\n')
+		if err != nil && !(errors.Is(err, io.EOF) && input != "") {
+			return "", err
+		}
+		return normalizeInputValue(input), nil
 	}
 
 	m := newInputModel(msg, Accent("?"), "")
 	p := NewProgram(m, os.Stderr)
 	result, err := p.Run()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return normalizeInputValue(result.(inputModel).Value())
+	input := result.(inputModel)
+	if input.canceled {
+		return "", context.Canceled
+	}
+	return normalizeInputValue(input.Value()), nil
 }
 
 // PromptDangerous prints a red-styled prompt and returns true if the user's

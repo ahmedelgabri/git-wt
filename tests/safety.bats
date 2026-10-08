@@ -1,0 +1,475 @@
+#!/usr/bin/env bats
+
+load test_helper
+
+setup() { setup_test_env; }
+teardown() { teardown_test_env; }
+
+@test "clone: failed nested destination never deletes unrelated data" {
+	mkdir -p parent/parent/new
+	echo precious >parent/parent/new/precious.txt
+	run "$GIT_WT" clone "$TEST_DIR/missing" parent/new
+	[ "$status" -ne 0 ]
+	[ -f parent/parent/new/precious.txt ]
+	[ ! -e parent/new ]
+}
+
+@test "clone: failed clone removes the parent directories it created" {
+	mkdir existing
+	run "$GIT_WT" clone "$TEST_DIR/missing" existing/a/b/c
+	[ "$status" -ne 0 ]
+	[ -d existing ]
+	[ ! -e existing/a ]
+}
+
+@test "clone: DEBUG prints the clone command that would run" {
+	run env DEBUG=1 "$GIT_WT" clone "$TEST_DIR/source" dest
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"clone --progress --bare -- $TEST_DIR/source $TEST_DIR/dest/.bare"* ]]
+}
+
+@test "clone: refuses a dangling destination symlink" {
+	ln -s absent destination
+	run "$GIT_WT" clone "$TEST_DIR/missing" destination
+	[ "$status" -ne 0 ]
+	[ -L destination ]
+}
+
+@test "migrate: preserves deleted files and executable changes" {
+	init_repo repo
+	cd repo
+	create_commit unstaged.txt
+	create_commit staged.txt
+	create_commit script.sh
+	rm unstaged.txt
+	command git rm --quiet staged.txt
+	chmod +x script.sh
+	before=$(command git status --porcelain)
+	printf 'y\n' | "$GIT_WT" migrate
+	[ ! -e main/unstaged.txt ]
+	[ ! -e main/staged.txt ]
+	[ -x main/script.sh ]
+	[ "$(command git -C main status --porcelain)" = "$before" ]
+}
+
+@test "migrate: replacing a symlink never overwrites its external target" {
+	echo external >external.txt
+	init_repo repo
+	cd repo
+	ln -s "$TEST_DIR/external.txt" link
+	command git add link
+	command git commit --quiet -m link
+	rm link
+	echo replacement >link
+	printf 'y\n' | "$GIT_WT" migrate
+	[ "$(cat "$TEST_DIR/external.txt")" = external ]
+	[ ! -L main/link ]
+	[ "$(cat main/link)" = replacement ]
+}
+
+@test "migrate: packed multiple stashes and split index remain usable" {
+	init_repo repo
+	cd repo
+	create_commit tracked.txt
+	for n in first second; do
+		echo "$n" >tracked.txt
+		command git stash push --quiet -m "$n"
+	done
+	command git pack-refs --all
+	before=$(command git stash list --format='%H %gs')
+	echo staged >tracked.txt
+	command git add tracked.txt
+	command git update-index --split-index
+	printf 'y\n' | "$GIT_WT" migrate
+	[ "$(command git -C main stash list --format='%H %gs')" = "$before" ]
+	[ "$(command git -C main show :tracked.txt)" = staged ]
+	command git -C main status --porcelain
+	command git -C main stash show -p 'stash@{1}'
+}
+
+@test "migrate: preserves complete local config hooks and nested repositories" {
+	init_repo repo
+	cd repo
+	command git config wt.afteradd 'echo hook'
+	command git config alias.multi $'!echo first\necho second'
+	command git config --add remote.origin.url "$TEST_DIR/not-reachable"
+	command git config --add remote.origin.pushurl "$TEST_DIR/push-only"
+	mkdir -p .git/hooks
+	printf '#!/bin/sh\nexit 0\n' >.git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
+	init_repo nested
+	printf 'y\n' | "$GIT_WT" migrate
+	[ "$(command git config wt.afteradd)" = 'echo hook' ]
+	[ "$(command git config alias.multi)" = $'!echo first\necho second' ]
+	[ "$(command git config remote.origin.pushurl)" = "$TEST_DIR/push-only" ]
+	[ -x .bare/hooks/pre-commit ]
+	command git -C main/nested rev-parse --verify HEAD
+}
+
+@test "migrate: refuses a repository during a Git operation" {
+	init_repo repo
+	cd repo
+	touch .git/index.lock
+	run "$GIT_WT" migrate --dry-run
+	[ "$status" -ne 0 ]
+	[ -d .git ]
+	[ ! -e .bare ]
+}
+
+@test "migrate: DEBUG does not write filesystem state" {
+	init_repo repo
+	cd repo
+	run env DEBUG=1 "$GIT_WT" migrate
+	[ "$status" -eq 0 ]
+	[ -d .git ]
+	[ ! -e .bare ]
+}
+
+@test "remove: gone upstream with unique local commits is not a cleanup candidate" {
+	init_bare_repo_with_remote repo
+	cd repo
+	create_remote_branch feature
+	command git worktree add feature feature --quiet
+	(cd feature && create_commit unpushed.txt)
+	command git push --quiet origin --delete feature
+	run bash -c 'printf "cleanup\n" | "$1" remove --sweep' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	assert_branch_exists feature
+	[ -f feature/unpushed.txt ]
+}
+
+@test "remove: explicit unique commits require force" {
+	init_bare_repo repo
+	cd repo
+	create_worktree feature feature
+	(cd feature && create_commit unique.txt)
+	run bash -c 'printf "y\n" | "$1" remove feature' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"retained"* ]]
+	assert_branch_exists feature
+	[ -f feature/unique.txt ]
+}
+
+@test "remove: checks for changes made by before-remove hooks" {
+	init_bare_repo repo
+	cd repo
+	create_worktree feature feature
+	command git config wt.beforeremove 'echo valuable >hook-output.txt'
+	run bash -c 'printf "y\n" | "$1" remove feature' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[ -f feature/hook-output.txt ]
+	assert_branch_exists feature
+}
+
+@test "remove: unsafe targets are refused before the prompt and hooks" {
+	init_bare_repo repo
+	cd repo
+	create_worktree dirty dirty
+	create_worktree unique unique
+	echo local >dirty/untracked.txt
+	command git -C unique -c user.name=Test -c user.email=test@test.com commit --quiet --allow-empty -m unique
+	command git config wt.beforeremove 'touch "$TEST_DIR/hook-ran"'
+	for target in dirty unique; do
+		run bash -c 'printf "y\n" | "$1" remove "$2"' _ "$GIT_WT" "$target"
+		[ "$status" -ne 0 ]
+		[[ "$output" != *"[y/N]"* ]]
+		[ ! -e "$TEST_DIR/hook-ran" ]
+		[ -d "$target" ]
+	done
+	[[ "$output" == *"commits without another retained branch or tag"* ]]
+}
+
+@test "remove: remote deletion follows target upstream including renamed branches" {
+	init_bare_repo_with_remote repo
+	init_repo upstream
+	cd repo
+	command git remote add upstream "$TEST_DIR/upstream"
+	create_worktree local local
+	command git push --quiet origin local
+	command git push --quiet -u upstream local:remote-name
+	run bash -c 'printf "local\n" | "$1" remove local --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Cancelled"* ]]
+	assert_branch_exists local
+	command git -C "$TEST_DIR/upstream" show-ref --verify refs/heads/remote-name
+	run bash -c 'printf "upstream/remote-name\n" | "$1" remove local --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/local
+	! command git -C "$TEST_DIR/upstream" show-ref --verify refs/heads/remote-name
+}
+
+@test "remove: a branch created from a shared branch never deletes it by its own name" {
+	init_bare_repo_with_remote repo
+	cd repo
+	command git push --quiet origin main:release
+	command git fetch --quiet origin
+	run "$GIT_WT" add -b feat feat origin/release
+	[ "$status" -eq 0 ]
+	[ "$(command git rev-parse --abbrev-ref feat@{upstream})" = origin/release ]
+	run bash -c 'printf "feat\n" | "$1" remove feat --delete-remote' _ "$GIT_WT"
+	[[ "$output" == *"feat tracks origin/release"* ]]
+	[[ "$output" == *"Cancelled"* ]]
+	[ -d feat ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
+	create_worktree other other
+	# The renamed upstream needs its own confirmation in either position.
+	for targets in "other feat" "feat other"; do
+		run bash -c 'printf "remove\nfeat\n" | "$1" remove $2 --delete-remote' _ "$GIT_WT" "$targets"
+		[[ "$output" == *"feat tracks origin/release"* ]]
+		[[ "$output" == *"Cancelled"* ]]
+		[ -d feat ]
+		[ -d other ]
+		command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
+	done
+	run bash -c 'printf "origin/release\n" | "$1" remove feat --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	! command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/release
+}
+
+@test "remove: cleanup keeps a differently named upstream such as the base branch" {
+	init_bare_repo_with_remote repo
+	cd repo
+	command git fetch --quiet origin
+	command git config wt.cleanupBase refs/heads/main
+	run "$GIT_WT" add -b feat feat origin/main
+	[ "$status" -eq 0 ]
+	run bash -c 'printf "cleanup\n" | "$1" remove --merged --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"keeps origin/main: different name"* ]]
+	[[ "$output" == *"Kept origin/main"* ]]
+	[ ! -d feat ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/main
+}
+
+@test "remove: remote query failure is not reported as success" {
+	init_bare_repo_with_remote repo
+	cd repo
+	create_worktree feature feature
+	command git push --quiet -u origin feature
+	command git remote set-url origin "$TEST_DIR/unreachable"
+	run bash -c 'printf "feature\n" | "$1" remove feature --delete-remote' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"remote branch"* ]]
+}
+
+@test "remove: force is rejected for cleanup filters" {
+	init_bare_repo repo
+	cd repo
+	run "$GIT_WT" remove --sweep --force
+	[ "$status" -ne 0 ]
+}
+
+@test "remove: newline paths round-trip through porcelain" {
+	init_bare_repo repo
+	cd repo
+	path=$'feature\nline'
+	command git worktree add -b feature "$path" --quiet
+	run "$GIT_WT" remove "$path" --dry-run
+	[ "$status" -eq 0 ]
+	[ -d "$path" ]
+}
+
+@test "update: preserves local-only tags by default" {
+	init_bare_repo_with_remote repo
+	cd repo
+	command git worktree add main main --quiet
+	command git tag local-only
+	run "$GIT_WT" update
+	[ "$status" -eq 0 ]
+	command git show-ref --verify refs/tags/local-only
+}
+
+@test "add: rejects a standard repository without touching its database" {
+	init_repo repo
+	cd repo
+	run "$GIT_WT" add -b feature feature
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"migrate"* ]]
+	[ ! -e .git/feature ]
+}
+
+@test "add: no-track is respected" {
+	init_bare_repo_with_remote repo
+	cd repo
+	command git --git-dir="$TEST_DIR/repo-origin" branch feature main
+	"$GIT_WT" add --no-track -b feature feature origin/feature
+	[ -z "$(command git for-each-ref --format='%(upstream)' refs/heads/feature)" ]
+}
+
+@test "add: interactive selection reuses an existing local branch without reset" {
+	init_bare_repo_with_remote repo
+	cd repo
+	create_remote_branch feature
+	before=$(command git rev-parse feature)
+	run select_remote_branch origin/feature
+	[ "$status" -eq 0 ]
+	[ "$(command git -C feature rev-parse HEAD)" = "$before" ]
+	[ "$(command git -C feature branch --show-current)" = feature ]
+}
+
+@test "add: EOF at the worktree path prompt cancels creation" {
+	init_bare_repo_with_remote repo
+	cd repo
+	command git --git-dir="$TEST_DIR/repo-origin" branch feature main
+	run bash -c 'GIT_WT_SELECT=origin/feature "$1" add </dev/null' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Cancelled"* ]]
+	[[ "$output" != *"EOF"* ]]
+	[ ! -e feature ]
+}
+
+@test "status: missing upstream is not displayed as synced" {
+	init_bare_repo_with_remote repo
+	cd repo
+	create_worktree feature feature
+	command git push --quiet -u origin feature
+	command git push --quiet origin --delete feature
+	run "$GIT_WT" status
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"upstream unavailable"* ]]
+	[[ "$output" != *"synced"* ]]
+}
+
+@test "remove: remote rejection returns failure after local removal" {
+	init_bare_repo_with_remote repo
+	cd repo
+	create_worktree feature feature
+	command git push --quiet -u origin feature
+	printf '#!/bin/sh\nexit 1\n' >"$TEST_DIR/repo-origin/hooks/pre-receive"
+	chmod +x "$TEST_DIR/repo-origin/hooks/pre-receive"
+	run bash -c 'printf "feature\n" | "$1" remove feature --delete-remote' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"local worktree removed"* ]]
+	[ ! -d feature ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/feature
+}
+
+@test "remove: ignored files do not require force" {
+	init_bare_repo repo
+	cd repo
+	create_worktree feature feature
+	echo secret.txt >.bare/info/exclude
+	echo valuable >feature/secret.txt
+	run bash -c 'printf "y\n" | "$1" remove feature' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Ignored files"* ]]
+	[ ! -d feature ]
+	assert_branch_not_exists feature
+}
+
+@test "remove: missing worktree can be explicitly removed without force" {
+	init_bare_repo repo
+	cd repo
+	create_worktree feature feature
+	rm -rf feature
+	run bash -c 'printf "y\n" | "$1" remove feature' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	assert_branch_not_exists feature
+}
+
+@test "remove: stale cleanup preserves detached worktree metadata" {
+	init_bare_repo repo
+	cd repo
+	command git worktree add --detach detached HEAD --quiet
+	rm -rf detached
+	run bash -c 'printf "cleanup\n" | "$1" remove --stale' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	assert_worktree_exists "$TEST_DIR/repo/detached"
+}
+
+@test "migrate: rejects symlinked metadata before writing through it" {
+	init_repo repo
+	cd repo
+	mv .git/config "$TEST_DIR/external-config"
+	ln -s "$TEST_DIR/external-config" .git/config
+	before=$(cat "$TEST_DIR/external-config")
+	run bash -c 'printf "y\n" | "$1" migrate' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"symlinked Git metadata"* ]]
+	[ "$(cat "$TEST_DIR/external-config")" = "$before" ]
+	[ -d .git ]
+}
+
+@test "remove: missing detached worktree is checked using its listed HEAD" {
+	init_bare_repo repo
+	cd repo
+	command git worktree add --quiet --detach retained main
+	command git worktree add --quiet --detach unique main
+	command git -C unique -c user.name=Test -c user.email=test@test.com commit --quiet --allow-empty -m unique
+	rm -rf retained unique
+	run bash -c 'printf "y\n" | "$1" remove retained' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"chdir"* ]]
+	run command git worktree list --porcelain
+	[[ "$output" != *"/retained"* ]]
+	run bash -c 'printf "y\n" | "$1" remove unique' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"commits without another retained branch or tag"* ]]
+	run bash -c 'printf "y\n" | "$1" remove --force unique' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+}
+
+@test "remove: --force with --delete-remote deletes unfetched remote commits" {
+	init_bare_repo_with_remote repo
+	cd repo
+	create_worktree feature feature
+	command git push --quiet -u origin feature
+	command git clone --quiet "$TEST_DIR/repo-origin" "$TEST_DIR/collaborator"
+	command git -C "$TEST_DIR/collaborator" checkout --quiet feature
+	command git -C "$TEST_DIR/collaborator" -c user.name=Other -c user.email=other@test.com commit --quiet --allow-empty -m collaborator
+	command git -C "$TEST_DIR/collaborator" push --quiet origin feature
+	run bash -c 'printf "feature\n" | "$1" remove feature --delete-remote' _ "$GIT_WT"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"has commits not preserved by the selected local branch"* ]]
+	[ -d feature ]
+	command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/feature
+	run bash -c 'printf "feature\n" | "$1" remove --force feature --delete-remote' _ "$GIT_WT"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"unfetched commits on deleted remote branches may be lost"* ]]
+	! command git --git-dir="$TEST_DIR/repo-origin" show-ref --verify refs/heads/feature
+}
+
+@test "add: interactive selection says when the local branch differs from the remote" {
+	bats_require_minimum_version 1.5.0
+	init_bare_repo_with_remote repo
+	cd repo
+	create_remote_branch feature
+	local=$(command git rev-parse --short feature)
+	command git push --quiet origin "$(command git commit-tree "feature^{tree}" -p feature -m remote-only):refs/heads/feature"
+	command git fetch --quiet origin
+	remote=$(command git rev-parse --short origin/feature)
+	run --separate-stderr select_remote_branch origin/feature
+	[ "$status" -eq 0 ]
+	[[ "$stderr" == *"Using existing local branch feature at $local; origin/feature is at $remote"* ]]
+	[ "$(command git -C feature rev-parse --short HEAD)" = "$local" ]
+	[ "$output" = "$TEST_DIR/repo/feature" ]
+}
+
+@test "remove: without a terminal, unsafe targets are skipped and the rest removed" {
+	init_bare_repo repo
+	cd repo
+	create_worktree clean clean
+	create_worktree dirty dirty
+	echo local >dirty/untracked.txt
+	run bash -c 'printf "y\n" | "$1" remove clean dirty' _ "$GIT_WT"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"Skipped ./dirty: worktree $TEST_DIR/repo/dirty contains local files or changes"* ]]
+	[[ "$output" == *"1 target(s) skipped"* ]]
+	[ ! -e clean ]
+	[ -f dirty/untracked.txt ]
+	assert_branch_exists dirty
+}
+
+@test "pickers: cancelling says Cancelled on stderr and keeps stdout clean" {
+	bats_require_minimum_version 1.5.0
+	init_bare_repo repo
+	cd repo
+	create_worktree feature feature
+	for command in switch remove; do
+		run --separate-stderr env GIT_WT_SELECT=missing "$GIT_WT" "$command"
+		[ "$status" -eq 0 ]
+		[[ "$stderr" == *"Cancelled"* ]]
+		[[ "$output" != *"Cancelled"* ]]
+	done
+	[ -d feature ]
+}

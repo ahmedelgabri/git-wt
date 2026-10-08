@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -49,6 +50,8 @@ type taskModel struct {
 	cancel     context.CancelFunc
 	send       func(tea.Msg)
 	err        error
+	// finished is set when the UI saw the task's result before it exited.
+	finished bool
 }
 
 func newTaskModel(cfg TaskConfig, fn TaskFunc) *taskModel {
@@ -74,24 +77,25 @@ func newTaskModel(cfg TaskConfig, fn TaskFunc) *taskModel {
 }
 
 func (m *taskModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.runTask())
+	return m.spinner.Tick
 }
 
-func (m *taskModel) runTask() tea.Cmd {
-	fn := m.fn
-	ctx := m.ctx
+// start runs the task outside Bubble Tea's command goroutines, which the
+// program abandons when a signal ends it. The returned channel always
+// receives the task's result.
+func (m *taskModel) start() <-chan error {
 	writer := io.Discard
 	if m.showOutput {
-		writer = &taskLogWriter{send: func(msg tea.Msg) {
-			if m.send != nil {
-				m.send(msg)
-			}
-		}}
+		writer = &taskLogWriter{send: m.send}
 	}
-
-	return func() tea.Msg {
-		return taskFinishedMsg{err: fn(ctx, writer)}
-	}
+	done := make(chan error, 1)
+	go func() {
+		err := m.fn(m.ctx, writer)
+		done <- err
+		// Send returns at once if the program has already exited.
+		m.send(taskFinishedMsg{err: err})
+	}()
+	return done
 }
 
 func (m *taskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -108,6 +112,7 @@ func (m *taskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 		return m, nil
 	case taskFinishedMsg:
+		m.finished = true
 		m.err = msg.err
 		switch {
 		case m.phase == AsyncCanceled:
@@ -126,7 +131,9 @@ func (m *taskModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel()
 			m.phase = AsyncCanceled
 			m.err = context.Canceled
-			return m, tea.Quit
+			// Wait for taskFinishedMsg before returning to a caller that may
+			// immediately start rollback or another mutation.
+			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		m.setSize(msg.Width, msg.Height)
@@ -232,14 +239,29 @@ func RunTask(cfg TaskConfig, fn TaskFunc) error {
 	}
 
 	m := newTaskModel(cfg, fn)
-	p := NewProgram(m, os.Stderr)
+	return runTaskProgram(m, NewProgram(m, os.Stderr))
+}
+
+// runTaskProgram runs m's task under p and returns the task's result.
+func runTaskProgram(m *taskModel, p *tea.Program) error {
 	m.send = p.Send
-	result, err := p.Run()
+	done := m.start()
+	_, runErr := p.Run()
+	// SIGINT or SIGTERM makes Bubble Tea exit without waiting for the task.
+	// Stop it and wait, so callers never act on a task that is still running,
+	// and report the early exit as cancellation rather than success.
 	m.cancel()
-	if err != nil {
-		return err
+	taskErr := <-done
+	if !m.finished {
+		if errors.Is(taskErr, context.Canceled) {
+			taskErr = nil
+		}
+		return errors.Join(context.Canceled, taskErr, runErr)
 	}
-	return result.(*taskModel).err
+	if runErr != nil {
+		return runErr
+	}
+	return m.err
 }
 
 func runTaskRaw(cfg TaskConfig, fn TaskFunc, out io.Writer) error {
