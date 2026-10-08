@@ -173,6 +173,12 @@ jobs:
             brew install ahmedelgabri/tap/git-wt
             ```
 
+            ### Using mise
+
+            ```bash
+            mise use "github:${{ github.repository }}"
+            ```
+
             ### Using Nix Flakes
 
             ```bash

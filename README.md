@@ -8,44 +8,46 @@
 
 # git-wt
 
-A Git custom command that makes Git worktrees easier to use with interactive
-selection, safer destructive flows, repository migration, diagnostics, and
-compact dashboards.
+Work on several Git branches at once, each in its own directory. No need to stash changes when switching tasks.
 
-`git-wt` uses the [**bare repository** structure](https://gabri.me/blog/git-worktrees-done-right)
-where Git data lives in `.bare/` and each branch gets its own sibling
-worktree directory.
+`git-wt` helps you create, switch, and remove these directories, called worktrees. Pick branches interactively or pass their names directly.
 
-## Why Git Worktrees?
+It stores Git data in `.bare/`, with your worktrees next to it:
 
-Git worktrees let you keep multiple branches checked out at the same time in
-separate directories. They are useful for:
+```text
+my-project/
+├── .bare/       # Shared Git data
+├── .git         # Points to .bare
+├── main/        # Main branch
+└── feature/     # Feature branch
+```
 
-- working on multiple features in parallel without stashing
-- reviewing PRs while keeping local work intact
-- comparing implementations side by side
-- running tests on one branch while developing on another
+Read [why this layout works](https://gabri.me/blog/git-worktrees-done-right).
 
-## Features
+## Contents
 
-- **Bare clone structure** with `.bare/` for Git data
-- **Interactive add / switch / remove** flows with fzf
-- **Shell integration** with `git wt init` so `git wt switch` changes directory automatically
-- **Lifecycle hooks** around worktree creation and removal (`wt.beforeadd`, `wt.afteradd`, `wt.beforeremove`, `wt.afterremove`)
-- **Repository migration** from a standard repo to the bare worktree layout
-- **Safe cleanup filters** with `git wt remove --sweep`
-- **Repository diagnostics** with `git wt doctor`
-- **Status dashboard** with `git wt status`
-- **Machine-readable output** with `git wt list --json` or native `--porcelain -z`
-- **Agent skill installer** with `git wt agent-skill`
-- **Dry-run support** for destructive operations
-- **In-place migration** that rolls back if it fails or is interrupted
-
-## Dependencies
-
-- `git` `2.36.0+` (`2.48.0+` for relative worktree support)
+- [Installation](#installation)
+  - [Homebrew](#homebrew)
+  - [mise](#mise)
+  - [Nix flakes](#nix-flakes)
+  - [Manual installation](#manual-installation)
+  - [Shell completions](#shell-completions)
+- [Usage](#usage)
+  - [Clone a repository](#clone-a-repository)
+  - [Convert an existing repository](#convert-an-existing-repository)
+  - [Create a worktree](#create-a-worktree)
+  - [Switch worktrees](#switch-worktrees)
+  - [Remove worktrees](#remove-worktrees)
+  - [Check and update worktrees](#check-and-update-worktrees)
+- [Commands](#commands)
+- [Hooks](#hooks)
+- [Coding agents](#coding-agents)
+- [Development](#development)
+- [License](#license)
 
 ## Installation
+
+Requires Git 2.36 or newer. Relative worktree paths require Git 2.48 or newer.
 
 ### Homebrew
 
@@ -53,7 +55,7 @@ separate directories. They are useful for:
 brew install ahmedelgabri/tap/git-wt
 ```
 
-Shell completions are installed automatically for bash, zsh, and fish.
+Includes shell completions for bash, zsh, and fish.
 
 ### mise
 
@@ -61,9 +63,15 @@ Shell completions are installed automatically for bash, zsh, and fish.
 mise use "github:ahmedelgabri/git-wt"
 ```
 
-### Nix Flakes
+### Nix flakes
 
-Add to your flake inputs:
+Run without installing:
+
+```bash
+nix run github:ahmedelgabri/git-wt
+```
+
+Or add it to your flake inputs:
 
 ```nix
 {
@@ -71,34 +79,24 @@ Add to your flake inputs:
 }
 ```
 
-Then add to your packages:
-
-```nix
-inputs.git-wt.packages.${system}.default
-```
-
-Or run directly:
-
-```bash
-nix run github:ahmedelgabri/git-wt
-```
+Then include `inputs.git-wt.packages.${system}.default` in your packages.
 
 ### Manual installation
 
-Download the latest release archive for your platform from the
-[releases page](https://github.com/ahmedelgabri/git-wt/releases/latest):
+Download the archive for your platform from the [latest release](https://github.com/ahmedelgabri/git-wt/releases/latest).
+
+Extract it and copy `git-wt` to a directory in your `$PATH`:
 
 ```bash
-curl -sL https://github.com/ahmedelgabri/git-wt/releases/latest/download/git-wt-VERSION-OS-ARCH.tar.gz | tar xz
+tar xzf git-wt-VERSION-OS-ARCH.tar.gz
 cp git-wt-VERSION-OS-ARCH/git-wt ~/.local/bin/
 ```
 
-Replace `VERSION` with the current release version and choose the correct
-platform archive.
+Replace `VERSION`, `OS`, and `ARCH` with the values in the archive name.
 
 ### Shell completions
 
-For manual installs, the release archives include a `completions/` directory:
+For manual installs, copy files from the archive's `completions/` directory:
 
 ```bash
 # Bash
@@ -106,79 +104,58 @@ cp completions/git-wt.bash ~/.local/share/bash-completion/completions/git-wt
 
 # Zsh
 cp completions/_git-wt ~/.local/share/zsh/site-functions/_git-wt
-cp completions/_git_wt ~/.local/share/zsh/site-functions/_git_wt # enables `git wt` completion
+cp completions/_git_wt ~/.local/share/zsh/site-functions/_git_wt
 
 # Fish
 cp completions/git-wt.fish ~/.config/fish/completions/git-wt.fish
 ```
 
-For zsh, both completion files are needed:
-
-- `_git-wt` completes the standalone `git-wt` command
-- `_git_wt` bridges `git wt ...` when git/oh-my-zsh-style completion wrappers
-  dispatch to the underscore form
-
-### Agent skill
-
-Install an [Agent Skills](https://agentskills.io/)-compatible skill so coding
-agents can discover and use `git-wt` workflows:
-
-```bash
-git wt agent-skill
-```
-
-By default this writes `~/.agents/skills/git-wt/SKILL.md`. Use
-`git wt agent-skill --dir ~/.claude/skills` for a different skill root,
-`--print` to review the skill, or `--force` to overwrite an existing copy.
+Zsh needs both files. `_git-wt` completes `git-wt`; `_git_wt` completes `git wt`.
 
 ## Usage
 
-### Clone with the bare worktree layout
+### Clone a repository
 
 ```bash
 git wt clone https://github.com/user/repo.git
+cd repo
 ```
 
-This creates:
+This creates the `.bare/` layout and a worktree for the default branch.
 
-```text
-repo/
-├── .bare/         # Git data (bare repository)
-├── .git           # gitdir pointer to .bare
-└── main/          # Worktree for the default branch
-```
+If setup fails after downloading, git-wt keeps the repository and prints recovery instructions.
 
-Once the bare clone succeeds, git-wt keeps the downloaded repository even if later configuration, fetching, or worktree creation fails. It exits non-zero and prints a warning with the retained path and instructions for inspecting the branches and finishing setup.
-
-### Migrate an existing repository
+### Convert an existing repository
 
 ```bash
 cd existing-repo
 git wt migrate
 ```
 
-Migration is experimental. Stop other Git operations and file writers first. It converts the repository in place by moving files, not copying them, so it needs no extra disk space and keeps file modes, extended attributes, and ACLs. `.git` becomes `.bare`, the working files move into a worktree for the current branch, and worktree-specific metadata (index, HEAD reflog, pseudorefs such as `ORIG_HEAD`, and private ref namespaces) moves into that worktree's Git directory. Private refs are removed from common storage so other worktrees cannot resolve them. Includes whose paths break on relocation are refused. Effective config, remotes, refs, index entries, stashes, and working tree status are verified at the final paths.
+Migration is experimental. Stop editors, builds, and other Git operations before running it.
 
-Every step is recorded in a journal under `.git-wt-migrate/` before it happens. If a step or the verification fails, or the command is interrupted, migration moves everything back. If the process is killed, run `git wt migrate` again: it finds the journal, restores the original layout, and stops. See [migration and removal safety](docs/safety.md) for limitations and recovery.
+It moves your files into a worktree and changes `.git` to `.bare`. It checks that your files and Git state survived the move.
+
+A failed or interrupted migration restores the original layout. After a crash, run `git wt migrate` again to restore it.
+
+Read the [migration limits and recovery guide](docs/safety.md#migration) before converting a repository.
 
 ### Create a worktree
 
 ```bash
-# Interactive mode
-
+# Choose a branch interactively
 git wt add
 
-# From a remote branch
+# Use an existing remote branch
 git wt add feature origin/feature
 
-# Create a new branch
+# Create a new branch and worktree
 git wt add -b new-feature new-feature
-
-# Detached, locked, or quiet modes
-git wt add --detach hotfix HEAD~5
-git wt add --lock -b wip wip-branch
-git wt add --quiet -b feature feature
 ```
+
+`add` requires the `.bare/` layout. It prints the new worktree's path so scripts can use it.
+
+Run `git wt add --help` for more options.
 
 ### Switch worktrees
 
@@ -186,207 +163,147 @@ git wt add --quiet -b feature feature
 cd "$(git wt switch)"
 ```
 
-### Shell integration (automatic cd)
-
-A subprocess can never change its parent shell's directory, so by default
-`switch` prints the worktree path. The `init` command emits a small
-shell script that wraps the binary and runs the `cd` for you:
+To let `git wt switch` change directories directly, add the matching line to your shell configuration:
 
 ```bash
-# bash (~/.bashrc)
+# Bash: ~/.bashrc
 eval "$(git-wt init bash)"
 
-# zsh (~/.zshrc)
+# Zsh: ~/.zshrc
 eval "$(git-wt init zsh)"
 
-# fish (~/.config/fish/config.fish)
+# Fish: ~/.config/fish/config.fish
 git-wt init fish | source
 ```
 
-After sourcing, `git wt switch` changes directory directly. Only `switch`
-is intercepted: `add` keeps printing the created worktree path to stdout
-so scripts and hooks (like the Claude Code `WorktreeCreate` hook below)
-can rely on it. The script also defines a thin `git()` wrapper so the
-`git wt` spelling works; if another tool already wraps `git`, use
-`eval "$(git-wt init zsh --no-git-wrapper)"` and invoke `git-wt switch`
-instead.
+Reload your shell configuration, then use `git wt switch`.
 
-Known limitation: the wrapper keys on the first argument, so global git
-flags before the subcommand (e.g. `git -C <path> wt switch`) bypass it
-and print the path instead of changing directory.
+This also defines a `git` shell function. If another tool already defines one, use `--no-git-wrapper` and call `git-wt switch` instead.
 
-### Remove a worktree and local branch
+Git options before `wt`, such as `git -C <path> wt switch`, bypass the function and only print the path.
+
+### Remove worktrees
+
+Preview removal, then remove the worktree and its local branch:
 
 ```bash
-git wt remove feature-branch
-git wt remove --dry-run feature-branch
+git wt remove --dry-run feature
+git wt remove feature
 ```
 
-Removal refuses tracked modifications, non-ignored untracked files, and commits without another retained branch or tag. Ignored files do not block removal and are deleted with the worktree, including build output and ignored `.env` files. This also applies to cleanup filters. On a terminal, each such target asks you to type its name to discard the work, or press Enter to skip it, and the rest of the selection continues. Without a terminal, such targets are skipped and the command exits 1. `git wt remove --force <worktree>` discards without asking. With `--delete-remote`, `--force` also deletes a remote branch that has commits you have not fetched, such as a collaborator's pushes; without it, removal stops and asks you to fetch first. These checks run before the confirmation prompt, so an unsafe removal stops before any hook runs. Hooks cannot bypass them; removal checks again after before-hooks run.
-
-### Remove a worktree and local + remote branch
+To also delete its configured remote branch:
 
 ```bash
-git wt remove feature-branch --delete-remote
+git wt remove feature --delete-remote
 ```
 
-Remote deletion uses each target branch's configured upstream remote and branch name, not the invoking worktree's default remote. Targets without a remote upstream keep remote branches untouched. If the upstream has a different name than the local branch, as when `feat` was created from `origin/release`, you must type the remote name (`origin/release`) to delete it, and cleanup filters keep it. A lease prevents deleting a remote branch that changed after verification. A single push URL matching the effective fetch URL works on older Git without URL overrides. Multiple push URLs or differing fetch/push URLs require Git 2.46 or newer. Unsupported configurations stop before hooks or local changes; use local-only removal or native Git instead.
-
-### Sweep safe cleanup candidates
+To clean up merged branches and missing worktrees:
 
 ```bash
-git wt remove --sweep
-
 git wt remove --sweep --dry-run
+git wt remove --sweep
 ```
 
-Both `--merged` and `--gone` require the branch to be fully merged into the cleanup base. A missing upstream alone is not safe to delete. `--stale` selects only missing, unlocked worktree paths with attached branches and preserves those branches. Detached metadata is retained. Existing directories are skipped even if Git marks their metadata prunable. Inspect their files and use `git wt repair <path>` before attempting removal. `--force` cannot be combined with cleanup filters.
+Keep these rules in mind:
 
-The cleanup base defaults to the remote's default branch. Set an explicit local branch with `git config wt.cleanupBase refs/heads/main`, or use a short branch name such as `main`. To use the last fetched remote-tracking tip instead, set `git config wt.cleanupBase refs/remotes/origin/main`. No local `main` branch or worktree is required; if it exists, cleanup protects it even when it lags. Explicit refs require no network lookup or implicit fetch. This setting only affects cleanup, not the remote used by other commands. Without an explicit base, `branch.<name>.remote=.` stops `--merged`, `--gone`, and `--sweep` with configuration guidance rather than treating the current branch as the default. Raw remote URLs use network discovery bounded by `wt.remoteTimeout`. `--stale` alone needs no cleanup base.
+- Save valuable ignored files first. Removal deletes them, including ignored `.env` files.
+- git-wt checks for changed files and commits that no other branch or tag keeps.
+- On a terminal, discarding that work requires typing the worktree name. Without a terminal, git-wt skips it and exits 1.
+- `--force` discards that work without asking. With `--delete-remote`, it can also delete commits pushed by others that you have not fetched.
+- Cleanup filters do not accept `--force`. A deleted remote branch alone does not make a worktree safe to remove.
 
-### Inspect repository health
+See [removal safety](docs/safety.md#removal) for cleanup settings and remote deletion rules.
 
-```bash
-git wt doctor
-```
-
-### Show worktree status
-
-```bash
-git wt status
-```
-
-### List worktrees
+### Check and update worktrees
 
 ```bash
+# List worktrees
 git wt list
-git wt ls
+
+# List as JSON
 git wt list --json
-git wt ls --json
-git wt list --porcelain -z
+
+# Show changes across worktrees
+git wt status
+
+# Check for repository problems
+git wt doctor
+
+# Fetch remotes and pull the default branch
+git wt update
 ```
 
-`ls` is an alias for `list`. Without `--json`, native Git options and output pass through unchanged. JSON mode returns an array of non-bare worktrees with absolute paths, full HEAD object IDs, branch names, and detached/locked/prunable metadata. An empty list is `[]`. Do not combine `--json` with native output options such as `--porcelain` or `-z`. See the [JSON schema](docs/safety.md#updates-and-scripting) for field definitions.
+`update` uses your Git settings for pulling and pruning tags. Tag pruning can delete local-only tags if enabled.
 
-### Update the default branch
-
-```bash
-git wt update # or: git wt u
-```
-
-`update` runs `git fetch --all --prune`, then plain `git pull` in the default branch's worktree. Tag pruning follows `fetch.pruneTags`, `remote.<name>.pruneTags`, and your fetch refspecs; enabling it can delete local-only tags. The pull strategy follows `pull.rebase`, `branch.<name>.rebase`, and `pull.ff`. Repository/global configuration and one-off overrides such as `git -c fetch.pruneTags=true -c pull.rebase=true wt update` are respected.
-
-Remote default-branch discovery waits up to ten seconds when no local remote HEAD is available. Set `wt.remoteTimeout` to a duration such as `30s` or `2m`, or `0` to disable the deadline. For example, use `git config --global wt.remoteTimeout 30s` or `git -c wt.remoteTimeout=0 wt update`. Invalid or negative durations use the ten-second default. This setting only controls discovery, not fetch or pull.
-
-## Hooks
-
-Run shell commands around worktree creation and removal. Hooks are configured through Git config, so they can be scoped per repository or globally with `--global`.
-
-```bash
-# Validate the repository before creating a worktree
-git config --add wt.beforeadd './scripts/check-worktree.sh'
-
-# Copy generated files into each new worktree
-git config --add wt.afteradd 'cp ../main/compile_commands.json .'
-
-# Clean up files while the worktree still exists
-git config --add wt.beforeremove './scripts/cleanup-worktree.sh'
-
-# Notify another tool after removal is complete
-git config --add wt.afterremove 'workspace-registry remove "$GIT_WT_PATH"'
-```
-
-| Hook              | When it runs                                                               | Working directory      | Failure behavior                                        |
-| ----------------- | -------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------- |
-| `wt.beforeadd`    | After add arguments and fetching are complete, immediately before creation | Bare repository root   | Prevents worktree creation                              |
-| `wt.afteradd`     | After creation and upstream configuration                                  | New worktree           | Leaves the worktree in place and exits non-zero         |
-| `wt.beforeremove` | Immediately before removal                                                 | Worktree being removed | Preserves the worktree and exits non-zero               |
-| `wt.afterremove`  | After worktree and branch cleanup                                          | Bare repository root   | Removal remains complete and the command exits non-zero |
-
-Hooks inherit the full calling environment, including all `GIT_*` variables. An inherited `GIT_DIR` or `GIT_INDEX_FILE` can therefore override Git's repository discovery inside a hook; unset it in your hook if you want Git to use the hook's working directory. git-wt adds the lifecycle context through these environment variables:
-
-- `GIT_WT_EVENT`: `beforeadd`, `afteradd`, `beforeremove`, or `afterremove`
-- `GIT_WT_PATH`: absolute worktree path
-- `GIT_WT_BRANCH`: branch name, or empty for detached or unresolved cases
-- `GIT_WT_BARE_ROOT`: absolute bare repository root
-
-Each configured value runs with `sh -c`. Repeated `git config --add` values run in order and stop at the first failure for that event; multiline values are supported. Hook output goes to stderr so successful `git wt add` output remains machine-readable.
-
-Before-hooks are not transactional: the subsequent Git operation can still fail after a hook succeeds, so side effects should be idempotent. After-hook failures cannot roll back an operation that already completed. Removing the current worktree or a locked worktree is rejected before any hook runs; for stale, missing, or prunable worktrees the removal proceeds with the hooks skipped. `DEBUG=1` echoes hooks instead of running them.
-
-Hooks apply to `git wt add` and `git wt remove`; initial worktrees created by `clone` or `migrate` do not trigger git-wt add hooks. Migration suppresses native hooks while creating worktrees and restoring Git metadata.
+See [update settings and the JSON format](docs/safety.md#updates-and-scripting) for details.
 
 ## Commands
 
-| Command             | Description                                               |
-| ------------------- | --------------------------------------------------------- |
-| `clone <url>`       | Clone a repo with the bare worktree structure             |
-| `migrate`           | Convert an existing repo to the bare worktree structure   |
-| `add [options] ...` | Create a new worktree                                     |
-| `remove` / `rm`     | Remove worktrees directly or by safe cleanup filters      |
-| `doctor`            | Run repository diagnostics                                |
-| `agent-skill`       | Install the git-wt agent skill                            |
-| `init <shell>`      | Print shell integration for automatic directory switching |
-| `status`            | Show a compact dashboard for linked worktrees             |
-| `list` / `ls`       | List worktrees with native Git output or JSON             |
-| `switch`            | Interactively select a worktree                           |
-| `update` / `u`      | Fetch remotes and update the default branch               |
+| Command         | Purpose                                     |
+| --------------- | ------------------------------------------- |
+| `clone <url>`   | Clone into the `.bare/` layout              |
+| `migrate`       | Convert an existing repository              |
+| `add`           | Create a worktree                           |
+| `switch`        | Pick a worktree to switch to                |
+| `remove` / `rm` | Remove worktrees and branches               |
+| `list` / `ls`   | List worktrees, with optional JSON output   |
+| `status`        | Show changes across worktrees               |
+| `doctor`        | Check for repository problems               |
+| `update` / `u`  | Fetch remotes and update the default branch |
+| `init <shell>`  | Set up automatic directory switching        |
+| `agent-skill`   | Install instructions for coding agents      |
 
-Native `git worktree` commands (`lock`, `unlock`, `move`, `prune`, `repair`) are also supported as pass-through commands. `add` requires the `.bare` layout and rejects standard `.git` directories with a migration hint.
+`lock`, `unlock`, `move`, `prune`, and `repair` use the matching native `git worktree` commands.
 
-## Claude Code Integration
+Run `git wt <command> --help` for options.
 
-[Claude Code](https://claude.ai/code) can create and remove worktrees
-automatically during agentic sessions. Configure the `WorktreeCreate` and
-`WorktreeRemove` hooks in your project or user `settings.json` to delegate
-those operations to `git wt`, keeping every worktree consistent with the bare
-repository layout:
+## Hooks
 
-```json
-{
-  "WorktreeCreate": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "git wt add \"$(cat /dev/stdin | jq -r '.name')\""
-        }
-      ]
-    }
-  ],
-  "WorktreeRemove": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "echo y | git wt rm \"$(cat /dev/stdin | jq -r '.worktree_path')\""
-        }
-      ]
-    }
-  ]
-}
+Run shell commands before or after creating and removing worktrees. Configure them per repository, or add `--global` for all repositories.
+
+```bash
+git config --add wt.afteradd 'cp ../main/compile_commands.json .'
 ```
 
-The hooks receive a JSON payload on stdin. `WorktreeCreate` reads the `.name`
-field (the branch name) and passes it to `git wt add`. `WorktreeRemove` reads
-`.worktree_path` and passes it to `git wt rm`; the leading `echo y |` confirms
-the interactive prompt non-interactively.
+| Hook              | Runs in                          |
+| ----------------- | -------------------------------- |
+| `wt.beforeadd`    | Repository root, before creation |
+| `wt.afteradd`     | New worktree, after creation     |
+| `wt.beforeremove` | Worktree, before removal         |
+| `wt.afterremove`  | Repository root, after removal   |
 
-The removal hook refuses dirty worktrees or unpreserved commits. Handle its non-zero exit rather than automatically adding `--force`; forcing removal can discard the agent's work.
+Hooks receive the path in `$GIT_WT_PATH` and the branch name in `$GIT_WT_BRANCH`.
+
+Before-hooks can stop the operation. After-hook failures report an error but do not undo completed work.
+
+Hooks apply to `add` and `remove`, not `clone` or `migrate`. See the [hook reference](docs/index.md#hooks) for environment variables and failure rules.
+
+## Coding agents
+
+Install [agent instructions](https://agentskills.io/) for git-wt:
+
+```bash
+git wt agent-skill
+```
+
+This writes `~/.agents/skills/git-wt/SKILL.md`. Use `--dir ~/.claude/skills` to choose another location, or `--print` to read it first.
+
+Claude Code can also use git-wt to create and remove worktrees. See the [Claude Code setup](docs/index.md#claude-code-integration).
+
+Do not automatically add `--force` when an agent's removal fails. It can discard the agent's work.
 
 ## Development
 
 ```bash
-# Enter development shell
-nix develop
-
-# Format code
-nix fmt
-
-# Run all checks
-nix flake check
+nix develop          # Enter the development shell
+nix fmt              # Format files
+nix flake check      # Check the build and formatting
+go test ./...        # Run Go tests
+bats tests/          # Run end-to-end tests
 ```
+
+See the [development guide](docs/ci-cd-setup.md) for CI and release details.
 
 ## License
 
-MIT
+[MIT](LICENSE)
