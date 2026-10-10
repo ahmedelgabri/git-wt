@@ -167,6 +167,8 @@ jobs:
 
             ## Installation
 
+            Requires Git 2.48.0 or newer.
+
             ### Using Homebrew
 
             ```bash
